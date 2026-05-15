@@ -7,6 +7,7 @@
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#667eea">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <style>
         :root {
             --bg-primary: #ffffff;
@@ -955,6 +956,30 @@
         let allTasks = [];
         let currentMonth = new Date();
         let selectedTasks = new Set();
+
+        // Real-time notifications
+        const socket = io();
+
+        socket.on('connect', () => {
+            console.log('Connected to real-time server');
+        });
+
+        socket.on('task_action', (data) => {
+            // Don't show toast for own actions (optional, but usually better UX)
+            // if (data.user === currentUser?.username) return;
+
+            showToast(`${data.user} ${data.action} zadanie: ${data.task}`, 'info');
+            
+            // Refresh data automatically
+            if (currentUser) {
+                loadTasks().then(() => {
+                    // Update current view if needed
+                    const activeTab = document.querySelector('.tab.active').onclick.toString();
+                    if (activeTab.includes('kanban')) renderKanban();
+                    if (activeTab.includes('dashboard')) loadDashboard();
+                });
+            }
+        });
 
         // Toast Notifications
         function showToast(message, type = 'success') {

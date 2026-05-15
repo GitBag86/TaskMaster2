@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify, send_file, session
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
+from flask_socketio import SocketIO, emit
 from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
@@ -16,9 +17,13 @@ from schemas import UserSchema, TaskSchema, CommentSchema, SubtaskSchema, LoginS
 from marshmallow import ValidationError
 
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///tasks.db'
+# Ensure the instance folder exists
+os.makedirs(app.instance_path, exist_ok=True)
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(app.instance_path, 'tasks.db')
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-key-change-in-production')
 CORS(app, supports_credentials=True)
+
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
 # Auth decorators
 from functools import wraps
@@ -62,6 +67,7 @@ logger.info("App initialized")
 @app.before_request
 def log_request():
     logger.info(f"Request: {request.method} {request.path}")
+
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
 
@@ -369,9 +375,12 @@ def create_task():
     )
     db.session.add(task)
     db.session.commit()
+    
+    socketio.emit('task_action', {'action': 'utworzył(a)', 'task': task.title, 'user': user.username}, broadcast=True)
     return jsonify(task.to_dict()), 201
 
 @app.route('/tasks/<int:task_id>', methods=['PUT'])
+@login_required
 def update_task(task_id):
     user_id = session.get('user_id')
     if not user_id:
@@ -390,27 +399,12 @@ def update_task(task_id):
         if key != 'id' and key != 'user_id' and hasattr(task, key):
             setattr(task, key, value)
     db.session.commit()
+    
+    socketio.emit('task_action', {'action': 'zaktualizował(a)', 'task': task.title, 'user': user.username}, broadcast=True)
     return jsonify(task.to_dict())
 
-@app.route('/tasks/<int:task_id>', methods=['DELETE'])
-def delete_task(task_id):
-    user_id = session.get('user_id')
-    if not user_id:
-        return jsonify({"error": "Not logged in"}), 401
-
-    user = User.query.get(user_id)
-    task = Task.query.get(task_id)
-    if not task:
-        return jsonify({"error": "Task not found"}), 404
-
-    if user.role != 'admin':
-        return jsonify({"error": "Only admins can delete tasks"}), 403
-
-    db.session.delete(task)
-    db.session.commit()
-    return jsonify({"message": "Task deleted"}), 200
-
 @app.route('/tasks/<int:task_id>/complete', methods=['PUT'])
+@login_required
 def complete_task(task_id):
     user_id = session.get('user_id')
     if not user_id:
@@ -426,7 +420,32 @@ def complete_task(task_id):
 
     task.completed = True
     db.session.commit()
+    
+    action = 'ukończył(a)' if task.completed else 'przywrócił(a)'
+    socketio.emit('task_action', {'action': action, 'task': task.title, 'user': user.username}, broadcast=True)
     return jsonify(task.to_dict())
+
+@app.route('/tasks/<int:task_id>', methods=['DELETE'])
+@login_required
+def delete_task(task_id):
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({"error": "Not logged in"}), 401
+
+    user = User.query.get(user_id)
+    task = Task.query.get(task_id)
+    if not task:
+        return jsonify({"error": "Task not found"}), 404
+
+    if user.role != 'admin':
+        return jsonify({"error": "Only admins can delete tasks"}), 403
+
+    task_title = task.title
+    db.session.delete(task)
+    db.session.commit()
+    
+    socketio.emit('task_action', {'action': 'usunął(ęła)', 'task': task_title, 'user': user.username}, broadcast=True)
+    return jsonify({"message": "Zadanie usunięte"}), 200
 
 @app.route('/tasks/<int:task_id>/comments', methods=['POST'])
 @login_required
@@ -443,6 +462,8 @@ def add_comment(task_id):
     )
     db.session.add(comment)
     db.session.commit()
+    
+    socketio.emit('task_action', {'action': 'skomentował(a)', 'task': task.title, 'user': user.username}, broadcast=True)
     return jsonify(comment.to_dict()), 201
 
 @app.route('/tasks/<int:task_id>/subtasks', methods=['POST'])
@@ -480,6 +501,9 @@ def complete_subtask(subtask_id):
 
     subtask.completed = not subtask.completed
     db.session.commit()
+    
+    action = 'ukończył(a)' if subtask.completed else 'przywrócił(a)'
+    socketio.emit('task_action', {'action': action, 'task': subtask.title, 'user': user.username}, broadcast=True)
     return jsonify(subtask.to_dict())
 
 @app.route('/subtasks/<int:subtask_id>', methods=['DELETE'])
@@ -875,4 +899,4 @@ def export_csv():
     }
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    socketio.run(app, debug=True, port=5000)

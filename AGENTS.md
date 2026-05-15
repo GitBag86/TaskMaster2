@@ -57,6 +57,7 @@ All responses are JSON. Error responses follow: `{"error": "message"}` with appr
 ## Frontend Patterns
 - **Toast Notifications**: Use `showToast(message, type)` for feedback.
 - **Kanban Board**: Integrated into the secondary tab for status management.
+- **Real-Time Updates**: Uses Socket.io. Notifications for task actions (create, delete, etc.) are broadcasted to all users.
 
 ## Common Pitfalls
 
