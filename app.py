@@ -139,6 +139,120 @@ class Subtask(db.Model):
             'completed': self.completed
         }
 
+class Tag(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    name = db.Column(db.String(50), nullable=False)
+    color = db.Column(db.String(7), default='#667eea')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {'id': self.id, 'name': self.name, 'color': self.color}
+
+task_tags = db.Table('task_tags', 
+    db.Column('task_id', db.Integer, db.ForeignKey('task.id'), primary_key=True),
+    db.Column('tag_id', db.Integer, db.ForeignKey('tag.id'), primary_key=True)
+)
+
+class SavedFilter(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+    filters = db.Column(db.JSON, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {'id': self.id, 'name': self.name, 'filters': self.filters}
+
+class ActivityLog(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    task_id = db.Column(db.Integer, db.ForeignKey('task.id'))
+    action = db.Column(db.String(50), nullable=False)  # created, updated, completed, deleted, commented
+    details = db.Column(db.JSON)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'task_id': self.task_id,
+            'action': self.action,
+            'details': self.details,
+            'created_at': self.created_at.isoformat()
+        }
+
+class RecurringTask(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    task_id = db.Column(db.Integer, db.ForeignKey('task.id'), nullable=False)
+    frequency = db.Column(db.String(20), nullable=False)  # daily, weekly, monthly
+    interval = db.Column(db.Integer, default=1)
+    end_date = db.Column(db.String(20))
+    last_generated = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'task_id': self.task_id,
+            'frequency': self.frequency,
+            'interval': self.interval,
+            'end_date': self.end_date
+        }
+
+class TaskTemplate(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    name = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.String(500))
+    template_data = db.Column(db.JSON, nullable=False)  # stores title, priority, project, etc
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'description': self.description,
+            'template_data': self.template_data
+        }
+
+class TaskDependency(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    task_id = db.Column(db.Integer, db.ForeignKey('task.id'), nullable=False)
+    depends_on_task_id = db.Column(db.Integer, db.ForeignKey('task.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'task_id': self.task_id,
+            'depends_on_task_id': self.depends_on_task_id
+        }
+
+class CustomField(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    task_id = db.Column(db.Integer, db.ForeignKey('task.id'), nullable=False)
+    field_name = db.Column(db.String(100), nullable=False)
+    field_value = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'field_name': self.field_name,
+            'field_value': self.field_value
+        }
+
+Task.tags = db.relationship('Tag', secondary=task_tags, lazy='dynamic')
+Task.dependencies = db.relationship('TaskDependency', 
+    foreign_keys='TaskDependency.task_id',
+    backref='task',
+    cascade='all, delete-orphan',
+    lazy=True
+)
+Task.custom_fields = db.relationship('CustomField', backref='task', cascade='all, delete-orphan', lazy=True)
+
 with app.app_context():
     db.create_all()
 
@@ -198,7 +312,6 @@ def get_current_user():
     return jsonify(user.to_dict())
 
 @app.route('/users', methods=['GET'])
-@login_required
 @login_required
 def get_users():
     user_id = session.get('user_id')
@@ -310,6 +423,7 @@ def complete_task(task_id):
     return jsonify(task.to_dict())
 
 @app.route('/tasks/<int:task_id>/comments', methods=['POST'])
+@login_required
 def add_comment(task_id):
     task = Task.query.get(task_id)
     if not task:
@@ -376,8 +490,8 @@ def delete_subtask(subtask_id):
     db.session.commit()
     return jsonify({"message": "Subtask deleted"}), 200
 
-@login_required
 @app.route('/tasks/filter', methods=['GET'])
+@login_required
 def filter_tasks():
     query = Task.query
 
@@ -399,6 +513,7 @@ def filter_tasks():
     return jsonify({"tasks": [t.to_dict() for t in tasks]})
 
 @app.route('/tasks/by-project', methods=['GET'])
+@login_required
 def tasks_by_project():
     tasks = Task.query.all()
     projects = {}
@@ -408,6 +523,350 @@ def tasks_by_project():
             projects[proj] = []
         projects[proj].append(task.to_dict())
     return jsonify(projects)
+
+# Stats & Dashboard
+@app.route('/stats/dashboard', methods=['GET'])
+@login_required
+def get_dashboard_stats():
+    user_id = session.get('user_id')
+    user = User.query.get(user_id)
+    
+    if user.role == 'admin':
+        tasks = Task.query.all()
+    else:
+        tasks = Task.query.filter_by(assigned_to=user.username).all()
+    
+    total = len(tasks)
+    completed = len([t for t in tasks if t.completed])
+    pending = total - completed
+    overdue = len([t for t in tasks if t.due_date and not t.completed and t.due_date < str(datetime.utcnow().date())])
+    
+    by_priority = {
+        'high': len([t for t in tasks if t.priority == 'high']),
+        'medium': len([t for t in tasks if t.priority == 'medium']),
+        'low': len([t for t in tasks if t.priority == 'low'])
+    }
+    
+    by_project = {}
+    for task in tasks:
+        proj = task.project
+        if proj not in by_project:
+            by_project[proj] = {'total': 0, 'completed': 0}
+        by_project[proj]['total'] += 1
+        if task.completed:
+            by_project[proj]['completed'] += 1
+    
+    return jsonify({
+        'total': total,
+        'completed': completed,
+        'pending': pending,
+        'overdue': overdue,
+        'completion_rate': round((completed / total * 100) if total > 0 else 0, 1),
+        'by_priority': by_priority,
+        'by_project': by_project
+    })
+
+# Search
+@app.route('/tasks/search', methods=['GET'])
+@login_required
+def search_tasks():
+    user_id = session.get('user_id')
+    user = User.query.get(user_id)
+    query = request.args.get('q', '')
+    
+    if user.role == 'admin':
+        tasks = Task.query.filter(Task.title.ilike(f'%{query}%') | Task.notes.ilike(f'%{query}%')).all()
+    else:
+        tasks = Task.query.filter_by(assigned_to=user.username).filter(
+            (Task.title.ilike(f'%{query}%')) | (Task.notes.ilike(f'%{query}%'))
+        ).all()
+    
+    return jsonify({'tasks': [t.to_dict() for t in tasks]})
+
+# Tags
+@app.route('/tags', methods=['GET', 'POST'])
+@login_required
+def manage_tags():
+    user_id = session.get('user_id')
+    
+    if request.method == 'GET':
+        tags = Tag.query.filter_by(user_id=user_id).all()
+        return jsonify({'tags': [t.to_dict() for t in tags]})
+    
+    data = request.get_json()
+    tag = Tag(user_id=user_id, name=data.get('name'), color=data.get('color', '#667eea'))
+    db.session.add(tag)
+    db.session.commit()
+    return jsonify(tag.to_dict()), 201
+
+@app.route('/tags/<int:tag_id>', methods=['DELETE'])
+@login_required
+def delete_tag(tag_id):
+    tag = Tag.query.get(tag_id)
+    if not tag or tag.user_id != session.get('user_id'):
+        return jsonify({"error": "Not found"}), 404
+    db.session.delete(tag)
+    db.session.commit()
+    return jsonify({"message": "Deleted"}), 200
+
+@app.route('/tasks/<int:task_id>/tags/<int:tag_id>', methods=['POST', 'DELETE'])
+@login_required
+def manage_task_tags(task_id, tag_id):
+    task = Task.query.get(task_id)
+    tag = Tag.query.get(tag_id)
+    if not task or not tag:
+        return jsonify({"error": "Not found"}), 404
+    
+    if request.method == 'POST':
+        if tag not in task.tags:
+            task.tags.append(tag)
+    else:
+        if tag in task.tags:
+            task.tags.remove(tag)
+    
+    db.session.commit()
+    return jsonify(task.to_dict())
+
+# Saved Filters
+@app.route('/filters', methods=['GET', 'POST'])
+@login_required
+def manage_filters():
+    user_id = session.get('user_id')
+    
+    if request.method == 'GET':
+        filters = SavedFilter.query.filter_by(user_id=user_id).all()
+        return jsonify({'filters': [f.to_dict() for f in filters]})
+    
+    data = request.get_json()
+    filter_obj = SavedFilter(user_id=user_id, name=data.get('name'), filters=data.get('filters'))
+    db.session.add(filter_obj)
+    db.session.commit()
+    return jsonify(filter_obj.to_dict()), 201
+
+@app.route('/filters/<int:filter_id>', methods=['DELETE'])
+@login_required
+def delete_filter(filter_id):
+    filter_obj = SavedFilter.query.get(filter_id)
+    if not filter_obj or filter_obj.user_id != session.get('user_id'):
+        return jsonify({"error": "Not found"}), 404
+    db.session.delete(filter_obj)
+    db.session.commit()
+    return jsonify({"message": "Deleted"}), 200
+
+# Activity Log
+@app.route('/activity', methods=['GET'])
+@login_required
+def get_activity_log():
+    limit = request.args.get('limit', 50, type=int)
+    activity = ActivityLog.query.order_by(ActivityLog.created_at.desc()).limit(limit).all()
+    return jsonify({'activity': [a.to_dict() for a in activity]})
+
+# Templates
+@app.route('/templates', methods=['GET', 'POST'])
+@login_required
+def manage_templates():
+    user_id = session.get('user_id')
+    
+    if request.method == 'GET':
+        templates = TaskTemplate.query.filter_by(user_id=user_id).all()
+        return jsonify({'templates': [t.to_dict() for t in templates]})
+    
+    data = request.get_json()
+    template = TaskTemplate(
+        user_id=user_id,
+        name=data.get('name'),
+        description=data.get('description'),
+        template_data=data.get('template_data')
+    )
+    db.session.add(template)
+    db.session.commit()
+    return jsonify(template.to_dict()), 201
+
+@app.route('/templates/<int:template_id>', methods=['DELETE'])
+@login_required
+def delete_template(template_id):
+    template = TaskTemplate.query.get(template_id)
+    if not template or template.user_id != session.get('user_id'):
+        return jsonify({"error": "Not found"}), 404
+    db.session.delete(template)
+    db.session.commit()
+    return jsonify({"message": "Deleted"}), 200
+
+@app.route('/templates/<int:template_id>/use', methods=['POST'])
+@login_required
+def use_template(template_id):
+    user_id = session.get('user_id')
+    user = User.query.get(user_id)
+    
+    if user.role != 'admin':
+        return jsonify({"error": "Only admins can create tasks"}), 403
+    
+    template = TaskTemplate.query.get(template_id)
+    if not template:
+        return jsonify({"error": "Template not found"}), 404
+    
+    data = template.template_data
+    task = Task(
+        user_id=user_id,
+        title=data.get('title'),
+        assigned_to=data.get('assigned_to', 'Unassigned'),
+        priority=data.get('priority', 'medium'),
+        project=data.get('project', 'General'),
+        notes=data.get('notes', '')
+    )
+    db.session.add(task)
+    db.session.commit()
+    return jsonify(task.to_dict()), 201
+
+# Task Dependencies
+@app.route('/tasks/<int:task_id>/dependencies', methods=['GET', 'POST'])
+@login_required
+def manage_dependencies(task_id):
+    task = Task.query.get(task_id)
+    if not task:
+        return jsonify({"error": "Task not found"}), 404
+    
+    if request.method == 'GET':
+        deps = TaskDependency.query.filter_by(task_id=task_id).all()
+        return jsonify({'dependencies': [d.to_dict() for d in deps]})
+    
+    data = request.get_json()
+    dep = TaskDependency(task_id=task_id, depends_on_task_id=data.get('depends_on_task_id'))
+    db.session.add(dep)
+    db.session.commit()
+    return jsonify(dep.to_dict()), 201
+
+@app.route('/dependencies/<int:dep_id>', methods=['DELETE'])
+@login_required
+def delete_dependency(dep_id):
+    dep = TaskDependency.query.get(dep_id)
+    if not dep:
+        return jsonify({"error": "Not found"}), 404
+    db.session.delete(dep)
+    db.session.commit()
+    return jsonify({"message": "Deleted"}), 200
+
+# Custom Fields
+@app.route('/tasks/<int:task_id>/fields', methods=['POST'])
+@login_required
+def add_custom_field(task_id):
+    task = Task.query.get(task_id)
+    if not task:
+        return jsonify({"error": "Task not found"}), 404
+    
+    data = request.get_json()
+    field = CustomField(
+        user_id=session.get('user_id'),
+        task_id=task_id,
+        field_name=data.get('field_name'),
+        field_value=data.get('field_value')
+    )
+    db.session.add(field)
+    db.session.commit()
+    return jsonify(field.to_dict()), 201
+
+# Bulk Operations
+@app.route('/tasks/bulk/complete', methods=['PUT'])
+@login_required
+def bulk_complete_tasks():
+    user_id = session.get('user_id')
+    user = User.query.get(user_id)
+    
+    if user.role != 'admin':
+        return jsonify({"error": "Only admins can bulk update"}), 403
+    
+    data = request.get_json()
+    task_ids = data.get('task_ids', [])
+    
+    for task_id in task_ids:
+        task = Task.query.get(task_id)
+        if task:
+            task.completed = True
+    
+    db.session.commit()
+    return jsonify({"message": f"Completed {len(task_ids)} tasks"}), 200
+
+@app.route('/tasks/bulk/delete', methods=['DELETE'])
+@login_required
+def bulk_delete_tasks():
+    user_id = session.get('user_id')
+    user = User.query.get(user_id)
+    
+    if user.role != 'admin':
+        return jsonify({"error": "Only admins can bulk delete"}), 403
+    
+    data = request.get_json()
+    task_ids = data.get('task_ids', [])
+    
+    count = 0
+    for task_id in task_ids:
+        task = Task.query.get(task_id)
+        if task:
+            db.session.delete(task)
+            count += 1
+    
+    db.session.commit()
+    return jsonify({"message": f"Deleted {count} tasks"}), 200
+
+@app.route('/tasks/bulk/update', methods=['PUT'])
+@login_required
+def bulk_update_tasks():
+    user_id = session.get('user_id')
+    user = User.query.get(user_id)
+    
+    if user.role != 'admin':
+        return jsonify({"error": "Only admins can bulk update"}), 403
+    
+    data = request.get_json()
+    task_ids = data.get('task_ids', [])
+    updates = data.get('updates', {})
+    
+    for task_id in task_ids:
+        task = Task.query.get(task_id)
+        if task:
+            for key, value in updates.items():
+                if key != 'id' and key != 'user_id' and hasattr(task, key):
+                    setattr(task, key, value)
+    
+    db.session.commit()
+    return jsonify({"message": f"Updated {len(task_ids)} tasks"}), 200
+
+# Export
+@app.route('/tasks/export/csv', methods=['GET'])
+@login_required
+def export_csv():
+    import csv
+    from io import StringIO
+    
+    user_id = session.get('user_id')
+    user = User.query.get(user_id)
+    
+    if user.role == 'admin':
+        tasks = Task.query.all()
+    else:
+        tasks = Task.query.filter_by(assigned_to=user.username).all()
+    
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['ID', 'Title', 'Priority', 'Project', 'Assigned To', 'Due Date', 'Status', 'Notes'])
+    
+    for task in tasks:
+        writer.writerow([
+            task.id,
+            task.title,
+            task.priority,
+            task.project,
+            task.assigned_to,
+            task.due_date,
+            'Completed' if task.completed else 'Pending',
+            task.notes
+        ])
+    
+    response_data = output.getvalue()
+    return response_data, 200, {
+        'Content-Type': 'text/csv',
+        'Content-Disposition': 'attachment; filename=tasks.csv'
+    }
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

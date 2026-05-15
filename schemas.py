@@ -20,7 +20,7 @@ class TaskSchema(Schema):
 
 class CommentSchema(Schema):
     id = fields.Int()
-    author = fields.Str(required=False, default='Anonymous')
+    author = fields.Str(required=False, load_default='Anonymous')
     text = fields.Str(required=True)
     created_at = fields.DateTime(dump_only=True)
 
