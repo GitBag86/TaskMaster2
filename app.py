@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify, send_file, session
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
 from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
@@ -26,7 +27,7 @@ def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'user_id' not in session:
-            return jsonify({"error": "Not logged in"}), 401
+            return jsonify({"error": "Nie jesteś zalogowany"}), 401
         return f(*args, **kwargs)
     return decorated_function
 
@@ -37,10 +38,10 @@ def validate_user_role(allowed_roles=None):
         def decorated_function(*args, **kwargs):
             user_id = session.get('user_id')
             if not user_id:
-                return jsonify({"error": "Not logged in"}), 401
+                return jsonify({"error": "Nie jesteś zalogowany"}), 401
             user = User.query.get(user_id)
             if user.role not in allowed_roles:
-                return jsonify({"error": "Insufficient permissions"}), 403
+                return jsonify({"error": "Brak uprawnień"}), 403
             return f(*args, **kwargs)
         return decorated_function
     return decorator
@@ -62,6 +63,7 @@ logger.info("App initialized")
 def log_request():
     logger.info(f"Request: {request.method} {request.path}")
 db = SQLAlchemy(app)
+migrate = Migrate(app, db)
 
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -85,12 +87,13 @@ class Task(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     title = db.Column(db.String(200), nullable=False)
-    assigned_to = db.Column(db.String(100), default='Unassigned')
+    assigned_to = db.Column(db.String(100), default='Nieprzypisane')
     priority = db.Column(db.String(20), default='medium')
-    project = db.Column(db.String(100), default='General')
+    project = db.Column(db.String(100), default='Ogólny')
     due_date = db.Column(db.String(20), default='')
     notes = db.Column(db.Text, default='')
     completed = db.Column(db.Boolean, default=False)
+    status = db.Column(db.String(20), default='todo') # todo, in_progress, done
     comments = db.relationship('Comment', backref='task', lazy=True, cascade='all, delete-orphan')
     subtasks = db.relationship('Subtask', backref='task', lazy=True, cascade='all, delete-orphan')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -105,6 +108,7 @@ class Task(db.Model):
             'due_date': self.due_date,
             'notes': self.notes,
             'completed': self.completed,
+            'status': self.status,
             'comments': [c.to_dict() for c in self.comments],
             'subtasks': [s.to_dict() for s in self.subtasks],
             'created_at': self.created_at.isoformat()
@@ -113,7 +117,7 @@ class Task(db.Model):
 class Comment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     task_id = db.Column(db.Integer, db.ForeignKey('task.id'), nullable=False)
-    author = db.Column(db.String(100), default='Anonymous')
+    author = db.Column(db.String(100), default='Anonimowy')
     text = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -260,6 +264,14 @@ with app.app_context():
 def index():
     return send_file('index.html')
 
+@app.route('/manifest.json')
+def manifest():
+    return send_file('manifest.json')
+
+@app.route('/sw.js')
+def sw():
+    return send_file('sw.js')
+
 @app.route('/auth/signup', methods=['POST'])
 def signup():
     data = request.get_json()
@@ -267,10 +279,10 @@ def signup():
     password = data.get('password')
 
     if not username or not password:
-        return jsonify({"error": "Username and password required"}), 400
+        return jsonify({"error": "Nazwa użytkownika i hasło są wymagane"}), 400
 
     if User.query.filter_by(username=username).first():
-        return jsonify({"error": "User already exists"}), 400
+        return jsonify({"error": "Użytkownik już istnieje"}), 400
 
     is_first_user = User.query.first() is None
     user = User(username=username, email=data.get('email', ''), role='admin' if is_first_user else 'user')
@@ -279,7 +291,7 @@ def signup():
     db.session.commit()
 
     session['user_id'] = user.id
-    return jsonify({"message": "Signup successful", "user": user.to_dict()}), 201
+    return jsonify({"message": "Rejestracja pomyślna", "user": user.to_dict()}), 201
 
 @app.route('/auth/login', methods=['POST'])
 def login():
@@ -289,25 +301,25 @@ def login():
 
     user = User.query.filter_by(username=username).first()
     if not user or not user.check_password(password):
-        return jsonify({"error": "Invalid credentials"}), 401
+        return jsonify({"error": "Błędne dane logowania"}), 401
 
     session['user_id'] = user.id
-    return jsonify({"message": "Login successful", "user": user.to_dict()})
+    return jsonify({"message": "Logowanie pomyślne", "user": user.to_dict()})
 
 @app.route('/auth/logout', methods=['POST'])
 def logout():
     session.pop('user_id', None)
-    return jsonify({"message": "Logged out"})
+    return jsonify({"message": "Wylogowano"})
 
 @app.route('/auth/me', methods=['GET'])
 def get_current_user():
     user_id = session.get('user_id')
     if not user_id:
-        return jsonify({"error": "Not logged in"}), 401
+        return jsonify({"error": "Nie jesteś zalogowany"}), 401
 
     user = User.query.get(user_id)
     if not user:
-        return jsonify({"error": "User not found"}), 404
+        return jsonify({"error": "Użytkownik nie znaleziony"}), 404
 
     return jsonify(user.to_dict())
 
@@ -315,13 +327,11 @@ def get_current_user():
 @login_required
 def get_users():
     user_id = session.get('user_id')
-    if not user_id:
-        return jsonify({"error": "Not logged in"}), 401
-
     user = User.query.get(user_id)
+    
     if user.role != 'admin':
-        return jsonify({"error": "Only admins can view users"}), 403
-
+        return jsonify({"error": "Tylko administrator może przeglądać użytkowników"}), 403
+    
     users = User.query.all()
     return jsonify({"users": [u.to_dict() for u in users]})
 
@@ -329,9 +339,6 @@ def get_users():
 @login_required
 def get_tasks():
     user_id = session.get('user_id')
-    if not user_id:
-        return jsonify({"error": "Not logged in"}), 401
-
     user = User.query.get(user_id)
 
     if user.role == 'admin':
@@ -342,14 +349,13 @@ def get_tasks():
     return jsonify({"tasks": [t.to_dict() for t in tasks]})
 
 @app.route('/tasks', methods=['POST'])
+@login_required
 def create_task():
     user_id = session.get('user_id')
-    if not user_id:
-        return jsonify({"error": "Not logged in"}), 401
-
     user = User.query.get(user_id)
+    
     if user.role != 'admin':
-        return jsonify({"error": "Only admins can create tasks"}), 403
+        return jsonify({"error": "Tylko administrator może tworzyć zadania"}), 403
 
     data = request.get_json()
     task = Task(
@@ -773,7 +779,7 @@ def bulk_complete_tasks():
     user = User.query.get(user_id)
     
     if user.role != 'admin':
-        return jsonify({"error": "Only admins can bulk update"}), 403
+        return jsonify({"error": "Tylko administrator może edytować masowo"}), 403
     
     data = request.get_json()
     task_ids = data.get('task_ids', [])
@@ -784,7 +790,7 @@ def bulk_complete_tasks():
             task.completed = True
     
     db.session.commit()
-    return jsonify({"message": f"Completed {len(task_ids)} tasks"}), 200
+    return jsonify({"message": f"Zakończono {len(task_ids)} zadań"}), 200
 
 @app.route('/tasks/bulk/delete', methods=['DELETE'])
 @login_required
@@ -793,7 +799,7 @@ def bulk_delete_tasks():
     user = User.query.get(user_id)
     
     if user.role != 'admin':
-        return jsonify({"error": "Only admins can bulk delete"}), 403
+        return jsonify({"error": "Tylko administrator może usuwać masowo"}), 403
     
     data = request.get_json()
     task_ids = data.get('task_ids', [])
@@ -806,7 +812,7 @@ def bulk_delete_tasks():
             count += 1
     
     db.session.commit()
-    return jsonify({"message": f"Deleted {count} tasks"}), 200
+    return jsonify({"message": f"Usunięto {count} zadań"}), 200
 
 @app.route('/tasks/bulk/update', methods=['PUT'])
 @login_required
@@ -815,7 +821,7 @@ def bulk_update_tasks():
     user = User.query.get(user_id)
     
     if user.role != 'admin':
-        return jsonify({"error": "Only admins can bulk update"}), 403
+        return jsonify({"error": "Tylko administrator może edytować masowo"}), 403
     
     data = request.get_json()
     task_ids = data.get('task_ids', [])

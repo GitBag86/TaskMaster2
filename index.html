@@ -3,7 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Task Management Pro</title>
+    <title>Pro Zarządzanie Zadaniami</title>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#667eea">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root {
@@ -647,34 +649,92 @@
                 grid-template-columns: 1fr;
             }
         }
+
+        /* Toast Notifications */
+        .toast-container {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .toast {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            padding: 15px 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            border-left: 4px solid var(--accent);
+            transform: translateX(120%);
+            transition: transform 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .toast.show {
+            transform: translateX(0);
+        }
+        .toast.success { border-left-color: var(--success); }
+        .toast.error { border-left-color: var(--danger); }
+        .toast.warning { border-left-color: var(--warning); }
+
+        /* Kanban Board */
+        .kanban-board {
+            display: flex;
+            gap: 20px;
+            overflow-x: auto;
+            padding-bottom: 20px;
+        }
+        .kanban-column {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            min-width: 300px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .kanban-column-header {
+            font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 10px;
+            border-bottom: 2px solid var(--border-color);
+        }
     </style>
 </head>
 <body>
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast-container"></div>
+
     <!-- Auth Section -->
     <div id="authSection" class="auth-container">
         <div class="auth-form">
-            <h1 id="authTitle">Login</h1>
+            <h1 id="authTitle">Logowanie</h1>
             <div id="errorMsg" class="error" style="display: none;"></div>
             
             <form id="authForm">
                 <div class="form-group">
-                    <label for="username">Username</label>
+                    <label for="username">Nazwa użytkownika</label>
                     <input type="text" id="username" name="username" required>
                 </div>
                 <div class="form-group">
-                    <label for="password">Password</label>
+                    <label for="password">Hasło</label>
                     <input type="password" id="password" name="password" required>
                 </div>
                 <div class="form-group" id="emailGroup" style="display: none;">
-                    <label for="email">Email (optional)</label>
+                    <label for="email">E-mail (opcjonalnie)</label>
                     <input type="email" id="email" name="email">
                 </div>
-                <button type="submit" class="button" style="width: 100%; margin-top: 10px;" id="authBtn">Login</button>
+                <button type="submit" class="button" style="width: 100%; margin-top: 10px;" id="authBtn">Zaloguj się</button>
             </form>
 
             <div style="text-align: center; margin-top: 20px; color: var(--text-secondary);">
-                <span id="toggleText">Don't have an account? </span>
-                <a id="toggleAuth" onclick="toggleAuthMode()" style="color: var(--accent); cursor: pointer; font-weight: 600;">Sign up</a>
+                <span id="toggleText">Nie masz konta? </span>
+                <a id="toggleAuth" onclick="toggleAuthMode()" style="color: var(--accent); cursor: pointer; font-weight: 600;">Zarejestruj się</a>
             </div>
         </div>
     </div>
@@ -684,21 +744,22 @@
         <div class="container">
             <div class="header">
                 <div class="header-left">
-                    <h1>📋 Task Management Pro</h1>
-                    <input type="text" id="searchBox" class="search-box" placeholder="Search tasks... (Ctrl+K)">
+                    <h1>📋 Zadania Pro</h1>
+                    <input type="text" id="searchBox" class="search-box" placeholder="Szukaj zadań... (Ctrl+K)">
                 </div>
                 <div class="header-right">
                     <span id="userDisplay"></span>
-                    <button class="theme-toggle" onclick="toggleDarkMode()">🌙 Dark</button>
-                    <button class="logout-btn" onclick="logout()">Logout</button>
+                    <button class="theme-toggle" onclick="toggleDarkMode()">🌙 Tryb</button>
+                    <button class="logout-btn" onclick="logout()">Wyloguj</button>
                 </div>
             </div>
 
             <div class="tabs">
-                <button class="tab active" onclick="switchTab('tasks')">📋 Tasks</button>
-                <button class="tab" onclick="switchTab('dashboard')">📊 Dashboard</button>
-                <button class="tab" onclick="switchTab('calendar')">📅 Calendar</button>
-                <button class="tab" onclick="switchTab('activity')">📝 Activity</button>
+                <button class="tab active" onclick="switchTab('tasks')">📋 Zadania</button>
+                <button class="tab" onclick="switchTab('kanban')">📋 Kanban</button>
+                <button class="tab" onclick="switchTab('dashboard')">📊 Statystyki</button>
+                <button class="tab" onclick="switchTab('calendar')">📅 Kalendarz</button>
+                <button class="tab" onclick="switchTab('activity')">📝 Aktywność</button>
             </div>
 
             <!-- Tasks Tab -->
@@ -706,62 +767,62 @@
                 <div class="main-layout">
                     <div class="sidebar">
                         <div class="sidebar-section">
-                            <h3>Filters</h3>
+                            <h3>Filtry</h3>
                             <div class="filter-group">
-                                <label>Priority</label>
+                                <label>Priorytet</label>
                                 <select id="filterPriority" onchange="applyFilters()">
-                                    <option value="">All</option>
-                                    <option value="low">Low</option>
-                                    <option value="medium">Medium</option>
-                                    <option value="high">High</option>
+                                    <option value="">Wszystkie</option>
+                                    <option value="low">Niski</option>
+                                    <option value="medium">Średni</option>
+                                    <option value="high">Wysoki</option>
                                 </select>
                             </div>
                             <div class="filter-group">
-                                <label>Project</label>
+                                <label>Projekt</label>
                                 <select id="filterProject" onchange="applyFilters()">
-                                    <option value="">All Projects</option>
+                                    <option value="">Wszystkie projekty</option>
                                 </select>
                             </div>
                             <div class="filter-group">
                                 <label>Status</label>
                                 <select id="filterCompleted" onchange="applyFilters()">
-                                    <option value="">All</option>
-                                    <option value="false">Pending</option>
-                                    <option value="true">Completed</option>
+                                    <option value="">Wszystkie</option>
+                                    <option value="false">Oczekujące</option>
+                                    <option value="true">Zakończone</option>
                                 </select>
                             </div>
                         </div>
 
                         <div class="sidebar-section">
-                            <h3>Saved Filters</h3>
+                            <h3>Zapisane filtry</h3>
                             <div id="savedFilters"></div>
-                            <button class="button button-sm" onclick="openSaveFilter()" style="width: 100%; margin-top: 10px;">+ Save Current</button>
+                            <button class="button button-sm" onclick="openSaveFilter()" style="width: 100%; margin-top: 10px;">+ Zapisz filtr</button>
                         </div>
 
                         <div class="sidebar-section">
-                            <h3>Tags</h3>
+                            <h3>Tagi</h3>
                             <div id="tagsList"></div>
-                            <button class="button button-sm" onclick="openCreateTag()" style="width: 100%; margin-top: 10px;">+ New Tag</button>
+                            <button class="button button-sm" onclick="openCreateTag()" style="width: 100%; margin-top: 10px;">+ Nowy tag</button>
                         </div>
 
                         <div class="sidebar-section">
-                            <h3>Templates</h3>
+                            <h3>Szablony</h3>
                             <div id="templatesList"></div>
-                            <button class="button button-sm" onclick="openSaveTemplate()" style="width: 100%; margin-top: 10px;">+ Save as Template</button>
+                            <button class="button button-sm" onclick="openSaveTemplate()" style="width: 100%; margin-top: 10px;">+ Zapisz szablon</button>
                         </div>
 
                         <div class="sidebar-section shortcuts-help" id="shortcutsHelp">
-                            <h3>Keyboard Shortcuts</h3>
+                            <h3>Skróty klawiszowe</h3>
                             <div class="shortcut">
-                                <span>Search</span>
+                                <span>Szukaj</span>
                                 <span class="shortcut-key">Ctrl+K</span>
                             </div>
                             <div class="shortcut">
-                                <span>New Task</span>
+                                <span>Nowe zadanie</span>
                                 <span class="shortcut-key">Ctrl+N</span>
                             </div>
                             <div class="shortcut">
-                                <span>Toggle Sidebar</span>
+                                <span>Pasek boczny</span>
                                 <span class="shortcut-key">Ctrl+B</span>
                             </div>
                         </div>
@@ -769,21 +830,39 @@
 
                     <div class="content">
                         <div class="content-header">
-                            <h2>Tasks</h2>
+                            <h2>Zadania</h2>
                             <div>
-                                <button class="button button-success" onclick="openCreateTask()" id="createTaskBtn" style="display: none;">+ Create</button>
-                                <button class="button button-warning" id="bulkActionsBtn" onclick="showBulkActions()" style="display: none; margin-left: 10px;">Bulk Actions</button>
-                                <button class="button button-sm" onclick="exportTasks()" style="margin-left: 10px;">📥 Export CSV</button>
+                                <button class="button button-success" onclick="openCreateTask()" id="createTaskBtn" style="display: none;">+ Utwórz</button>
+                                <button class="button button-warning" id="bulkActionsBtn" onclick="showBulkActions()" style="display: none; margin-left: 10px;">Akcje masowe</button>
+                                <button class="button button-sm" onclick="exportTasks()" style="margin-left: 10px;">📥 Eksport CSV</button>
                             </div>
                         </div>
                         <div id="tasksList" class="tasks-grid">
-                            <div class="empty-state">Loading tasks...</div>
+                            <div class="empty-state">Ładowanie zadań...</div>
                         </div>
                     </div>
 
                     <div class="activity-panel">
-                        <h3>Recent Activity</h3>
+                        <h3>Ostatnia aktywność</h3>
                         <div id="activityFeed"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Kanban Tab -->
+            <div id="kanbanTab" class="tab-content">
+                <div class="kanban-board">
+                    <div class="kanban-column" id="kanban-todo" ondrop="drop(event)" ondragover="allowDrop(event)">
+                        <div class="kanban-column-header">Do zrobienia <span class="badge" id="count-todo">0</span></div>
+                        <div class="kanban-tasks"></div>
+                    </div>
+                    <div class="kanban-column" id="kanban-in_progress" ondrop="drop(event)" ondragover="allowDrop(event)">
+                        <div class="kanban-column-header">W toku <span class="badge" id="count-in_progress">0</span></div>
+                        <div class="kanban-tasks"></div>
+                    </div>
+                    <div class="kanban-column" id="kanban-done" ondrop="drop(event)" ondragover="allowDrop(event)">
+                        <div class="kanban-column-header">Zakończone <span class="badge" id="count-done">0</span></div>
+                        <div class="kanban-tasks"></div>
                     </div>
                 </div>
             </div>
@@ -805,9 +884,9 @@
             <div id="calendarTab" class="tab-content">
                 <div class="calendar">
                     <div class="calendar-header">
-                        <button class="button button-sm" onclick="prevMonth()">← Prev</button>
+                        <button class="button button-sm" onclick="prevMonth()">← Poprzedni</button>
                         <h2 id="monthDisplay"></h2>
-                        <button class="button button-sm" onclick="nextMonth()">Next →</button>
+                        <button class="button button-sm" onclick="nextMonth()">Następny →</button>
                     </div>
                     <div class="calendar-grid" id="calendarGrid"></div>
                 </div>
@@ -816,7 +895,7 @@
             <!-- Activity Tab -->
             <div id="activityTab" class="tab-content">
                 <div class="content">
-                    <h2>Activity Feed</h2>
+                    <h2>Historia aktywności</h2>
                     <div id="activityFeedFull" style="margin-top: 20px;"></div>
                 </div>
             </div>
@@ -835,37 +914,37 @@
     <div id="createTaskModal" class="modal">
         <div class="modal-content">
             <span class="modal-close" onclick="closeCreateTask()">&times;</span>
-            <h2>Create New Task</h2>
+            <h2>Utwórz nowe zadanie</h2>
             <form id="createTaskForm" style="margin-top: 20px;">
                 <div class="form-group">
-                    <label for="newTaskTitle">Title</label>
+                    <label for="newTaskTitle">Tytuł</label>
                     <input type="text" id="newTaskTitle" required>
                 </div>
                 <div class="form-group">
-                    <label for="newTaskAssignedTo">Assigned To</label>
+                    <label for="newTaskAssignedTo">Przypisane do</label>
                     <input type="text" id="newTaskAssignedTo">
                 </div>
                 <div class="form-group">
-                    <label for="newTaskPriority">Priority</label>
+                    <label for="newTaskPriority">Priorytet</label>
                     <select id="newTaskPriority">
-                        <option value="low">Low</option>
-                        <option value="medium" selected>Medium</option>
-                        <option value="high">High</option>
+                        <option value="low">Niski</option>
+                        <option value="medium" selected>Średni</option>
+                        <option value="high">Wysoki</option>
                     </select>
                 </div>
                 <div class="form-group">
-                    <label for="newTaskProject">Project</label>
-                    <input type="text" id="newTaskProject" value="General">
+                    <label for="newTaskProject">Projekt</label>
+                    <input type="text" id="newTaskProject" value="Ogólny">
                 </div>
                 <div class="form-group">
-                    <label for="newTaskDueDate">Due Date</label>
+                    <label for="newTaskDueDate">Termin</label>
                     <input type="date" id="newTaskDueDate">
                 </div>
                 <div class="form-group">
-                    <label for="newTaskNotes">Notes</label>
+                    <label for="newTaskNotes">Notatki</label>
                     <textarea id="newTaskNotes" rows="4"></textarea>
                 </div>
-                <button type="submit" class="button" style="width: 100%;">Create Task</button>
+                <button type="submit" class="button" style="width: 100%;">Utwórz zadanie</button>
             </form>
         </div>
     </div>
@@ -876,6 +955,31 @@
         let allTasks = [];
         let currentMonth = new Date();
         let selectedTasks = new Set();
+
+        // Toast Notifications
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            
+            // Icon based on type
+            let icon = 'ℹ️';
+            if (type === 'success') icon = '✅';
+            if (type === 'error') icon = '❌';
+            if (type === 'warning') icon = '⚠️';
+
+            toast.innerHTML = `<span>${icon}</span> <span>${message}</span>`;
+            container.appendChild(toast);
+
+            // Trigger reflow and show
+            setTimeout(() => toast.classList.add('show'), 10);
+
+            // Remove after 3s
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
 
         // Theme
         function toggleDarkMode() {
@@ -897,17 +1001,17 @@
             const toggleAuth = document.getElementById('toggleAuth');
 
             if (isSignupMode) {
-                authTitle.textContent = 'Sign Up';
-                authBtn.textContent = 'Sign Up';
+                authTitle.textContent = 'Zarejestruj się';
+                authBtn.textContent = 'Zarejestruj się';
                 emailGroup.style.display = 'block';
-                toggleText.textContent = 'Already have an account? ';
-                toggleAuth.textContent = 'Login';
+                toggleText.textContent = 'Masz już konto? ';
+                toggleAuth.textContent = 'Zaloguj się';
             } else {
-                authTitle.textContent = 'Login';
-                authBtn.textContent = 'Login';
+                authTitle.textContent = 'Logowanie';
+                authBtn.textContent = 'Zaloguj się';
                 emailGroup.style.display = 'none';
-                toggleText.textContent = "Don't have an account? ";
-                toggleAuth.textContent = 'Sign up';
+                toggleText.textContent = "Nie masz konta? ";
+                toggleAuth.textContent = 'Zarejestruj się';
             }
         }
 
@@ -937,7 +1041,7 @@
                     showApp();
                     loadAllData();
                 } else {
-                    errorMsg.textContent = result.error || 'Auth failed';
+                    errorMsg.textContent = result.error || 'Błąd autoryzacji';
                     errorMsg.style.display = 'block';
                 }
             } catch (error) {
@@ -957,7 +1061,8 @@
         function showApp() {
             document.getElementById('authSection').style.display = 'none';
             document.getElementById('appSection').style.display = 'block';
-            document.getElementById('userDisplay').textContent = `${currentUser.username} (${currentUser.role})`;
+            const role = currentUser.role === 'admin' ? 'Administrator' : 'Użytkownik';
+            document.getElementById('userDisplay').textContent = `${currentUser.username} (${role})`;
             document.getElementById('createTaskBtn').style.display = currentUser.role === 'admin' ? 'block' : 'none';
             document.getElementById('bulkActionsBtn').style.display = currentUser.role === 'admin' ? 'block' : 'none';
         }
@@ -969,9 +1074,76 @@
             event.target.classList.add('active');
             document.getElementById(tab + 'Tab').classList.add('active');
 
+            if (tab === 'kanban') renderKanban();
             if (tab === 'dashboard') loadDashboard();
             if (tab === 'calendar') loadCalendar();
             if (tab === 'activity') loadActivityFull();
+        }
+
+        // Kanban Board
+        function renderKanban() {
+            const columns = {
+                'todo': document.querySelector('#kanban-todo .kanban-tasks'),
+                'in_progress': document.querySelector('#kanban-in_progress .kanban-tasks'),
+                'done': document.querySelector('#kanban-done .kanban-tasks')
+            };
+
+            Object.values(columns).forEach(c => c.innerHTML = '');
+            const counts = { 'todo': 0, 'in_progress': 0, 'done': 0 };
+
+            allTasks.forEach(task => {
+                const status = task.status || (task.completed ? 'done' : 'todo');
+                if (columns[status]) {
+                    counts[status]++;
+                    const card = document.createElement('div');
+                    card.className = 'task-card';
+                    card.draggable = true;
+                    card.ondragstart = (e) => e.dataTransfer.setData('taskId', task.id);
+                    card.innerHTML = `
+                        <div class="task-title">${task.title}</div>
+                        <div class="task-meta">
+                            <span class="badge badge-${task.priority}">${task.priority === 'high' ? 'WYSOKI' : (task.priority === 'medium' ? 'ŚREDNI' : 'NISKI')}</span>
+                        </div>
+                    `;
+                    card.onclick = () => viewTask(task.id);
+                    columns[status].appendChild(card);
+                }
+            });
+
+            document.getElementById('count-todo').textContent = counts['todo'];
+            document.getElementById('count-in_progress').textContent = counts['in_progress'];
+            document.getElementById('count-done').textContent = counts['done'];
+        }
+
+        function allowDrop(ev) {
+            ev.preventDefault();
+        }
+
+        async function drop(ev) {
+            ev.preventDefault();
+            const taskId = ev.dataTransfer.getData('taskId');
+            const newStatus = ev.currentTarget.id.replace('kanban-', '');
+            
+            try {
+                // In a real app, we'd have a specific /tasks/id/status endpoint
+                // For now, let's use the toggle logic if it's 'done'
+                const task = allTasks.find(t => t.id == taskId);
+                if (!task) return;
+
+                const response = await fetch(`/tasks/${taskId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: newStatus, completed: newStatus === 'done' }),
+                    credentials: 'include'
+                });
+
+                if (response.ok) {
+                    showToast('Status zaktualizowany');
+                    loadTasks().then(() => renderKanban());
+                }
+            } catch (error) {
+                console.error('Błąd aktualizacji statusu:', error);
+            }
         }
 
         // Data Loading
@@ -1002,12 +1174,12 @@
                 const feed = document.getElementById('activityFeed');
                 feed.innerHTML = (result.activity || []).map(a => `
                     <div class="activity-item">
-                        <strong>${a.action}</strong> on task #${a.task_id}<br>
+                        <strong>${a.action}</strong> w zadaniu #${a.task_id}<br>
                         <small>${new Date(a.created_at).toLocaleDateString()}</small>
                     </div>
                 `).join('');
             } catch (error) {
-                console.error('Error loading activity:', error);
+                console.error('Błąd ładowania aktywności:', error);
             }
         }
 
@@ -1020,12 +1192,12 @@
                     <div class="filter-group">
                         <div style="display: flex; justify-content: space-between; align-items: center;">
                             <span onclick="applySavedFilter(${f.id})" style="cursor: pointer; flex: 1;">${f.name}</span>
-                            <button class="button button-sm button-danger" onclick="deleteSavedFilter(${f.id})">Delete</button>
+                            <button class="button button-sm button-danger" onclick="deleteSavedFilter(${f.id})">Usuń</button>
                         </div>
                     </div>
                 `).join('');
             } catch (error) {
-                console.error('Error loading filters:', error);
+                console.error('Błąd ładowania filtrów:', error);
             }
         }
 
@@ -1037,11 +1209,11 @@
                 tags.innerHTML = (result.tags || []).map(t => `
                     <div class="tag-item" onclick="filterByTag(${t.id})">
                         <span><span class="tag-color" style="background: ${t.color};"></span>${t.name}</span>
-                        <button class="button button-sm button-danger" onclick="event.stopPropagation(); deleteTag(${t.id})">Delete</button>
+                        <button class="button button-sm button-danger" onclick="event.stopPropagation(); deleteTag(${t.id})">Usuń</button>
                     </div>
                 `).join('');
             } catch (error) {
-                console.error('Error loading tags:', error);
+                console.error('Błąd ładowania tagów:', error);
             }
         }
 
@@ -1053,11 +1225,11 @@
                 templates.innerHTML = (result.templates || []).map(t => `
                     <div class="template-item">
                         <span onclick="useTemplate(${t.id})" style="cursor: pointer; flex: 1;">${t.name}</span>
-                        <button class="button button-sm button-danger" onclick="event.stopPropagation(); deleteTemplate(${t.id})">Delete</button>
+                        <button class="button button-sm button-danger" onclick="event.stopPropagation(); deleteTemplate(${t.id})">Usuń</button>
                     </div>
                 `).join('');
             } catch (error) {
-                console.error('Error loading templates:', error);
+                console.error('Błąd ładowania szablonów:', error);
             }
         }
 
@@ -1065,7 +1237,7 @@
         function renderTasks(tasks) {
             const tasksList = document.getElementById('tasksList');
             if (!tasks.length) {
-                tasksList.innerHTML = '<div class="empty-state">No tasks found</div>';
+                tasksList.innerHTML = '<div class="empty-state">Nie znaleziono zadań</div>';
                 return;
             }
 
@@ -1074,7 +1246,7 @@
                     <input type="checkbox" data-task-id="${task.id}" onchange="toggleTaskSelection(${task.id})">
                     <div class="task-title" onclick="viewTask(${task.id})">${task.title}</div>
                     <div class="task-meta">
-                        <span class="badge badge-${task.priority}">${task.priority.toUpperCase()}</span>
+                        <span class="badge badge-${task.priority}">${task.priority === 'high' ? 'WYSOKI' : (task.priority === 'medium' ? 'ŚREDNI' : 'NISKI')}</span>
                         <span class="badge" style="background: #e3f2fd; color: #1976d2;">${task.project}</span>
                         <span class="badge" style="background: #f0f0f0; color: #666;">👤 ${task.assigned_to}</span>
                         ${task.due_date ? `<span class="badge" style="background: #fce4ec; color: #880e4f;">📅 ${task.due_date}</span>` : ''}
@@ -1088,7 +1260,7 @@
             const projects = [...new Set(allTasks.map(t => t.project))];
             const select = document.getElementById('filterProject');
             const currentValue = select.value;
-            select.innerHTML = '<option value="">All Projects</option>' + 
+            select.innerHTML = '<option value="">Wszystkie projekty</option>' + 
                 projects.map(p => `<option value="${p}">${p}</option>`).join('');
             select.value = currentValue;
         }
@@ -1145,21 +1317,21 @@
             taskDetail.innerHTML = `
                 <h2>${task.title}</h2>
                 <div class="task-meta" style="margin: 15px 0;">
-                    <span class="badge badge-${task.priority}">${task.priority.toUpperCase()}</span>
+                    <span class="badge badge-${task.priority}">${task.priority === 'high' ? 'WYSOKI' : (task.priority === 'medium' ? 'ŚREDNI' : 'NISKI')}</span>
                     <span class="badge" style="background: #e3f2fd; color: #1976d2;">${task.project}</span>
                 </div>
-                <p><strong>Due Date:</strong> ${task.due_date || 'Not set'}</p>
-                <p><strong>Assigned To:</strong> ${task.assigned_to}</p>
-                <p><strong>Notes:</strong> ${task.notes || 'No notes'}</p>
-                <p><strong>Status:</strong> ${task.completed ? '✓ Completed' : 'Pending'}</p>
+                <p><strong>Termin:</strong> ${task.due_date || 'Nie ustawiono'}</p>
+                <p><strong>Przypisane do:</strong> ${task.assigned_to}</p>
+                <p><strong>Notatki:</strong> ${task.notes || 'Brak notatek'}</p>
+                <p><strong>Status:</strong> ${task.completed ? '✓ Zakończone' : 'W toku'}</p>
                 ${currentUser.role === 'admin' ? `
                     <div style="margin-top: 15px; display: flex; gap: 10px;">
-                        <button class="button" onclick="completeTask(${task.id})">Mark Complete</button>
-                        <button class="button button-warning" onclick="editTask(${task.id})">Edit</button>
-                        <button class="button button-danger" onclick="deleteTask(${task.id})">Delete</button>
+                        <button class="button" onclick="completeTask(${task.id})">Oznacz jako zakończone</button>
+                        <button class="button button-warning" onclick="editTask(${task.id})">Edytuj</button>
+                        <button class="button button-danger" onclick="deleteTask(${task.id})">Usuń</button>
                     </div>
                 ` : `
-                    ${!task.completed ? `<button class="button" onclick="completeTask(${task.id})">Mark Complete</button>` : ''}
+                    ${!task.completed ? `<button class="button" onclick="completeTask(${task.id})">Oznacz jako zakończone</button>` : ''}
                 `}
             `;
             document.getElementById('taskModal').classList.add('active');
@@ -1178,15 +1350,16 @@
         }
 
         async function deleteTask(taskId) {
-            if (!confirm('Delete this task?')) return;
+            if (!confirm('Czy na pewno chcesz usunąć to zadanie?')) return;
             try {
                 const response = await fetch(`/tasks/${taskId}`, { method: 'DELETE', credentials: 'include' });
                 if (response.ok) {
+                    showToast('Zadanie usunięte');
                     loadTasks();
                     closeTaskModal();
                 }
             } catch (error) {
-                console.error('Error:', error);
+                console.error('Błąd:', error);
             }
         }
 
@@ -1200,10 +1373,10 @@
 
         function showBulkActions() {
             if (selectedTasks.size === 0) {
-                alert('Select tasks first');
+                showToast('Najpierw wybierz zadania', 'warning');
                 return;
             }
-            if (confirm(`Perform action on ${selectedTasks.size} tasks?`)) {
+            if (confirm(`Wykonaj akcję na ${selectedTasks.size} zadaniach?`)) {
                 // Show options
             }
         }
@@ -1255,23 +1428,23 @@
 
                 document.getElementById('statsGrid').innerHTML = `
                     <div class="stat-card">
-                        <div class="stat-label">Total Tasks</div>
+                        <div class="stat-label">Wszystkie zadania</div>
                         <div class="stat-value">${stats.total}</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-label">Completed</div>
+                        <div class="stat-label">Zakończone</div>
                         <div class="stat-value">${stats.completed}</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-label">Pending</div>
+                        <div class="stat-label">W toku</div>
                         <div class="stat-value">${stats.pending}</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-label">Overdue</div>
+                        <div class="stat-label">Zaległe</div>
                         <div class="stat-value" style="color: #f44336;">${stats.overdue}</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-label">Completion Rate</div>
+                        <div class="stat-label">Wskaźnik ukończenia</div>
                         <div class="stat-value">${stats.completion_rate}%</div>
                     </div>
                 `;
@@ -1282,7 +1455,7 @@
                     new Chart(priorityCtx, {
                         type: 'doughnut',
                         data: {
-                            labels: ['High', 'Medium', 'Low'],
+                            labels: ['Wysoki', 'Średni', 'Niski'],
                             datasets: [{
                                 data: [stats.by_priority.high, stats.by_priority.medium, stats.by_priority.low],
                                 backgroundColor: ['#f44336', '#ff9800', '#4CAF50']
@@ -1303,12 +1476,12 @@
                             labels: projects,
                             datasets: [
                                 {
-                                    label: 'Completed',
+                                    label: 'Zakończone',
                                     data: completed,
                                     backgroundColor: '#4CAF50'
                                 },
                                 {
-                                    label: 'Total',
+                                    label: 'Suma',
                                     data: total,
                                     backgroundColor: '#667eea'
                                 }
@@ -1334,7 +1507,7 @@
             const daysInMonth = lastDay.getDate();
             const startingDayOfWeek = firstDay.getDay();
 
-            document.getElementById('monthDisplay').textContent = currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+            document.getElementById('monthDisplay').textContent = currentMonth.toLocaleDateString('pl-PL', { month: 'long', year: 'numeric' });
 
             const calendar = document.getElementById('calendarGrid');
             calendar.innerHTML = '';
@@ -1353,7 +1526,7 @@
 
                 dayDiv.innerHTML = `
                     <div class="calendar-day-number">${day}</div>
-                    <div class="calendar-day-tasks">${dayTasks.length} tasks</div>
+                    <div class="calendar-day-tasks">${dayTasks.length} zadania</div>
                 `;
                 calendar.appendChild(dayDiv);
             }
@@ -1383,16 +1556,16 @@
         }
 
         // Stub functions for remaining features
-        function openCreateTag() { alert('Feature coming soon'); }
-        function openSaveFilter() { alert('Feature coming soon'); }
-        function openSaveTemplate() { alert('Feature coming soon'); }
-        function applySavedFilter() { alert('Feature coming soon'); }
-        function deleteSavedFilter() { alert('Feature coming soon'); }
-        function deleteTag() { alert('Feature coming soon'); }
-        function filterByTag() { alert('Feature coming soon'); }
-        function deleteTemplate() { alert('Feature coming soon'); }
-        function useTemplate() { alert('Feature coming soon'); }
-        function editTask() { alert('Feature coming soon'); }
+        function openCreateTag() { showToast('Funkcja dostępna wkrótce', 'info'); }
+        function openSaveFilter() { showToast('Funkcja dostępna wkrótce', 'info'); }
+        function openSaveTemplate() { showToast('Funkcja dostępna wkrótce', 'info'); }
+        function applySavedFilter() { showToast('Funkcja dostępna wkrótce', 'info'); }
+        function deleteSavedFilter() { showToast('Funkcja dostępna wkrótce', 'info'); }
+        function deleteTag() { showToast('Funkcja dostępna wkrótce', 'info'); }
+        function filterByTag() { showToast('Funkcja dostępna wkrótce', 'info'); }
+        function deleteTemplate() { showToast('Funkcja dostępna wkrótce', 'info'); }
+        function useTemplate() { showToast('Funkcja dostępna wkrótce', 'info'); }
+        function editTask() { showToast('Funkcja dostępna wkrótce', 'info'); }
 
         // Initialize
         window.addEventListener('load', () => {
