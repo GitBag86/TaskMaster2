@@ -1,17 +1,33 @@
+# Python
 .venv/
 __pycache__/
-instance/
-.git/
-.env
-.gitignore
 *.pyc
 *.pyo
+*.egg-info/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# IDE
 .vscode/
 .idea/
+
+# OS
 .DS_Store
 Thumbs.db
+
+# Secrets & env
+.env
+.gitignore
 cookies.txt
 *.log
+
+# Git
+.git/
+
+# Instance (DB)
+instance/
+
+# Frontend (built in container)
+frontend/node_modules/
+frontend/dist/

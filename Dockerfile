@@ -1,30 +1,30 @@
 # Multi-stage build for optimized image
 
-# Frontend build
+# Stage 1: Frontend build
 FROM node:20-alpine AS frontend-builder
 WORKDIR /app/frontend
-COPY frontend/package.json frontend/package-lock.json* ./
-RUN npm install
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
 COPY frontend/ .
 RUN npm run build
 
-# Python dependencies
+# Stage 2: Python dependencies
 FROM python:3.11-slim AS python-builder
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends gcc && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt .
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
-# Production image
+# Stage 3: Production image
 FROM python:3.11-slim
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/*
 
 COPY --from=python-builder /install /usr/local
-COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 COPY . .
+COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 RUN mkdir -p /app/instance && \
     adduser --disabled-password --gecos '' appuser && \

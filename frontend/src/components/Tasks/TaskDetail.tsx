@@ -6,12 +6,11 @@ import { useAuth } from '@/store/AuthContext'
 
 interface Props {
   task: Task;
-  onUpdate: () => void;
   onDelete: (id: number) => void;
   onComplete: (id: number) => void;
 }
 
-export default function TaskDetail({ task, onUpdate, onDelete, onComplete }: Props) {
+export default function TaskDetail({ task, onDelete, onComplete }: Props) {
   const [subtasks, setSubtasks] = useState(task.subtasks);
   const [newSubtask, setNewSubtask] = useState('');
   const [newComment, setNewComment] = useState('');
@@ -67,7 +66,7 @@ export default function TaskDetail({ task, onUpdate, onDelete, onComplete }: Pro
     <div className="p-6">
       <div className="mb-4 flex items-start justify-between">
         <h3 className="text-xl font-semibold text-gray-900 dark:text-white">{task.title}</h3>
-        <button onClick={onComplete} className={`btn btn-sm ${task.completed ? 'btn-secondary' : 'btn-primary'}`}>
+        <button onClick={() => onComplete(task.id)} className={`btn btn-sm ${task.completed ? 'btn-secondary' : 'btn-primary'}`}>
           {task.completed ? 'Przywróć' : 'Zakończ'}
         </button>
       </div>

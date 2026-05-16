@@ -1,9 +1,18 @@
 import { useState } from 'react'
 
+interface TaskFormData {
+  title: string;
+  assigned_to?: string;
+  priority?: string;
+  project?: string;
+  due_date?: string;
+  notes?: string;
+}
+
 interface Props {
-  onSubmit: (data: Record<string, string>) => void;
+  onSubmit: (data: TaskFormData) => void;
   onCancel: () => void;
-  initialData?: Record<string, string>;
+  initialData?: TaskFormData;
   submitLabel?: string;
 }
 

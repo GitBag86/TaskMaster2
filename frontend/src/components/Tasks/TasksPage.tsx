@@ -57,11 +57,6 @@ export default function TasksPage() {
 
   const projects = [...new Set(tasks.map(t => t.project))];
 
-  const handleTaskUpdate = () => {
-    fetchTasks();
-    setSelectedTask(null);
-  };
-
   const handleDelete = async (id: number) => {
     try {
       await api.tasks.delete(id);
@@ -81,7 +76,7 @@ export default function TasksPage() {
     }
   };
 
-  const handleCreate = async (data: Record<string, string>) => {
+  const handleCreate = async (data: { title: string; assigned_to?: string; priority?: string; project?: string; due_date?: string; notes?: string }) => {
     try {
       await api.tasks.create(data);
       addToast('Zadanie utworzone', 'success');
@@ -90,11 +85,6 @@ export default function TasksPage() {
     } catch (err: unknown) {
       addToast(err instanceof Error ? err.message : 'Błąd tworzenia', 'error');
     }
-  };
-
-  const priorityLabel = (p: string) => {
-    const map: Record<string, string> = { high: 'Wysoki', medium: 'Średni', low: 'Niski' };
-    return map[p] || p;
   };
 
   if (loading) {
@@ -202,7 +192,6 @@ export default function TasksPage() {
         <Modal onClose={() => setSelectedTask(null)}>
           <TaskDetail
             task={selectedTask}
-            onUpdate={handleTaskUpdate}
             onDelete={handleDelete}
             onComplete={handleComplete}
           />

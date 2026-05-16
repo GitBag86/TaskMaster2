@@ -4,10 +4,10 @@ import { api } from '@/api/client'
 import { useToast } from '@/store/ToastContext'
 
 const columns = [
-  { key: 'todo', label: 'Do zrobienia', color: 'border-gray-300 dark:border-gray-600' },
-  { key: 'in_progress', label: 'W toku', color: 'border-blue-400 dark:border-blue-500' },
-  { key: 'done', label: 'Zakończone', color: 'border-green-400 dark:border-green-500' },
-];
+  { key: 'todo' as const, label: 'Do zrobienia', color: 'border-gray-300 dark:border-gray-600' },
+  { key: 'in_progress' as const, label: 'W toku', color: 'border-blue-400 dark:border-blue-500' },
+  { key: 'done' as const, label: 'Zakończone', color: 'border-green-400 dark:border-green-500' },
+] as const;
 
 export default function KanbanPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -27,7 +27,7 @@ export default function KanbanPage() {
 
   useEffect(() => { fetchTasks(); }, [fetchTasks]);
 
-  const handleDrop = async (e: React.DragEvent, status: string) => {
+  const handleDrop = async (e: React.DragEvent, status: Task['status']) => {
     e.preventDefault();
     const taskId = Number(e.dataTransfer.getData('taskId'));
     try {
