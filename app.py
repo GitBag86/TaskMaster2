@@ -1,4 +1,4 @@
-from flask import Flask, send_file, session, jsonify, request
+from flask import Flask, send_from_directory, session, jsonify, request
 from flask_cors import CORS
 from flask_migrate import Migrate
 from flask_socketio import SocketIO
@@ -11,7 +11,7 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='frontend/dist', static_url_path='/')
 os.makedirs(app.instance_path, exist_ok=True)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(app.instance_path, 'tasks.db')
 
@@ -45,22 +45,35 @@ app.register_blueprint(tasks_bp)
 app.register_blueprint(stats_bp)
 app.register_blueprint(filters_bp)
 
-# Static file routes
+# Serve React build
 @app.route('/')
 def index():
-    return send_file('index.html')
+    try:
+        return send_from_directory(app.static_folder, 'index.html')
+    except Exception:
+        return jsonify({"error": "Frontend not built. Run: cd frontend && npm run build"}), 503
 
 @app.route('/manifest.json')
 def manifest():
-    return send_file('manifest.json')
+    return send_from_directory(app.static_folder, 'manifest.json')
 
 @app.route('/sw.js')
 def sw():
-    return send_file('sw.js')
+    return send_from_directory(app.static_folder, 'sw.js')
 
 @app.route('/health')
 def health():
     return jsonify({'status': 'healthy'}), 200
+
+# Catch-all for SPA routing
+@app.route('/<path:path>')
+def serve_spa(path):
+    if path.startswith(('auth', 'tasks', 'users', 'stats', 'activity', 'tags', 'filters', 'templates', 'dependencies', 'subtasks', 'socket.io')):
+        return jsonify({"error": "Not found"}), 404
+    try:
+        return send_from_directory(app.static_folder, path)
+    except Exception:
+        return send_from_directory(app.static_folder, 'index.html')
 
 # Error handlers
 @app.errorhandler(404)
