@@ -3,3 +3,15 @@ __pycache__/
 instance/
 .git/
 .env
+.gitignore
+*.pyc
+*.pyo
+.pytest_cache/
+.coverage
+htmlcov/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+cookies.txt
+*.log

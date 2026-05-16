@@ -5,10 +5,10 @@ services:
       - "5000:5000"
     volumes:
       - ./instance:/app/instance
+    env_file:
+      - .env
     environment:
-      - SECRET_KEY=dev-key-change-in-production
       - FLASK_APP=app.py
-      - FLASK_ENV=production
     restart: unless-stopped
     networks:
       - app-network

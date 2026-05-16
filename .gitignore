@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/settings.json
+.idea/
+
+# Environment
+.env
+*.env.local
+
+# Database
+instance/*.db
+instance/*.db-journal
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+cookies.txt
+*.pem
+*.key
+
+# Logs
+*.log
+
+# Flask-Migrate
+migrations/versions/__pycache__/
