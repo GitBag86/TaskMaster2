@@ -1,26 +1,31 @@
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timezone
+from werkzeug.security import generate_password_hash, check_password_hash
 
 db = SQLAlchemy()
 
 def utcnow():
     return datetime.now(timezone.utc)
 
+# Association table for many-to-many relationship between Task and User (assignees)
+task_assignees = db.Table('task_assignees',
+    db.Column('task_id', db.Integer, db.ForeignKey('task.id'), primary_key=True),
+    db.Column('user_id', db.Integer, db.ForeignKey('user.id'), primary_key=True)
+)
+
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(100), unique=True, nullable=False)
     password = db.Column(db.String(255), nullable=False)
-    email = db.Column(db.String(100), unique=True)
+    email = db.Column(db.String(100), unique=True, nullable=False) # Made mandatory
     role = db.Column(db.String(20), default='user')
     tasks = db.relationship('Task', backref='owner', lazy=True, cascade='all, delete-orphan')
     created_at = db.Column(db.DateTime, default=utcnow)
 
     def set_password(self, password):
-        from werkzeug.security import generate_password_hash
         self.password = generate_password_hash(password)
 
     def check_password(self, password):
-        from werkzeug.security import check_password_hash
         return check_password_hash(self.password, password)
 
     def to_dict(self):
@@ -35,8 +40,9 @@ class User(db.Model):
 class Task(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    assignees = db.relationship('User', secondary=task_assignees, lazy='subquery',
+                               backref=db.backref('assigned_tasks', lazy=True)) # New relationship
     title = db.Column(db.String(200), nullable=False)
-    assigned_to = db.Column(db.String(100), default='Nieprzypisane')
     priority = db.Column(db.String(20), default='medium')
     project = db.Column(db.String(100), default='Ogólny')
     due_date = db.Column(db.Date, nullable=True)
@@ -51,7 +57,7 @@ class Task(db.Model):
         return {
             'id': self.id,
             'title': self.title,
-            'assigned_to': self.assigned_to,
+            'assignees': [u.to_dict() for u in self.assignees], # Updated to include assignees
             'priority': self.priority,
             'project': self.project,
             'due_date': self.due_date.isoformat() if self.due_date else None,
@@ -195,5 +201,6 @@ class CustomField(db.Model):
         return {
             'id': self.id,
             'field_name': self.field_name,
-            'field_value': self.field_value
+            'field_value': self.field_value,
+            'created_at': self.created_at.isoformat() if self.created_at else None
         }

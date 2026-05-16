@@ -1,8 +1,15 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { api } from '@/api/client'
+import { useToast } from '@/store/ToastContext'
+
+interface User {
+  id: number;
+  username: string;
+}
 
 interface TaskFormData {
   title: string;
-  assigned_to?: string;
+  assignee_ids?: number[]; // Changed to array of numbers
   priority?: string;
   project?: string;
   due_date?: string;
@@ -18,15 +25,29 @@ interface Props {
 
 export default function TaskForm({ onSubmit, onCancel, initialData, submitLabel = 'Utwórz zadanie' }: Props) {
   const [title, setTitle] = useState(initialData?.title || '');
-  const [assignedTo, setAssignedTo] = useState(initialData?.assigned_to || '');
+  const [assignedUserIds, setAssignedUserIds] = useState<number[]>(initialData?.assignee_ids || []); // New state for multi-select
   const [priority, setPriority] = useState(initialData?.priority || 'medium');
   const [project, setProject] = useState(initialData?.project || '');
   const [dueDate, setDueDate] = useState(initialData?.due_date || '');
   const [notes, setNotes] = useState(initialData?.notes || '');
+  const [users, setUsers] = useState<User[]>([]); // State to store fetched users
+  const { addToast } = useToast();
+
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const response = await api.users.getAll();
+        setUsers(response.users);
+      } catch (error) {
+        addToast('Błąd ładowania użytkowników', 'error');
+      }
+    };
+    fetchUsers();
+  }, [addToast]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSubmit({ title, assigned_to: assignedTo, priority, project, due_date: dueDate, notes });
+    onSubmit({ title, assignee_ids: assignedUserIds, priority, project, due_date: dueDate, notes });
   };
 
   return (
@@ -57,8 +78,21 @@ export default function TaskForm({ onSubmit, onCancel, initialData, submitLabel 
         </div>
 
         <div>
-          <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Przypisane do</label>
-          <input type="text" value={assignedTo} onChange={e => setAssignedTo(e.target.value)} className="input" placeholder="Nieprzypisane" />
+          <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300" htmlFor="assigned-to-select">Przypisane do</label>
+          <select
+            id="assigned-to-select"
+            multiple
+            value={assignedUserIds.map(String)} // Convert numbers to strings for select value
+            onChange={e => setAssignedUserIds(Array.from(e.target.selectedOptions, option => Number(option.value)))} // Convert strings back to numbers
+            className="input h-auto min-h-[40px]"
+          >
+            <option value="">Nieprzypisane</option>
+            {users.map(user => (
+              <option key={user.id} value={user.id}>
+                {user.username}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div>

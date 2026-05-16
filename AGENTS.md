@@ -61,17 +61,26 @@ The app uses Socket.IO for cross-client updates.
 
 ## Key Files
 
-- **app.py** - Flask app, models, decorators, all routes (~800+ lines)
+- **app.py** - Flask app, models, decorators, all routes (~800+ lines). Serves React frontend from `frontend/dist`.
 - **schemas.py** - Marshmallow schemas for validation
-- **index.html** - Vanilla JS SPA with Kanban, Dashboard, Calendar, and PWA support
+- **frontend/index.html** - Main entry point for the React SPA.
 - **Dockerfile / docker-compose.yml** - Containerization setup
-- **sw.js / manifest.json** - PWA configuration
+- **sw.js / manifest.json** - PWA configuration (located in `frontend/public/`)
 
 ## Frontend Patterns
+- **React SPA**: The frontend is a React single-page application built with Vite and TypeScript.
+- **Dark Mode**: Implemented using Tailwind CSS `darkMode: 'class'` strategy with a turquoise-purple color scheme. The toggle is in `DashboardLayout.tsx`.
 - **Toast Notifications**: Use `showToast(message, type)` for feedback.
 - **Kanban Board**: Integrated into the secondary tab for status management.
 - **Real-Time Updates**: Uses Socket.io. Notifications for task actions (create, delete, etc.) are broadcasted to all users.
 - **Subtasks**: Managed via `Task.to_dict()` which includes a `subtasks` list. UI handles toggling via PUT `/subtasks/<id>/complete`.
+
+## Resolved Issues (for Agent Awareness)
+- **Incorrect Static Folder**: Flask `static_folder` was pointing to `.` instead of `frontend/dist`. Fixed in `app.py`.
+- **Missing Frontend Build**: The React frontend needed to be built (`cd frontend && npm run build`).
+- **Broken .gitignore**: Initial `.gitignore` ignored all files (`*`). Corrected to properly ignore virtual environments, `node_modules`, `instance/tasks.db`, and build artifacts.
+- **Git Rebase Conflicts**: Resolved conflicts related to binary files during rebase operations.
+- **Dark Mode Not Working**: Tailwind CSS `darkMode: 'class'` was not enabled, and color variables were not properly configured for a distinct dark mode theme. Fixed in `tailwind.config.ts` and `frontend/src/index.css` with a turquoise-purple scheme.
 
 ## Common Pitfalls
 

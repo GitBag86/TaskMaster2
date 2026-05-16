@@ -2,6 +2,14 @@ import json
 import os
 import sys
 import time
+import logging
+from dotenv import load_dotenv
+from flask import Flask, send_from_directory, session, jsonify, request
+from flask_cors import CORS
+from flask_migrate import Migrate
+from flask_socketio import SocketIO
+from flask_mail import Mail
+from flask_apscheduler import APScheduler
 
 # #region agent log
 _DEBUG_LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "debug-59c6ac.log")
@@ -24,21 +32,6 @@ _agent_ndjson_log("H1", "interpreter_startup", exe=sys.executable)
 _agent_ndjson_log("H4", "python_env_paths", exe=sys.executable, prefix=sys.prefix, base_prefix=getattr(sys, "base_prefix", sys.prefix), virtual_env=os.environ.get("VIRTUAL_ENV"))
 # #endregion
 
-from flask import Flask, send_from_directory, session, jsonify, request
-
-# #region agent log
-try:
-    from flask_cors import CORS
-    _agent_ndjson_log("H2", "flask_cors_import_ok")
-except ImportError as e:
-    _agent_ndjson_log("H2", "flask_cors_import_fail", error=str(type(e).__name__), detail=str(e))
-    raise
-# #endregion
-from flask_migrate import Migrate
-from flask_socketio import SocketIO
-from dotenv import load_dotenv
-import logging
-
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
@@ -58,19 +51,35 @@ if not secret_key:
     )
 app.config['SECRET_KEY'] = secret_key
 
+# Configure Flask-Mail
+app.config['MAIL_SERVER'] = os.environ.get('MAIL_SERVER')
+app.config['MAIL_PORT'] = int(os.environ.get('MAIL_PORT', 587))
+app.config['MAIL_USE_TLS'] = os.environ.get('MAIL_USE_TLS', 'True').lower() == 'true'
+app.config['MAIL_USERNAME'] = os.environ.get('MAIL_USERNAME')
+app.config['MAIL_PASSWORD'] = os.environ.get('MAIL_PASSWORD')
+app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_DEFAULT_SENDER')
+
+mail = Mail(app)
+scheduler = APScheduler()
+scheduler.init_app(app)
+
 allowed_origins = os.environ.get('CORS_ORIGINS', 'http://localhost:5000').split(',')
 CORS(app, supports_credentials=True, origins=allowed_origins)
 
 socketio = SocketIO(app, cors_allowed_origins=allowed_origins, async_mode='threading')
 
 from models import db
-from flask_migrate import Migrate
+from jobs.deadline_notifier import check_deadlines
 
 db.init_app(app)
 migrate = Migrate(app, db)
 
 with app.app_context():
     db.create_all()
+
+scheduler.add_job(id='check_deadlines', func=check_deadlines, trigger='interval', days=1)
+scheduler.start()
+_agent_ndjson_log("H6", "scheduler_started")
 
 # Register blueprints
 # #region agent log

@@ -1,12 +1,13 @@
-from flask import request, jsonify, session
+from flask import request, jsonify, session, url_for, current_app
 from datetime import datetime, timezone
 from marshmallow import ValidationError
 from routes import tasks_bp
 from models import db, User, Task, Comment, Subtask, ActivityLog, task_tags, Tag
 from schemas import TaskSchema, CommentSchema, SubtaskSchema
 from routes.auth import login_required
+from utils.email_sender import send_email, get_task_status_change_body, get_task_assignment_body
 
-TASK_ALLOWED_FIELDS = {'title', 'assigned_to', 'priority', 'project', 'due_date', 'notes', 'completed', 'status'}
+TASK_ALLOWED_FIELDS = {'title', 'assignees', 'priority', 'project', 'due_date', 'notes', 'completed', 'status'}
 BULK_MAX_TASKS = 100
 
 def get_socketio():
@@ -36,7 +37,7 @@ def get_tasks():
     if user.role == 'admin':
         query = Task.query
     else:
-        query = Task.query.filter_by(assigned_to=user.username)
+        query = Task.query.join(Task.assignees).filter(User.id == user.id)
 
     pagination = query.order_by(Task.created_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
     tasks = pagination.items
@@ -70,12 +71,23 @@ def create_task():
     task = Task(
         user_id=user_id,
         title=validated.get("title", "Untitled"),
-        assigned_to=validated.get("assigned_to", "Unassigned"),
         priority=validated.get("priority", "medium"),
         project=validated.get("project", "General"),
         due_date=due_date,
         notes=validated.get("notes", "")
     )
+
+    assignee_ids = validated.get('assignee_ids', [])
+    for assignee_id in assignee_ids:
+        assignee = db.session.get(User, assignee_id)
+        if assignee:
+            task.assignees.append(assignee)
+            # Send assignment email
+            task_link = url_for('index', _external=True) + f'tasks/{task.id}'
+            subject = f"Zostałeś przypisany do zadania: {task.title}"
+            body = get_task_assignment_body(task.title, assignee.username, task_link)
+            send_email(assignee.email, subject, body)
+
     db.session.add(task)
     db.session.flush()
 
@@ -99,13 +111,35 @@ def update_task(task_id):
     if user.role != 'admin':
         return jsonify({"error": "Only admins can update tasks"}), 403
 
+    old_status = task.status
+    old_assigned_to = task.assigned_to
+
     data = request.get_json()
     for key, value in data.items():
         if key in TASK_ALLOWED_FIELDS and hasattr(task, key):
             if key == 'due_date':
                 value = parse_due_date(value)
             setattr(task, key, value)
+
     db.session.commit()
+
+    task_link = url_for('index', _external=True) + f'tasks/{task.id}' # Assuming tasks are viewed at /tasks/{id}
+
+    # Send email for status change
+    if 'status' in data and old_status != task.status:
+        if task.owner and task.owner.email:
+            subject = f"Zmiana statusu zadania: {task.title}"
+            body = get_task_status_change_body(task.title, old_status, task.status, task_link)
+            send_email(task.owner.email, subject, body)
+
+    # Send email for assignment change
+    if 'assigned_to' in data and old_assigned_to != task.assigned_to:
+        # Find the user by username to get their email
+        assignee_user = User.query.filter_by(username=task.assigned_to).first()
+        if assignee_user and assignee_user.email:
+            subject = f"Zostałeś przypisany do zadania: {task.title}"
+            body = get_task_assignment_body(task.title, task.assigned_to, task_link)
+            send_email(assignee_user.email, subject, body)
 
     get_socketio().emit('task_action', {'action': 'zaktualizował(a)', 'task': task.title, 'user': user.username})
 

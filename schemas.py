@@ -4,14 +4,14 @@ from datetime import date
 class UserSchema(Schema):
     id = fields.Int(dump_only=True)
     username = fields.Str(required=True, validate=validate.Length(min=3, max=100))
-    email = fields.Email(load_default='')
+    email = fields.Email(required=True) # Now mandatory
     role = fields.Str(dump_only=True)
     created_at = fields.DateTime(dump_only=True)
 
 class TaskSchema(Schema):
     id = fields.Int(dump_only=True)
     title = fields.Str(required=True, validate=validate.Length(min=1, max=200))
-    assigned_to = fields.Str(load_default='Nieprzypisane', validate=validate.Length(max=100))
+    assignees = fields.List(fields.Int(), load_default=[], data_key='assignee_ids') # New: multiple assignees
     priority = fields.Str(load_default='medium', validate=validate.OneOf(['low', 'medium', 'high']))
     project = fields.Str(load_default='Ogólny', validate=validate.Length(max=100))
     due_date = fields.Date(load_default=None)
@@ -39,7 +39,7 @@ class LoginSchema(Schema):
 class SignupSchema(Schema):
     username = fields.Str(required=True, validate=validate.Length(min=3, max=100))
     password = fields.Str(required=True, validate=validate.Length(min=6))
-    email = fields.Email(load_default='')
+    email = fields.Email(required=True) # Now mandatory
 
 class TagSchema(Schema):
     id = fields.Int(dump_only=True)

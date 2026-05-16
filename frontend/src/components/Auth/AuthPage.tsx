@@ -77,13 +77,14 @@ export default function AuthPage() {
             {isSignup && (
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                  E-mail (opcjonalnie)
+                  E-mail *
                 </label>
                 <input
                   type="email"
                   value={email}
                   onChange={e => setEmail(e.target.value)}
                   className="input"
+                  required
                 />
               </div>
             )}
