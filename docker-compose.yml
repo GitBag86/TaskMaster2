@@ -4,11 +4,9 @@ services:
     ports:
       - "5000:5000"
     volumes:
-      - ./instance:/data
       - ./instance:/app/instance
     environment:
       - SECRET_KEY=dev-key-change-in-production
-      - SQLITE_DB_PATH=/data/tasks.db
       - FLASK_APP=app.py
       - FLASK_ENV=production
     restart: unless-stopped

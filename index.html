@@ -1973,9 +1973,22 @@
                 const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
                 const dayTasks = allTasks.filter(t => t.due_date === dateStr);
 
+                let tasksHtml = '';
+                if (dayTasks.length > 0) {
+                    tasksHtml = dayTasks.map(t => {
+                        const priorityColor = t.priority === 'high' ? '#c62828' : (t.priority === 'medium' ? '#e65100' : '#2e7d32');
+                        const priorityBg = t.priority === 'high' ? '#ffebee' : (t.priority === 'medium' ? '#fff3e0' : '#e8f5e9');
+                        return `<div style="font-size: 11px; margin-bottom: 4px; padding: 3px 6px; border-radius: 4px; background: ${priorityBg}; color: ${priorityColor}; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-decoration: ${t.completed ? 'line-through' : 'none'}; opacity: ${t.completed ? 0.7 : 1}" onclick="viewTask(${t.id})">
+                            ${t.title}
+                        </div>`;
+                    }).join('');
+                } else {
+                    tasksHtml = `<div class="calendar-day-tasks" style="opacity: 0.5">Brak zadań</div>`;
+                }
+
                 dayDiv.innerHTML = `
                     <div class="calendar-day-number">${day}</div>
-                    <div class="calendar-day-tasks">${dayTasks.length} zadania</div>
+                    <div style="display: flex; flex-direction: column; gap: 2px;">${tasksHtml}</div>
                 `;
                 calendar.appendChild(dayDiv);
             }
