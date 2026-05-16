@@ -22,3 +22,7 @@ frontend/dist/
 # OS
 .DS_Store
 Thumbs.db
+
+# Other
+lib64
+var/
