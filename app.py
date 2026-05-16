@@ -44,7 +44,7 @@ def validate_user_role(allowed_roles=None):
             user_id = session.get('user_id')
             if not user_id:
                 return jsonify({"error": "Nie jesteś zalogowany"}), 401
-            user = User.query.get(user_id)
+            user = db.session.get(User, user_id)
             if user.role not in allowed_roles:
                 return jsonify({"error": "Brak uprawnień"}), 403
             return f(*args, **kwargs)
@@ -327,7 +327,7 @@ def get_current_user():
     if not user_id:
         return jsonify({"error": "Nie jesteś zalogowany"}), 401
 
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     if not user:
         return jsonify({"error": "Użytkownik nie znaleziony"}), 404
 
@@ -337,7 +337,7 @@ def get_current_user():
 @login_required
 def get_users():
     user_id = session.get('user_id')
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     
     if user.role != 'admin':
         return jsonify({"error": "Tylko administrator może przeglądać użytkowników"}), 403
@@ -349,12 +349,12 @@ def get_users():
 @login_required
 def update_user_role(target_user_id):
     user_id = session.get('user_id')
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     
     if user.role != 'admin':
         return jsonify({"error": "Tylko administrator może zmieniać role"}), 403
     
-    target_user = User.query.get(target_user_id)
+    target_user = db.session.get(User, target_user_id)
     if not target_user:
         return jsonify({"error": "Użytkownik nie znaleziony"}), 404
     
@@ -372,7 +372,7 @@ def update_user_role(target_user_id):
 @login_required
 def get_tasks():
     user_id = session.get('user_id')
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
 
     if user.role == 'admin':
         tasks = Task.query.all()
@@ -385,7 +385,7 @@ def get_tasks():
 @login_required
 def create_task():
     user_id = session.get('user_id')
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     
     if user.role != 'admin':
         return jsonify({"error": "Tylko administrator może tworzyć zadania"}), 403
@@ -403,7 +403,13 @@ def create_task():
     db.session.add(task)
     db.session.commit()
     
-    socketio.emit('task_action', {'action': 'utworzył(a)', 'task': task.title, 'user': user.username}, broadcast=True)
+    socketio.emit('task_action', {'action': 'utworzył(a)', 'task': task.title, 'user': user.username})
+    
+    # Log activity
+    log = ActivityLog(user_id=user_id, task_id=task.id, action='created', details={'title': task.title})
+    db.session.add(log)
+    db.session.commit()
+    
     return jsonify(task.to_dict()), 201
 
 @app.route('/tasks/<int:task_id>', methods=['PUT'])
@@ -413,8 +419,8 @@ def update_task(task_id):
     if not user_id:
         return jsonify({"error": "Not logged in"}), 401
 
-    user = User.query.get(user_id)
-    task = Task.query.get(task_id)
+    user = db.session.get(User, user_id)
+    task = db.session.get(Task, task_id)
     if not task:
         return jsonify({"error": "Task not found"}), 404
 
@@ -427,7 +433,12 @@ def update_task(task_id):
             setattr(task, key, value)
     db.session.commit()
     
-    socketio.emit('task_action', {'action': 'zaktualizował(a)', 'task': task.title, 'user': user.username}, broadcast=True)
+    socketio.emit('task_action', {'action': 'zaktualizował(a)', 'task': task.title, 'user': user.username})
+    # Log activity
+    log = ActivityLog(user_id=user_id, task_id=task_id, action='updated', details={'title': task.title})
+    db.session.add(log)
+    db.session.commit()
+    
     return jsonify(task.to_dict())
 
 @app.route('/tasks/<int:task_id>/complete', methods=['PUT'])
@@ -437,19 +448,27 @@ def complete_task(task_id):
     if not user_id:
         return jsonify({"error": "Not logged in"}), 401
 
-    task = Task.query.get(task_id)
+    task = db.session.get(Task, task_id)
     if not task:
         return jsonify({"error": "Task not found"}), 404
 
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     if user.role == 'user' and task.assigned_to != user.username:
         return jsonify({"error": "Can only complete tasks assigned to you"}), 403
 
-    task.completed = True
-    db.session.commit()
+    task.completed = not task.completed
     
-    action = 'ukończył(a)' if task.completed else 'przywrócił(a)'
-    socketio.emit('task_action', {'action': action, 'task': task.title, 'user': user.username}, broadcast=True)
+    # Log activity
+    log = ActivityLog(user_id=user_id, task_id=task_id, action='completed' if task.completed else 'reopened')
+    db.session.add(log)
+    db.session.commit()
+
+    socketio.emit('task_action', {
+        'action': 'ukończył(a)' if task.completed else 'przywrócił(a)',
+        'task': task.title,
+        'user': user.username
+    })
+    
     return jsonify(task.to_dict())
 
 @app.route('/tasks/<int:task_id>', methods=['DELETE'])
@@ -459,8 +478,8 @@ def delete_task(task_id):
     if not user_id:
         return jsonify({"error": "Not logged in"}), 401
 
-    user = User.query.get(user_id)
-    task = Task.query.get(task_id)
+    user = db.session.get(User, user_id)
+    task = db.session.get(Task, task_id)
     if not task:
         return jsonify({"error": "Task not found"}), 404
 
@@ -471,39 +490,43 @@ def delete_task(task_id):
     db.session.delete(task)
     db.session.commit()
     
-    socketio.emit('task_action', {'action': 'usunął(ęła)', 'task': task_title, 'user': user.username}, broadcast=True)
+    socketio.emit('task_action', {'action': 'usunął(ęła)', 'task': task_title, 'user': user.username})
     return jsonify({"message": "Zadanie usunięte"}), 200
 
 @app.route('/tasks/<int:task_id>/comments', methods=['POST'])
 @login_required
 def add_comment(task_id):
-    task = Task.query.get(task_id)
+    user_id = session.get('user_id')
+    user = db.session.get(User, user_id)
+    
+    task = db.session.get(Task, task_id)
     if not task:
         return jsonify({"error": "Task not found"}), 404
 
     data = request.get_json()
     comment = Comment(
         task_id=task_id,
-        author=data.get("author", "Anonymous"),
+        author=user.username,
         text=data.get("text", "")
     )
     db.session.add(comment)
     db.session.commit()
     
-    socketio.emit('task_action', {'action': 'skomentował(a)', 'task': task.title, 'user': User.username}, broadcast=True)
+    socketio.emit('task_action', {'action': 'skomentował(a)', 'task': task.title, 'user': user.username})
     return jsonify(comment.to_dict()), 201
 
 @app.route('/tasks/<int:task_id>/subtasks', methods=['POST'])
+@login_required
 def add_subtask(task_id):
     user_id = session.get('user_id')
     if not user_id:
         return jsonify({"error": "Not logged in"}), 401
 
-    task = Task.query.get(task_id)
+    task = db.session.get(Task, task_id)
     if not task:
         return jsonify({"error": "Task not found"}), 404
 
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     if user.role != 'admin' and task.assigned_to != user.username:
         return jsonify({"error": "Permission denied"}), 403
 
@@ -513,24 +536,40 @@ def add_subtask(task_id):
         title=data.get("title", "Subtask")
     )
     db.session.add(subtask)
+    
+    # Log activity
+    log = ActivityLog(user_id=user_id, task_id=task_id, action='subtask_created', details={'title': subtask.title})
+    db.session.add(log)
     db.session.commit()
+    
+    socketio.emit('task_action', {'action': 'dodał(a) podzadanie', 'task': f"{task.title} -> {subtask.title}", 'user': user.username})
     return jsonify(subtask.to_dict()), 201
 
 @app.route('/subtasks/<int:subtask_id>/complete', methods=['PUT'])
+@login_required
 def complete_subtask(subtask_id):
     user_id = session.get('user_id')
     if not user_id:
         return jsonify({"error": "Not logged in"}), 401
 
-    subtask = Subtask.query.get(subtask_id)
+    subtask = db.session.get(Subtask, subtask_id)
     if not subtask:
         return jsonify({"error": "Subtask not found"}), 404
 
+    task = db.session.get(Task, subtask.task_id)
+    user = db.session.get(User, user_id)
+    if user.role != 'admin' and task.assigned_to != user.username:
+        return jsonify({"error": "Permission denied"}), 403
+
     subtask.completed = not subtask.completed
+    
+    # Log activity
+    log = ActivityLog(user_id=user_id, task_id=task.id, action='subtask_toggle', details={'subtask': subtask.title, 'completed': subtask.completed})
+    db.session.add(log)
     db.session.commit()
     
-    action = 'ukończył(a)' if subtask.completed else 'przywrócił(a)'
-    socketio.emit('task_action', {'action': action, 'task': subtask.title, 'user': User.username}, broadcast=True)
+    action = 'ukończył(a) podzadanie' if subtask.completed else 'przywrócił(a) podzadanie'
+    socketio.emit('task_action', {'action': action, 'task': f"{task.title} ({subtask.title})", 'user': user.username})
     return jsonify(subtask.to_dict())
 
 @app.route('/subtasks/<int:subtask_id>', methods=['DELETE'])
@@ -539,7 +578,7 @@ def delete_subtask(subtask_id):
     if not user_id:
         return jsonify({"error": "Not logged in"}), 401
 
-    subtask = Subtask.query.get(subtask_id)
+    subtask = db.session.get(Subtask, subtask_id)
     if not subtask:
         return jsonify({"error": "Subtask not found"}), 404
 
@@ -586,7 +625,7 @@ def tasks_by_project():
 @login_required
 def get_dashboard_stats():
     user_id = session.get('user_id')
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     
     if user.role == 'admin':
         tasks = Task.query.all()
@@ -628,7 +667,7 @@ def get_dashboard_stats():
 @login_required
 def search_tasks():
     user_id = session.get('user_id')
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     query = request.args.get('q', '')
     
     if user.role == 'admin':
@@ -659,7 +698,7 @@ def manage_tags():
 @app.route('/tags/<int:tag_id>', methods=['DELETE'])
 @login_required
 def delete_tag(tag_id):
-    tag = Tag.query.get(tag_id)
+    tag = db.session.get(Tag, tag_id)
     if not tag or tag.user_id != session.get('user_id'):
         return jsonify({"error": "Not found"}), 404
     db.session.delete(tag)
@@ -669,8 +708,8 @@ def delete_tag(tag_id):
 @app.route('/tasks/<int:task_id>/tags/<int:tag_id>', methods=['POST', 'DELETE'])
 @login_required
 def manage_task_tags(task_id, tag_id):
-    task = Task.query.get(task_id)
-    tag = Tag.query.get(tag_id)
+    task = db.session.get(Task, task_id)
+    tag = db.session.get(Tag, tag_id)
     if not task or not tag:
         return jsonify({"error": "Not found"}), 404
     
@@ -703,7 +742,7 @@ def manage_filters():
 @app.route('/filters/<int:filter_id>', methods=['DELETE'])
 @login_required
 def delete_filter(filter_id):
-    filter_obj = SavedFilter.query.get(filter_id)
+    filter_obj = db.session.get(SavedFilter, filter_id)
     if not filter_obj or filter_obj.user_id != session.get('user_id'):
         return jsonify({"error": "Not found"}), 404
     db.session.delete(filter_obj)
@@ -742,7 +781,7 @@ def manage_templates():
 @app.route('/templates/<int:template_id>', methods=['DELETE'])
 @login_required
 def delete_template(template_id):
-    template = TaskTemplate.query.get(template_id)
+    template = db.session.get(TaskTemplate, template_id)
     if not template or template.user_id != session.get('user_id'):
         return jsonify({"error": "Not found"}), 404
     db.session.delete(template)
@@ -753,12 +792,12 @@ def delete_template(template_id):
 @login_required
 def use_template(template_id):
     user_id = session.get('user_id')
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     
     if user.role != 'admin':
         return jsonify({"error": "Only admins can create tasks"}), 403
     
-    template = TaskTemplate.query.get(template_id)
+    template = db.session.get(TaskTemplate, template_id)
     if not template:
         return jsonify({"error": "Template not found"}), 404
     
@@ -779,7 +818,7 @@ def use_template(template_id):
 @app.route('/tasks/<int:task_id>/dependencies', methods=['GET', 'POST'])
 @login_required
 def manage_dependencies(task_id):
-    task = Task.query.get(task_id)
+    task = db.session.get(Task, task_id)
     if not task:
         return jsonify({"error": "Task not found"}), 404
     
@@ -796,7 +835,7 @@ def manage_dependencies(task_id):
 @app.route('/dependencies/<int:dep_id>', methods=['DELETE'])
 @login_required
 def delete_dependency(dep_id):
-    dep = TaskDependency.query.get(dep_id)
+    dep = db.session.get(TaskDependency, dep_id)
     if not dep:
         return jsonify({"error": "Not found"}), 404
     db.session.delete(dep)
@@ -807,7 +846,7 @@ def delete_dependency(dep_id):
 @app.route('/tasks/<int:task_id>/fields', methods=['POST'])
 @login_required
 def add_custom_field(task_id):
-    task = Task.query.get(task_id)
+    task = db.session.get(Task, task_id)
     if not task:
         return jsonify({"error": "Task not found"}), 404
     
@@ -827,7 +866,7 @@ def add_custom_field(task_id):
 @login_required
 def bulk_complete_tasks():
     user_id = session.get('user_id')
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     
     if user.role != 'admin':
         return jsonify({"error": "Tylko administrator może edytować masowo"}), 403
@@ -836,19 +875,19 @@ def bulk_complete_tasks():
     task_ids = data.get('task_ids', [])
     
     for task_id in task_ids:
-        task = Task.query.get(task_id)
+        task = db.session.get(Task, task_id)
         if task:
             task.completed = True
     
     db.session.commit()
-    socketio.emit('task_action', {'action': 'zakończono masowo', 'task_ids': task_ids}, broadcast=True)
+    socketio.emit('task_action', {'action': 'zakończono masowo', 'task_ids': task_ids})
     return jsonify({"message": f"Zakończono {len(task_ids)} zadań"}), 200
 
 @app.route('/tasks/bulk/delete', methods=['DELETE'])
 @login_required
 def bulk_delete_tasks():
     user_id = session.get('user_id')
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     
     if user.role != 'admin':
         return jsonify({"error": "Tylko administrator może usuwać masowo"}), 403
@@ -858,20 +897,20 @@ def bulk_delete_tasks():
     
     count = 0
     for task_id in task_ids:
-        task = Task.query.get(task_id)
+        task = db.session.get(Task, task_id)
         if task:
             db.session.delete(task)
             count += 1
     
     db.session.commit()
-    socketio.emit('task_action', {'action': 'usunięto masowo', 'task_ids': task_ids}, broadcast=True)
+    socketio.emit('task_action', {'action': 'usunięto masowo', 'task_ids': task_ids})
     return jsonify({"message": f"Usunięto {count} zadań"}), 200
 
 @app.route('/tasks/bulk/update', methods=['PUT'])
 @login_required
 def bulk_update_tasks():
     user_id = session.get('user_id')
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     
     if user.role != 'admin':
         return jsonify({"error": "Tylko administrator może edytować masowo"}), 403
@@ -881,14 +920,14 @@ def bulk_update_tasks():
     updates = data.get('updates', {})
     
     for task_id in task_ids:
-        task = Task.query.get(task_id)
+        task = db.session.get(Task, task_id)
         if task:
             for key, value in updates.items():
                 if key != 'id' and key != 'user_id' and hasattr(task, key):
                     setattr(task, key, value)
     
     db.session.commit()
-    socketio.emit('task_action', {'action': 'zaktualizowano masowo', 'task_ids': task_ids}, broadcast=True)
+    socketio.emit('task_action', {'action': 'zaktualizowano masowo', 'task_ids': task_ids})
     return jsonify({"message": f"Zaktualizowano {len(task_ids)} zadań"}), 200
 
 @app.route('/users', methods=['GET'])
@@ -900,7 +939,7 @@ def export_csv():
     from io import StringIO
     
     user_id = session.get('user_id')
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     
     if user.role == 'admin':
         tasks = Task.query.all()

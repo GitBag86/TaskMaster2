@@ -7,10 +7,10 @@ description: Guides the implementation of real-time features using Flask-SocketI
 Follow these conventions when adding real-time updates to the Task Management application.
 
 ## 1. Backend Implementation (`app.py`)
-- **Initialization:** Use `socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')`.
+- **Initialization:** Use `socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')` (local) or `gthread` (Docker). Avoid `eventlet` due to deprecation.
 - **Event Naming:** Use `category_action` (e.g., `task_created`, `comment_added`).
 - **Broadcasting:** Always broadcast updates to relevant users. 
-  - For global updates (admin only): `socketio.emit('event_name', data, broadcast=True)`.
+  - For global updates: `socketio.emit('event_name', data)`. (Do NOT use `broadcast=True` with the `socketio` object).
   - For specific users (future-proofing): Consider using Socket.io rooms named after `user_id`.
 
 ## 2. Frontend Implementation (`index.html` / `script`)
