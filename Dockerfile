@@ -20,6 +20,7 @@ WORKDIR /app
 # Install runtime dependencies (no build tools)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy installed packages from builder stage
@@ -38,4 +39,7 @@ USER appuser
 EXPOSE 5000
 
 # Use gthread worker class for better compatibility with Flask-SocketIO
-CMD ["gunicorn", "--worker-class", "gthread", "-w", "1", "--bind", "0.0.0.0:5000", "app:app"]
+# Healthcheck endpoint for production readiness
+HEALTHCHECK --interval=30s --timeout=3s \
+  CMD curl -f http://localhost:5000/health || exit 1
+CMD ["gunicorn", "--worker-class", "gthread", "-w", "2", "--bind", "0.0.0.0:5000", "app:app"]

@@ -278,6 +278,10 @@ def manifest():
 def sw():
     return send_file('sw.js')
 
+@app.route('/health')
+def health():
+    return jsonify({'status': 'healthy'}), 200
+
 @app.route('/auth/signup', methods=['POST'])
 def signup():
     data = request.get_json()
@@ -463,7 +467,7 @@ def add_comment(task_id):
     db.session.add(comment)
     db.session.commit()
     
-    socketio.emit('task_action', {'action': 'skomentował(a)', 'task': task.title, 'user': user.username}, broadcast=True)
+    socketio.emit('task_action', {'action': 'skomentował(a)', 'task': task.title, 'user': User.username}, broadcast=True)
     return jsonify(comment.to_dict()), 201
 
 @app.route('/tasks/<int:task_id>/subtasks', methods=['POST'])
@@ -503,7 +507,7 @@ def complete_subtask(subtask_id):
     db.session.commit()
     
     action = 'ukończył(a)' if subtask.completed else 'przywrócił(a)'
-    socketio.emit('task_action', {'action': action, 'task': subtask.title, 'user': user.username}, broadcast=True)
+    socketio.emit('task_action', {'action': action, 'task': subtask.title, 'user': User.username}, broadcast=True)
     return jsonify(subtask.to_dict())
 
 @app.route('/subtasks/<int:subtask_id>', methods=['DELETE'])
