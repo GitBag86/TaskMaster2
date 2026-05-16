@@ -1,4 +1,4 @@
-from flask import Flask, send_file, session, jsonify
+from flask import Flask, send_file, session, jsonify, request
 from flask_cors import CORS
 from flask_migrate import Migrate
 from flask_socketio import SocketIO
@@ -31,6 +31,7 @@ socketio = SocketIO(app, cors_allowed_origins=allowed_origins, async_mode='threa
 from models import db
 from flask_migrate import Migrate
 
+db.init_app(app)
 migrate = Migrate(app, db)
 
 with app.app_context():

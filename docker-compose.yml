@@ -4,14 +4,15 @@ services:
     ports:
       - "5000:5000"
     volumes:
-      - ./instance:/app/instance
+      - db-data:/app/instance
     env_file:
       - .env
-    environment:
-      - FLASK_APP=app.py
     restart: unless-stopped
     networks:
       - app-network
+
+volumes:
+  db-data:
 
 networks:
   app-network:
