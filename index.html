@@ -830,8 +830,8 @@
                                 <label>Status</label>
                                 <select id="filterCompleted" onchange="applyFilters()">
                                     <option value="">Wszystkie</option>
-                                    <option value="false">Oczekujące</option>
-                                    <option value="true">Zakończone</option>
+                                    <option value="false" selected>Oczekujące</option>
+                                    <option value="true">Zakończone (Archiwum)</option>
                                 </select>
                             </div>
                         </div>
@@ -1280,13 +1280,86 @@
             }
         }
 
+        async function loadUsers() {
+            try {
+                const response = await fetch('/users', { credentials: 'include' });
+                const result = await response.json();
+                const users = result.users || [];
+                
+                // Populate dropdowns
+                const dropdowns = ['newTaskAssignedTo', 'editTaskAssignedTo'];
+                dropdowns.forEach(id => {
+                    const select = document.getElementById(id);
+                    if (select) {
+                        const currentValue = select.value;
+                        select.innerHTML = users.map(u => `<option value="${u.username}">${u.username}</option>`).join('');
+                        if (currentValue) select.value = currentValue;
+                    }
+                });
+
+                // Render user management table if in admin tab
+                const usersList = document.getElementById('usersList');
+                if (usersList) {
+                    usersList.innerHTML = `
+                        <table class="tasks-table">
+                            <thead>
+                                <tr>
+                                    <th>Użytkownik</th>
+                                    <th>Email</th>
+                                    <th>Rola</th>
+                                    <th>Akcje</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${users.map(u => `
+                                    <tr>
+                                        <td>${u.username}</td>
+                                        <td>${u.email}</td>
+                                        <td>${u.role}</td>
+                                        <td>
+                                            <select onchange="updateUserRole(${u.id}, this.value)" ${u.id === currentUser.id ? 'disabled' : ''}>
+                                                <option value="user" ${u.role === 'user' ? 'selected' : ''}>Użytkownik</option>
+                                                <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Administrator</option>
+                                            </select>
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    `;
+                }
+            } catch (error) {
+                console.error('Error loading users:', error);
+            }
+        }
+
+        async function updateUserRole(userId, newRole) {
+            try {
+                const response = await fetch(`/users/${userId}/role`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ role: newRole }),
+                    credentials: 'include'
+                });
+                const result = await response.json();
+                if (response.ok) {
+                    showToast(result.message);
+                    loadUsers();
+                } else {
+                    showToast(result.error, 'error');
+                }
+            } catch (error) {
+                showToast('Błąd podczas zmiany roli', 'error');
+            }
+        }
+
         async function loadTasks() {
             try {
                 const response = await fetch('/tasks', { credentials: 'include' });
                 const result = await response.json();
                 allTasks = result.tasks || [];
-                renderTasks(allTasks);
                 populateProjectFilter();
+                applyFilters(); // Replaced renderTasks(allTasks) to respect default filters
             } catch (error) {
                 console.error('Error loading tasks:', error);
             }
@@ -1409,7 +1482,10 @@
             let filtered = allTasks;
             if (priority) filtered = filtered.filter(t => t.priority === priority);
             if (project) filtered = filtered.filter(t => t.project === project);
-            if (completed !== '') filtered = filtered.filter(t => t.completed === (completed === 'true'));
+            
+            if (completed !== "") {
+                filtered = filtered.filter(t => String(t.completed) === completed);
+            }
 
             renderTasks(filtered);
         }

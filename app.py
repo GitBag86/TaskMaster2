@@ -457,6 +457,7 @@ def complete_task(task_id):
         return jsonify({"error": "Can only complete tasks assigned to you"}), 403
 
     task.completed = not task.completed
+    task.status = 'done' if task.completed else 'todo'
     
     # Log activity
     log = ActivityLog(user_id=user_id, task_id=task_id, action='completed' if task.completed else 'reopened')
@@ -878,6 +879,7 @@ def bulk_complete_tasks():
         task = db.session.get(Task, task_id)
         if task:
             task.completed = True
+            task.status = 'done'
     
     db.session.commit()
     socketio.emit('task_action', {'action': 'zakończono masowo', 'task_ids': task_ids})
