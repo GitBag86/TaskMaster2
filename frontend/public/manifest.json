@@ -1,0 +1,16 @@
+{
+  "name": "Pro Zarządzanie Zadaniami",
+  "short_name": "ZadaniaPro",
+  "description": "Potężna aplikacja do zarządzania Twoimi zadaniami",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#667eea",
+  "icons": [
+    {
+      "src": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0iIzY2N2VlYSIgZD0iTTE5IDNIMTRWMUgyVjNWMTlIMTNWMjJIMjVWNFYyTTIxIDIwSDE1VjFIMTlWMjBaTTExIDE3SDRWM0gxMVYxN1pNOSA1SDZWN0g5VjVaIi8+PC9zdmc+",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    }
+  ]
+}
