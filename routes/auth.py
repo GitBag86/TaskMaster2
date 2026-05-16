@@ -51,10 +51,14 @@ def signup():
     if User.query.filter_by(username=username).first():
         return jsonify({"error": "Użytkownik już istnieje"}), 400
 
+    email = validated.get('email', '')
+    if not email:
+        email = None
+
     is_first_user = User.query.first() is None
     user = User(
         username=username,
-        email=validated.get('email', ''),
+        email=email,
         role='admin' if is_first_user else 'user'
     )
     user.set_password(password)
