@@ -448,8 +448,8 @@
         .stat-card {
             background: var(--bg-secondary);
             padding: 20px;
-            border-radius: 8px;
-            border-left: 4px solid var(--accent);
+            border-radius: 12px;
+            text-align: center;
         }
 
         .stat-label {
@@ -761,6 +761,7 @@
                 <button class="tab" onclick="switchTab('dashboard')">📊 Statystyki</button>
                 <button class="tab" onclick="switchTab('calendar')">📅 Kalendarz</button>
                 <button class="tab" onclick="switchTab('activity')">📝 Aktywność</button>
+                <button class="tab" id="adminTab" onclick="switchTab('admin')" style="display: none;">👥 Użytkownicy</button>
             </div>
 
             <!-- Tasks Tab -->
@@ -900,6 +901,14 @@
                     <div id="activityFeedFull" style="margin-top: 20px;"></div>
                 </div>
             </div>
+
+            <!-- Admin Tab -->
+            <div id="adminTabContent" class="tab-content">
+                <div class="content">
+                    <h2>Zarządzanie użytkownikami</h2>
+                    <div id="usersList" style="margin-top: 20px;"></div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -923,13 +932,13 @@
                 </div>
                 <div class="form-group">
                     <label for="newTaskAssignedTo">Przypisane do</label>
-                    <input type="text" id="newTaskAssignedTo">
+                    <select id="newTaskAssignedTo"></select>
                 </div>
                 <div class="form-group">
                     <label for="newTaskPriority">Priorytet</label>
                     <select id="newTaskPriority">
                         <option value="low">Niski</option>
-                        <option value="medium" selected>Średni</option>
+                        <option value="medium">Średni</option>
                         <option value="high">Wysoki</option>
                     </select>
                 </div>
@@ -946,6 +955,46 @@
                     <textarea id="newTaskNotes" rows="4"></textarea>
                 </div>
                 <button type="submit" class="button" style="width: 100%;">Utwórz zadanie</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit Task Modal -->
+    <div id="editTaskModal" class="modal">
+        <div class="modal-content">
+            <span class="modal-close" onclick="closeEditTask()">&times;</span>
+            <h2>Edytuj zadanie</h2>
+            <form id="editTaskForm" style="margin-top: 20px;">
+                <input type="hidden" id="editTaskId">
+                <div class="form-group">
+                    <label for="editTaskTitle">Tytuł</label>
+                    <input type="text" id="editTaskTitle" required>
+                </div>
+                <div class="form-group">
+                    <label for="editTaskAssignedTo">Przypisane do</label>
+                    <select id="editTaskAssignedTo"></select>
+                </div>
+                <div class="form-group">
+                    <label for="editTaskPriority">Priorytet</label>
+                    <select id="editTaskPriority">
+                        <option value="low">Niski</option>
+                        <option value="medium">Średni</option>
+                        <option value="high">Wysoki</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="editTaskProject">Projekt</label>
+                    <input type="text" id="editTaskProject">
+                </div>
+                <div class="form-group">
+                    <label for="editTaskDueDate">Termin</label>
+                    <input type="date" id="editTaskDueDate">
+                </div>
+                <div class="form-group">
+                    <label for="editTaskNotes">Notatki</label>
+                    <textarea id="editTaskNotes" rows="4"></textarea>
+                </div>
+                <button type="submit" class="button" style="width: 100%;">Zapisz zmiany</button>
             </form>
         </div>
     </div>
@@ -1090,14 +1139,21 @@
             document.getElementById('userDisplay').textContent = `${currentUser.username} (${role})`;
             document.getElementById('createTaskBtn').style.display = currentUser.role === 'admin' ? 'block' : 'none';
             document.getElementById('bulkActionsBtn').style.display = currentUser.role === 'admin' ? 'block' : 'none';
+            document.getElementById('adminTab').style.display = currentUser.role === 'admin' ? 'block' : 'none';
         }
 
         // Tab Navigation
         function switchTab(tab) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-            event.target.classList.add('active');
-            document.getElementById(tab + 'Tab').classList.add('active');
+            
+            // Handle case where switchTab is called without an event (e.g. initial load)
+            const activeTabBtn = document.querySelector(`.tab[onclick*="switchTab('${tab}')"]`);
+            if (activeTabBtn) activeTabBtn.classList.add('active');
+            
+            const contentId = tab === 'admin' ? 'adminTabContent' : tab + 'Tab';
+            const content = document.getElementById(contentId);
+            if (content) content.classList.add('active');
 
             if (tab === 'kanban') renderKanban();
             if (tab === 'dashboard') loadDashboard();
@@ -1178,6 +1234,9 @@
             await loadSavedFilters();
             await loadTags();
             await loadTemplates();
+            if (currentUser && currentUser.role === 'admin') {
+                await loadUsers();
+            }
         }
 
         async function loadTasks() {
@@ -1277,6 +1336,17 @@
                         ${task.due_date ? `<span class="badge" style="background: #fce4ec; color: #880e4f;">📅 ${task.due_date}</span>` : ''}
                     </div>
                     ${task.notes ? `<div style="color: var(--text-secondary); font-size: 13px; margin: 8px 0;">${task.notes}</div>` : ''}
+                    ${task.subtasks && task.subtasks.length > 0 ? `
+                    <div class="subtasks-container">
+                        <small>Podzadania: </small>
+                        ${task.subtasks.map(subtask => `
+                            <span class="subtask-badge ${subtask.completed ? 'completed' : ''}" 
+                                  onclick="toggleSubtaskCompleted(${subtask.id}, ${task.id})">
+                                ${subtask.title}${subtask.completed ? ' ✓' : ''}
+                            </span>
+                        `).join('')}
+                    </div>
+                    ` : ''}
                 </div>
             `).join('');
         }
@@ -1333,6 +1403,23 @@
             }
         });
 
+        // Subtask Completion Toggle
+        async function toggleSubtaskCompleted(subtaskId, taskId) {
+            try {
+                const response = await fetch(`/subtasks/${subtaskId}/complete`, {
+                    method: 'PUT',
+                    credentials: 'include'
+                });
+                if (response.ok) {
+                    loadTasks(); // Refresh tasks to update UI
+                } else {
+                    console.error('Error toggling subtask completion');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        }
+
         // Task Operations
         async function viewTask(taskId) {
             const task = allTasks.find(t => t.id === taskId);
@@ -1368,11 +1455,65 @@
                 if (response.ok) {
                     loadTasks();
                     closeTaskModal();
+                    showToast('Zadanie zakończone');
                 }
             } catch (error) {
                 console.error('Error:', error);
             }
         }
+
+        function editTask(taskId) {
+            const task = allTasks.find(t => t.id === taskId);
+            if (!task) return;
+
+            document.getElementById('editTaskId').value = task.id;
+            document.getElementById('editTaskTitle').value = task.title;
+            document.getElementById('editTaskAssignedTo').value = task.assigned_to;
+            document.getElementById('editTaskPriority').value = task.priority;
+            document.getElementById('editTaskProject').value = task.project;
+            document.getElementById('editTaskDueDate').value = task.due_date || '';
+            document.getElementById('editTaskNotes').value = task.notes || '';
+
+            document.getElementById('editTaskModal').classList.add('active');
+        }
+
+        function closeEditTask() {
+            document.getElementById('editTaskModal').classList.remove('active');
+        }
+
+        document.getElementById('editTaskForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const taskId = document.getElementById('editTaskId').value;
+            const data = {
+                title: document.getElementById('editTaskTitle').value,
+                assigned_to: document.getElementById('editTaskAssignedTo').value,
+                priority: document.getElementById('editTaskPriority').value,
+                project: document.getElementById('editTaskProject').value,
+                due_date: document.getElementById('editTaskDueDate').value,
+                notes: document.getElementById('editTaskNotes').value
+            };
+
+            try {
+                const response = await fetch(`/tasks/${taskId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data),
+                    credentials: 'include'
+                });
+                if (response.ok) {
+                    showToast('Zadanie zaktualizowane');
+                    closeEditTask();
+                    closeTaskModal();
+                    loadTasks();
+                } else {
+                    const result = await response.json();
+                    showToast(result.error || 'Błąd aktualizacji', 'error');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showToast('Błąd serwera', 'error');
+            }
+        });
 
         async function deleteTask(taskId) {
             if (!confirm('Czy na pewno chcesz usunąć to zadanie?')) return;
@@ -1401,9 +1542,100 @@
                 showToast('Najpierw wybierz zadania', 'warning');
                 return;
             }
+            
             if (confirm(`Wykonaj akcję na ${selectedTasks.size} zadaniach?`)) {
-                // Show options
+                // Create bulk action menu
+                const bulkMenu = document.createElement('div');
+                bulkMenu.className = 'bulk-menu';
+                bulkMenu.innerHTML = `
+                    <div style="position: fixed; top: 100px; right: 20px; background: #333; color: white; padding: 15px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 1000; width: 250px;">
+                        <h4>Akcje masowe</h4>
+                        <div style="margin: 10px 0;">
+                            <button class="button button-success" onclick="bulkCompleteTasks()">Zakończone</button>
+                            <button class="button button-danger" onclick="bulkDeleteTasks()">Usunięte</button>
+                            <button class="button button-warning" onclick="bulkUpdateTasks()">Zaktualizowane</button>
+                        </div>
+                        <small style="font-size: 12px; margin-top: 10px;">Wybrano ${selectedTasks.size} zadań</small>
+                    </div>
+                `;
+                document.body.appendChild(bulkMenu);
+                
+                // Auto-remove after 10 seconds
+                setTimeout(() => {
+                    document.body.removeChild(bulkMenu);
+                }, 10000);
             }
+        }
+
+        function bulkCompleteTasks() {
+            const taskIds = Array.from(selectedTasks.keys());
+            fetch('/tasks/bulk/complete', {
+                method: 'PUT',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ task_ids: taskIds })
+            })
+            .then(response => response.json())
+            .then(data => {
+                showToast(data.message || 'Zakończono zadania', 'success');
+                selectedTasks.clear();
+                loadTasks(); 
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showToast('Błąd podczas zakończenia zadań', 'error');
+            });
+        }
+
+        function bulkDeleteTasks() {
+            const taskIds = Array.from(selectedTasks.keys());
+            fetch('/tasks/bulk/delete', {
+                method: 'DELETE',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ task_ids: taskIds })
+            })
+            .then(response => response.json())
+            .then(data => {
+                showToast(data.message || 'Zadania usunięte', 'success');
+                selectedTasks.clear();
+                loadTasks();
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showToast('Błąd podczas usuwaniu zadań', 'error');
+            });
+        }
+
+        function bulkUpdateTasks() {
+            const taskIds = Array.from(selectedTasks.keys());
+            if (taskIds.length === 0) return;
+
+            const priority = prompt('Zmień priorytet dla wybranych zadań (low, medium, high) lub pozostaw puste:');
+            const project = prompt('Zmień projekt dla wybranych zadań lub pozostaw puste:');
+            
+            const updates = {};
+            if (priority) updates.priority = priority;
+            if (project) updates.project = project;
+
+            if (Object.keys(updates).length === 0) return;
+            
+            fetch('/tasks/bulk/update', {
+                method: 'PUT',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ task_ids: taskIds, updates: updates })
+            })
+            .then(response => response.json())
+            .then(data => {
+                showToast(data.message || 'Zadania zaktualizowane', 'success');
+                loadTasks();
+                selectedTasks.clear();
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showToast('Błąd podczas aktualizowaniu zadań', 'error');
+            });
         }
 
         // Modal Functions

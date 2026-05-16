@@ -12,14 +12,22 @@ Runs on `http://localhost:5000`. Database is persisted in `instance/`.
 
 ### Option 2: Local Setup
 ```bash
-# Install dependencies
+# Initialize environment
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 
-# Initialize database migrations (if first run)
+# Initialize database migrations
 flask db upgrade
 
 # Run development server
 python app.py  # Runs on http://localhost:5000
+```
+
+**Testing:**
+```bash
+# Run tests (create tests/ directory first using backend-test-generator.prompt.md)
+pytest
 ```
 
 **Database:** SQLite (`instance/tasks.db`) - managed via Flask-Migrate.
@@ -46,6 +54,11 @@ We use **Flask-Migrate** (Alembic).
 
 All responses are JSON. Error responses follow: `{"error": "message"}` with appropriate HTTP status (401, 403, 404).
 
+## Real-Time Synchronization
+The app uses Socket.IO for cross-client updates.
+- **Backend**: Emits `task_action` with `action` and `task_id` (or `task` object) in `app.py`.
+- **Frontend**: Listens for `task_action` in `index.html`. Triggers `showToast()` and `loadTasks()`.
+
 ## Key Files
 
 - **app.py** - Flask app, models, decorators, all routes (~800+ lines)
@@ -58,12 +71,14 @@ All responses are JSON. Error responses follow: `{"error": "message"}` with appr
 - **Toast Notifications**: Use `showToast(message, type)` for feedback.
 - **Kanban Board**: Integrated into the secondary tab for status management.
 - **Real-Time Updates**: Uses Socket.io. Notifications for task actions (create, delete, etc.) are broadcasted to all users.
+- **Subtasks**: Managed via `Task.to_dict()` which includes a `subtasks` list. UI handles toggling via PUT `/subtasks/<id>/complete`.
 
 ## Common Pitfalls
 
 - **Marshmallow v3.x compatibility** - Use `load_default` instead of `default` for field defaults in schemas.
 - **Decorator stacking** - `@app.route()` must come BEFORE `@login_required` in the decorator stack.
-- **WebSocket workers** - When running with Gunicorn in Docker, use the `gthread` worker class instead of `eventlet` for better compatibility.
+- **WebSocket workers** - When running with Gunicorn in Docker, use the `gthread` worker class. For local development, `threading` is now the preferred `async_mode` for SocketIO to avoid `eventlet` deprecation issues.
+- **Port Conflicts**: Port 5000 is the default. If busy, check for ghost processes or browser tabs.
 
 ## Agent Skills & Guidelines
 - [Frontend Responsive Check](.vscode/prompts/frontend-responsive-check.prompt.md) - Enforces UI standards.
@@ -101,3 +116,10 @@ When working with Docker containers for this application, AI agents should be aw
 3. **Build Context**: Limit files copied during build to improve speed
 4. **Environment Variables**: Manage configuration properly with `.env` files
 5. **Health Monitoring**: Implement health check endpoints for production readiness
+
+## Refactoring & Code Quality
+
+- **Large Files**: `app.py` and `index.html` are significantly large. When modifying, use specific `replace_string_in_file` calls with sufficient context to avoid ambiguous matches.
+- **Modularity**: New features should consider being broken out into separate modules (e.g., `routes/`, `models/`, `static/js/components/`) if they grow beyond a few functions.
+- **Real-time consistency**: Any state-changing operation (Create/Update/Delete) MUST be followed by a `socketio.emit('task_action', ...)` to keep all clients in sync.
+- **Frontend State**: The frontend reloads the entire task list (`loadTasks()`) on any remote change. For performance with many tasks, consider partial state updates in the future.

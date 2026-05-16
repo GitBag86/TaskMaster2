@@ -23,7 +23,7 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(app.instance
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-key-change-in-production')
 CORS(app, supports_credentials=True)
 
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 # Auth decorators
 from functools import wraps
@@ -344,6 +344,29 @@ def get_users():
     
     users = User.query.all()
     return jsonify({"users": [u.to_dict() for u in users]})
+
+@app.route('/users/<int:target_user_id>/role', methods=['PUT'])
+@login_required
+def update_user_role(target_user_id):
+    user_id = session.get('user_id')
+    user = User.query.get(user_id)
+    
+    if user.role != 'admin':
+        return jsonify({"error": "Tylko administrator może zmieniać role"}), 403
+    
+    target_user = User.query.get(target_user_id)
+    if not target_user:
+        return jsonify({"error": "Użytkownik nie znaleziony"}), 404
+    
+    data = request.get_json()
+    new_role = data.get('role')
+    if new_role not in ['user', 'admin']:
+        return jsonify({"error": "Nieprawidłowa rola"}), 400
+    
+    target_user.role = new_role
+    db.session.commit()
+    
+    return jsonify({"message": f"Zmieniono rolę użytkownika {target_user.username} na {new_role}"}), 200
 
 @app.route('/tasks', methods=['GET'])
 @login_required
@@ -818,6 +841,7 @@ def bulk_complete_tasks():
             task.completed = True
     
     db.session.commit()
+    socketio.emit('task_action', {'action': 'zakończono masowo', 'task_ids': task_ids}, broadcast=True)
     return jsonify({"message": f"Zakończono {len(task_ids)} zadań"}), 200
 
 @app.route('/tasks/bulk/delete', methods=['DELETE'])
@@ -840,6 +864,7 @@ def bulk_delete_tasks():
             count += 1
     
     db.session.commit()
+    socketio.emit('task_action', {'action': 'usunięto masowo', 'task_ids': task_ids}, broadcast=True)
     return jsonify({"message": f"Usunięto {count} zadań"}), 200
 
 @app.route('/tasks/bulk/update', methods=['PUT'])
@@ -863,8 +888,10 @@ def bulk_update_tasks():
                     setattr(task, key, value)
     
     db.session.commit()
-    return jsonify({"message": f"Updated {len(task_ids)} tasks"}), 200
+    socketio.emit('task_action', {'action': 'zaktualizowano masowo', 'task_ids': task_ids}, broadcast=True)
+    return jsonify({"message": f"Zaktualizowano {len(task_ids)} zadań"}), 200
 
+@app.route('/users', methods=['GET'])
 # Export
 @app.route('/tasks/export/csv', methods=['GET'])
 @login_required
@@ -903,4 +930,14 @@ def export_csv():
     }
 
 if __name__ == '__main__':
-    socketio.run(app, debug=True, port=5000)
+    import socket
+    # Enable socket address reuse to avoid "Address already in use" errors
+    socketio.run(
+        app,
+        debug=True,
+        host='0.0.0.0',
+        port=5000,
+        allow_unsafe_werkzeug=True,
+        use_reloader=False
+    )
+    # Note: For production, use: gunicorn --worker-class gthread -w 2 --bind 0.0.0.0:5000 app:app
