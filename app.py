@@ -1,9 +1,42 @@
+import json
+import os
+import sys
+import time
+
+# #region agent log
+_DEBUG_LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "debug-59c6ac.log")
+
+
+def _agent_ndjson_log(hypothesis_id, message, **data):
+    line = json.dumps({"sessionId": "59c6ac", "runId": os.environ.get("APP_DEBUG_RUN", "startup"), "hypothesisId": hypothesis_id, "location": "app.py:bootstrap", "message": message, "data": data, "timestamp": int(time.time() * 1000)}) + "\n"
+    try:
+        with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as _f:
+            _f.write(line)
+    except OSError:
+        try:
+            sys.stderr.write(line)
+            sys.stderr.flush()
+        except OSError:
+            pass
+
+
+_agent_ndjson_log("H1", "interpreter_startup", exe=sys.executable)
+_agent_ndjson_log("H4", "python_env_paths", exe=sys.executable, prefix=sys.prefix, base_prefix=getattr(sys, "base_prefix", sys.prefix), virtual_env=os.environ.get("VIRTUAL_ENV"))
+# #endregion
+
 from flask import Flask, send_from_directory, session, jsonify, request
-from flask_cors import CORS
+
+# #region agent log
+try:
+    from flask_cors import CORS
+    _agent_ndjson_log("H2", "flask_cors_import_ok")
+except ImportError as e:
+    _agent_ndjson_log("H2", "flask_cors_import_fail", error=str(type(e).__name__), detail=str(e))
+    raise
+# #endregion
 from flask_migrate import Migrate
 from flask_socketio import SocketIO
 from dotenv import load_dotenv
-import os
 import logging
 
 load_dotenv()
@@ -16,6 +49,8 @@ os.makedirs(app.instance_path, exist_ok=True)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(app.instance_path, 'tasks.db')
 
 secret_key = os.environ.get('SECRET_KEY')
+_agent_ndjson_log("H3", "secret_key_check", present=bool(secret_key))
+
 if not secret_key:
     raise RuntimeError(
         "SECRET_KEY environment variable is not set. "
@@ -38,7 +73,14 @@ with app.app_context():
     db.create_all()
 
 # Register blueprints
-from routes import auth_bp, users_bp, tasks_bp, stats_bp, filters_bp
+# #region agent log
+try:
+    from routes import auth_bp, users_bp, tasks_bp, stats_bp, filters_bp
+    _agent_ndjson_log("H5", "routes_blueprints_import_ok")
+except Exception as e:
+    _agent_ndjson_log("H5", "routes_blueprints_import_fail", error=type(e).__name__, detail=str(e))
+    raise
+# #endregion
 app.register_blueprint(auth_bp)
 app.register_blueprint(users_bp)
 app.register_blueprint(tasks_bp)
