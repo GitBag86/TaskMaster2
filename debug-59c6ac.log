@@ -101,3 +101,8 @@
 {"sessionId": "59c6ac", "runId": "startup", "hypothesisId": "H3", "location": "app.py:bootstrap", "message": "secret_key_check", "data": {"present": true}, "timestamp": 1778918518897}
 {"sessionId": "59c6ac", "runId": "startup", "hypothesisId": "H6", "location": "app.py:bootstrap", "message": "scheduler_started", "data": {}, "timestamp": 1778918518968}
 {"sessionId": "59c6ac", "runId": "startup", "hypothesisId": "H5", "location": "app.py:bootstrap", "message": "routes_blueprints_import_ok", "data": {}, "timestamp": 1778918518978}
+{"sessionId": "59c6ac", "runId": "startup", "hypothesisId": "H1", "location": "app.py:bootstrap", "message": "interpreter_startup", "data": {"exe": "/home/dakos/CODE/1/.venv/bin/python3"}, "timestamp": 1779036386618}
+{"sessionId": "59c6ac", "runId": "startup", "hypothesisId": "H4", "location": "app.py:bootstrap", "message": "python_env_paths", "data": {"exe": "/home/dakos/CODE/1/.venv/bin/python3", "prefix": "/home/dakos/CODE/1/.venv", "base_prefix": "/usr", "virtual_env": "/home/dakos/CODE/1/.venv"}, "timestamp": 1779036386618}
+{"sessionId": "59c6ac", "runId": "startup", "hypothesisId": "H3", "location": "app.py:bootstrap", "message": "secret_key_check", "data": {"present": true}, "timestamp": 1779036386619}
+{"sessionId": "59c6ac", "runId": "startup", "hypothesisId": "H6", "location": "app.py:bootstrap", "message": "scheduler_started", "data": {}, "timestamp": 1779036387016}
+{"sessionId": "59c6ac", "runId": "startup", "hypothesisId": "H5", "location": "app.py:bootstrap", "message": "routes_blueprints_import_ok", "data": {}, "timestamp": 1779036387046}
