@@ -65,7 +65,7 @@ export const api = {
       request<PaginationResponse<Task>>(`/tasks?page=${page}&per_page=${perPage}`),
     create: (data: {
       title: string;
-      assigned_to?: string;
+      assignee_ids?: number[];
       priority?: string;
       project?: string;
       due_date?: string;

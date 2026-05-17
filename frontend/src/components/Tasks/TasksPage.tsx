@@ -3,6 +3,7 @@ import type { Task } from '@/types'
 import { api } from '@/api/client'
 import { useToast } from '@/store/ToastContext'
 import { useAuth } from '@/store/AuthContext'
+import { useSocket } from '@/store/SocketContext'
 import TaskCard from './TaskCard'
 import TaskForm from './TaskForm'
 import TaskDetail from './TaskDetail'
@@ -18,6 +19,7 @@ export default function TasksPage() {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const { addToast } = useToast();
   const { user } = useAuth();
+  const { lastTaskEvent } = useSocket();
 
   const fetchTasks = useCallback(async () => {
     try {
@@ -33,6 +35,32 @@ export default function TasksPage() {
   useEffect(() => {
     fetchTasks();
   }, [fetchTasks]);
+
+  useEffect(() => {
+    if (!lastTaskEvent || lastTaskEvent.user === user?.username) return;
+
+    if (lastTaskEvent.task && ['created', 'updated', 'completed', 'reopened'].includes(lastTaskEvent.action)) {
+      setTasks(prev => {
+        const existingIndex = prev.findIndex(task => task.id === lastTaskEvent.task_id);
+        if (existingIndex === -1) {
+          return [lastTaskEvent.task!, ...prev];
+        }
+        const next = [...prev];
+        next[existingIndex] = lastTaskEvent.task!;
+        return next;
+      });
+      return;
+    }
+
+    if (lastTaskEvent.action === 'deleted' && lastTaskEvent.task_id) {
+      setTasks(prev => prev.filter(task => task.id !== lastTaskEvent.task_id));
+      return;
+    }
+
+    if (lastTaskEvent.task_ids && ['bulk_deleted', 'bulk_completed', 'bulk_updated'].includes(lastTaskEvent.action)) {
+      fetchTasks();
+    }
+  }, [fetchTasks, lastTaskEvent, user?.username]);
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) {
@@ -76,7 +104,7 @@ export default function TasksPage() {
     }
   };
 
-  const handleCreate = async (data: { title: string; assigned_to?: string; priority?: string; project?: string; due_date?: string; notes?: string }) => {
+  const handleCreate = async (data: { title: string; assignee_ids?: number[]; priority?: string; project?: string; due_date?: string; notes?: string }) => {
     try {
       await api.tasks.create(data);
       addToast('Zadanie utworzone', 'success');

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import type { Task } from '@/types'
 import { api } from '@/api/client'
 import { useToast } from '@/store/ToastContext'
+import { useSocket } from '@/store/SocketContext'
 
 const columns = [
   { key: 'todo' as const, label: 'Do zrobienia', color: 'border-gray-300 dark:border-gray-600' },
@@ -13,6 +14,7 @@ export default function KanbanPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const { addToast } = useToast();
+  const { lastTaskEvent } = useSocket();
 
   const fetchTasks = useCallback(async () => {
     try {
@@ -26,6 +28,29 @@ export default function KanbanPage() {
   }, [addToast]);
 
   useEffect(() => { fetchTasks(); }, [fetchTasks]);
+
+  useEffect(() => {
+    if (!lastTaskEvent) return;
+    if (lastTaskEvent.task && ['created', 'updated', 'completed', 'reopened'].includes(lastTaskEvent.action)) {
+      setTasks(prev => {
+        const index = prev.findIndex(task => task.id === lastTaskEvent.task_id);
+        if (index === -1) return [lastTaskEvent.task!, ...prev];
+        const next = [...prev];
+        next[index] = lastTaskEvent.task!;
+        return next;
+      });
+      return;
+    }
+
+    if (lastTaskEvent.action === 'deleted' && lastTaskEvent.task_id) {
+      setTasks(prev => prev.filter(task => task.id !== lastTaskEvent.task_id));
+      return;
+    }
+
+    if (lastTaskEvent.task_ids && ['bulk_deleted', 'bulk_completed', 'bulk_updated'].includes(lastTaskEvent.action)) {
+      fetchTasks();
+    }
+  }, [fetchTasks, lastTaskEvent]);
 
   const handleDrop = async (e: React.DragEvent, status: Task['status']) => {
     e.preventDefault();

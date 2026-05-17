@@ -114,6 +114,9 @@ task_tags = db.Table('task_tags',
     db.Column('tag_id', db.Integer, db.ForeignKey('tag.id'), primary_key=True)
 )
 
+Task.tags = db.relationship('Tag', secondary=task_tags, lazy='subquery',
+                            backref=db.backref('tasks', lazy=True))
+
 class SavedFilter(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)

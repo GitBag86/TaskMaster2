@@ -21,6 +21,9 @@ interface Props {
 export default function TaskCard({ task, onClick, onComplete }: Props) {
   const priority = priorityConfig[task.priority];
   const status = statusConfig[task.status] || statusConfig.todo;
+  const assigneeLabel = task.assignees.length > 0
+    ? task.assignees.map(assignee => assignee.username).join(', ')
+    : 'Nieprzypisane';
 
   return (
     <div
@@ -57,7 +60,7 @@ export default function TaskCard({ task, onClick, onComplete }: Props) {
         </div>
 
         <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>{task.assigned_to}</span>
+          <span>{assigneeLabel}</span>
           {task.due_date && (
             <span className={isOverdue(task.due_date, task.completed) ? 'text-destructive' : ''}>
               {formatDate(task.due_date)}

@@ -18,6 +18,7 @@ instance/tasks.db
 node_modules/
 frontend/node_modules/
 frontend/dist/
+frontend/tsconfig.tsbuildinfo
 
 # OS
 .DS_Store
@@ -26,3 +27,5 @@ Thumbs.db
 # Other
 lib64
 var/
+debug-59c6ac.log
+assets/

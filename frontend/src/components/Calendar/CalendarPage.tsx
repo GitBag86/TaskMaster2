@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import type { Task } from '@/types'
 import { api } from '@/api/client'
 import { useToast } from '@/store/ToastContext'
+import { useSocket } from '@/store/SocketContext'
 
 const days = ['Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'So', 'Nd'];
 const months = ['Styczeń', 'Luty', 'Marzec', 'Kwiecień', 'Maj', 'Czerwiec', 'Lipiec', 'Sierpień', 'Wrzesień', 'Październik', 'Listopad', 'Grudzień'];
@@ -11,6 +12,7 @@ export default function CalendarPage() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [loading, setLoading] = useState(true);
   const { addToast } = useToast();
+  const { lastTaskEvent } = useSocket();
 
   const fetchTasks = useCallback(async () => {
     try {
@@ -24,6 +26,29 @@ export default function CalendarPage() {
   }, [addToast]);
 
   useEffect(() => { fetchTasks(); }, [fetchTasks]);
+
+  useEffect(() => {
+    if (!lastTaskEvent) return;
+    if (lastTaskEvent.task && ['created', 'updated', 'completed', 'reopened'].includes(lastTaskEvent.action)) {
+      setTasks(prev => {
+        const index = prev.findIndex(task => task.id === lastTaskEvent.task_id);
+        if (index === -1) return [lastTaskEvent.task!, ...prev];
+        const next = [...prev];
+        next[index] = lastTaskEvent.task!;
+        return next;
+      });
+      return;
+    }
+
+    if (lastTaskEvent.action === 'deleted' && lastTaskEvent.task_id) {
+      setTasks(prev => prev.filter(task => task.id !== lastTaskEvent.task_id));
+      return;
+    }
+
+    if (lastTaskEvent.task_ids && ['bulk_deleted', 'bulk_completed', 'bulk_updated'].includes(lastTaskEvent.action)) {
+      fetchTasks();
+    }
+  }, [fetchTasks, lastTaskEvent]);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();

@@ -1,16 +1,13 @@
 import pytest
-from app import app as flask_app
+from app import create_app
+from config import TestingConfig
 from models import db, User, Task
 import os
 
 @pytest.fixture
 def app():
-    flask_app.config.update({
-        "TESTING": True,
-        "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
-        "SECRET_KEY": "test-secret-key",
-        "WTF_CSRF_ENABLED": False
-    })
+    flask_app = create_app(TestingConfig)
+    flask_app.config.update({"WTF_CSRF_ENABLED": False})
 
     with flask_app.app_context():
         db.create_all()

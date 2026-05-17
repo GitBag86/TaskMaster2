@@ -6,6 +6,12 @@ from routes.auth import login_required
 import csv
 from io import StringIO
 
+def assigned_task_query(user):
+    return Task.query.filter(Task.assignees.any(User.id == user.id))
+
+def assignee_names(task):
+    return ', '.join(assignee.username for assignee in task.assignees)
+
 @stats_bp.route('/stats/dashboard', methods=['GET'])
 @login_required
 def get_dashboard_stats():
@@ -15,7 +21,7 @@ def get_dashboard_stats():
     if user.role == 'admin':
         tasks = Task.query.all()
     else:
-        tasks = Task.query.filter_by(assigned_to=user.username).all()
+        tasks = assigned_task_query(user).all()
 
     total = len(tasks)
     completed = len([t for t in tasks if t.completed])
@@ -67,7 +73,7 @@ def export_csv():
     if user.role == 'admin':
         tasks = Task.query.all()
     else:
-        tasks = Task.query.filter_by(assigned_to=user.username).all()
+        tasks = assigned_task_query(user).all()
 
     output = StringIO()
     writer = csv.writer(output)
@@ -79,7 +85,7 @@ def export_csv():
             task.title,
             task.priority,
             task.project,
-            task.assigned_to,
+            assignee_names(task),
             task.due_date.isoformat() if task.due_date else '',
             'Completed' if task.completed else 'Pending',
             task.notes

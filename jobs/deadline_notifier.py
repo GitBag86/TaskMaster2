@@ -20,15 +20,18 @@ def check_deadlines():
         ).all()
 
         for task in tasks:
-            # Fetch assignee's email
-            assignee_user = User.query.filter_by(username=task.assigned_to).first()
-            if assignee_user and assignee_user.email:
-                task_link = url_for('index', _external=True) + f'tasks/{task.id}'
-                subject = f"Zbliża się termin wykonania zadania: {task.title}"
-                body = get_deadline_warning_body(task.title, task.due_date.isoformat(), task_link)
+            if not task.assignees:
+                logger.warning("Could not send deadline warning for task %s: no assignees.", task.id)
+                continue
+
+            task_link = url_for('index', _external=True) + f'tasks/{task.id}'
+            subject = f"Zbliża się termin wykonania zadania: {task.title}"
+            body = get_deadline_warning_body(task.title, task.due_date.isoformat(), task_link)
+
+            for assignee_user in task.assignees:
+                if not assignee_user.email:
+                    continue
                 send_email(assignee_user.email, subject, body)
-                logger.info(f"Sent deadline warning for task {task.id} to {assignee_user.email}")
-            else:
-                logger.warning(f"Could not send deadline warning for task {task.id}: no assignee email or user found.")
+                logger.info("Sent deadline warning for task %s to %s", task.id, assignee_user.email)
 
         logger.info(f"Deadline check job completed. {len(tasks)} tasks with upcoming deadlines found.")

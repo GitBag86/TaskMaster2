@@ -126,11 +126,13 @@ def use_template(template_id):
     task = Task(
         user_id=user_id,
         title=data.get('title'),
-        assigned_to=data.get('assigned_to', 'Unassigned'),
         priority=data.get('priority', 'medium'),
         project=data.get('project', 'General'),
         notes=data.get('notes', '')
     )
+    assignee_ids = data.get('assignee_ids', [])
+    if assignee_ids:
+        task.assignees = User.query.filter(User.id.in_(assignee_ids)).all()
     db.session.add(task)
     db.session.commit()
     return jsonify(task.to_dict()), 201

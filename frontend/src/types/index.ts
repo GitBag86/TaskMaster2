@@ -9,7 +9,7 @@ export interface User {
 export interface Task {
   id: number;
   title: string;
-  assigned_to: string;
+  assignees: User[];
   priority: 'low' | 'medium' | 'high';
   project: string;
   due_date: string | null;

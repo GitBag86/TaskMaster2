@@ -1,18 +1,31 @@
 from flask import request, jsonify, session, url_for, current_app
 from datetime import datetime, timezone
 from marshmallow import ValidationError
+from extensions import socketio
 from routes import tasks_bp
-from models import db, User, Task, Comment, Subtask, ActivityLog, task_tags, Tag
+from models import db, User, Task, Comment, Subtask, ActivityLog, Tag
 from schemas import TaskSchema, CommentSchema, SubtaskSchema
 from routes.auth import login_required
 from utils.email_sender import send_email, get_task_status_change_body, get_task_assignment_body
 
-TASK_ALLOWED_FIELDS = {'title', 'assignees', 'priority', 'project', 'due_date', 'notes', 'completed', 'status'}
+TASK_ALLOWED_FIELDS = {'title', 'priority', 'project', 'due_date', 'notes', 'completed', 'status'}
 BULK_MAX_TASKS = 100
 
-def get_socketio():
-    from app import socketio
-    return socketio
+def emit_task_event(action, user, task=None, task_ids=None, task_id=None, task_payload=None):
+    payload = {
+        "action": action,
+        "user": user.username,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    if task is not None:
+        payload["task_id"] = task.id
+        payload["task"] = task.to_dict()
+    elif task_id is not None:
+        payload["task_id"] = task_id
+        payload["task"] = task_payload
+    if task_ids is not None:
+        payload["task_ids"] = task_ids
+    socketio.emit("task_action", payload)
 
 def parse_due_date(value):
     if not value:
@@ -23,6 +36,20 @@ def parse_due_date(value):
         except ValueError:
             pass
     return value
+
+def user_can_access_task(user, task):
+    return user.role == 'admin' or user in task.assignees
+
+def assigned_task_query(user):
+    return Task.query.filter(Task.assignees.any(User.id == user.id))
+
+def assignee_names(task):
+    return ', '.join(user.username for user in task.assignees)
+
+def update_task_assignees(task, assignee_ids):
+    users = User.query.filter(User.id.in_(assignee_ids)).all() if assignee_ids else []
+    task.assignees = users
+    return users
 
 @tasks_bp.route('/tasks', methods=['GET'])
 @login_required
@@ -37,7 +64,7 @@ def get_tasks():
     if user.role == 'admin':
         query = Task.query
     else:
-        query = Task.query.join(Task.assignees).filter(User.id == user.id)
+        query = assigned_task_query(user)
 
     pagination = query.order_by(Task.created_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
     tasks = pagination.items
@@ -77,25 +104,23 @@ def create_task():
         notes=validated.get("notes", "")
     )
 
-    assignee_ids = validated.get('assignee_ids', [])
-    for assignee_id in assignee_ids:
-        assignee = db.session.get(User, assignee_id)
-        if assignee:
-            task.assignees.append(assignee)
-            # Send assignment email
-            task_link = url_for('index', _external=True) + f'tasks/{task.id}'
-            subject = f"Zostałeś przypisany do zadania: {task.title}"
-            body = get_task_assignment_body(task.title, assignee.username, task_link)
-            send_email(assignee.email, subject, body)
+    assignees = update_task_assignees(task, validated.get('assignees', []))
 
     db.session.add(task)
     db.session.flush()
+
+    task_link = url_for('index', _external=True) + f'tasks/{task.id}'
+    for assignee in assignees:
+        if assignee.email:
+            subject = f"Zostałeś przypisany do zadania: {task.title}"
+            body = get_task_assignment_body(task.title, assignee.username, task_link)
+            send_email(assignee.email, subject, body)
 
     log = ActivityLog(user_id=user_id, task_id=task.id, action='created', details={'title': task.title})
     db.session.add(log)
     db.session.commit()
 
-    get_socketio().emit('task_action', {'action': 'utworzył(a)', 'task': task.title, 'user': user.username})
+    emit_task_event("created", user, task=task)
 
     return jsonify(task.to_dict()), 201
 
@@ -112,11 +137,13 @@ def update_task(task_id):
         return jsonify({"error": "Only admins can update tasks"}), 403
 
     old_status = task.status
-    old_assigned_to = task.assigned_to
+    old_assignee_ids = {assignee.id for assignee in task.assignees}
 
     data = request.get_json()
     for key, value in data.items():
-        if key in TASK_ALLOWED_FIELDS and hasattr(task, key):
+        if key in ('assignee_ids', 'assignees'):
+            update_task_assignees(task, value or [])
+        elif key in TASK_ALLOWED_FIELDS and hasattr(task, key):
             if key == 'due_date':
                 value = parse_due_date(value)
             setattr(task, key, value)
@@ -132,16 +159,16 @@ def update_task(task_id):
             body = get_task_status_change_body(task.title, old_status, task.status, task_link)
             send_email(task.owner.email, subject, body)
 
-    # Send email for assignment change
-    if 'assigned_to' in data and old_assigned_to != task.assigned_to:
-        # Find the user by username to get their email
-        assignee_user = User.query.filter_by(username=task.assigned_to).first()
-        if assignee_user and assignee_user.email:
+    # Send email for new assignments
+    if 'assignee_ids' in data or 'assignees' in data:
+        for assignee_user in task.assignees:
+            if assignee_user.id in old_assignee_ids or not assignee_user.email:
+                continue
             subject = f"Zostałeś przypisany do zadania: {task.title}"
-            body = get_task_assignment_body(task.title, task.assigned_to, task_link)
+            body = get_task_assignment_body(task.title, assignee_user.username, task_link)
             send_email(assignee_user.email, subject, body)
 
-    get_socketio().emit('task_action', {'action': 'zaktualizował(a)', 'task': task.title, 'user': user.username})
+    emit_task_event("updated", user, task=task)
 
     log = ActivityLog(user_id=user_id, task_id=task_id, action='updated', details={'title': task.title})
     db.session.add(log)
@@ -158,7 +185,7 @@ def complete_task(task_id):
     if not task:
         return jsonify({"error": "Task not found"}), 404
 
-    if user.role == 'user' and task.assigned_to != user.username:
+    if not user_can_access_task(user, task):
         return jsonify({"error": "Can only complete tasks assigned to you"}), 403
 
     task.completed = not task.completed
@@ -168,11 +195,7 @@ def complete_task(task_id):
     db.session.add(log)
     db.session.commit()
 
-    get_socketio().emit('task_action', {
-        'action': 'ukończył(a)' if task.completed else 'przywrócił(a)',
-        'task': task.title,
-        'user': user.username
-    })
+    emit_task_event("completed" if task.completed else "reopened", user, task=task)
 
     return jsonify(task.to_dict())
 
@@ -188,11 +211,11 @@ def delete_task(task_id):
     if user.role != 'admin':
         return jsonify({"error": "Only admins can delete tasks"}), 403
 
-    task_title = task.title
+    task_snapshot = task.to_dict()
     db.session.delete(task)
     db.session.commit()
 
-    get_socketio().emit('task_action', {'action': 'usunął(ęła)', 'task': task_title, 'user': user.username})
+    emit_task_event("deleted", user, task_ids=[task_id], task_id=task_id, task_payload=task_snapshot)
     return jsonify({"message": "Zadanie usunięte"}), 200
 
 @tasks_bp.route('/tasks/<int:task_id>/comments', methods=['POST'])
@@ -220,7 +243,7 @@ def add_comment(task_id):
     db.session.add(comment)
     db.session.commit()
 
-    get_socketio().emit('task_action', {'action': 'skomentował(a)', 'task': task.title, 'user': user.username})
+    emit_task_event("commented", user, task=task)
     return jsonify(comment.to_dict()), 201
 
 @tasks_bp.route('/tasks/<int:task_id>/subtasks', methods=['POST'])
@@ -233,7 +256,7 @@ def add_subtask(task_id):
     if not task:
         return jsonify({"error": "Task not found"}), 404
 
-    if user.role != 'admin' and task.assigned_to != user.username:
+    if not user_can_access_task(user, task):
         return jsonify({"error": "Permission denied"}), 403
 
     data = request.get_json()
@@ -253,7 +276,7 @@ def add_subtask(task_id):
     db.session.add(log)
     db.session.commit()
 
-    get_socketio().emit('task_action', {'action': 'dodał(a) podzadanie', 'task': f"{task.title} -> {subtask.title}", 'user': user.username})
+    emit_task_event("subtask_created", user, task=task)
     return jsonify(subtask.to_dict()), 201
 
 @tasks_bp.route('/subtasks/<int:subtask_id>/complete', methods=['PUT'])
@@ -267,7 +290,7 @@ def complete_subtask(subtask_id):
         return jsonify({"error": "Subtask not found"}), 404
 
     task = db.session.get(Task, subtask.task_id)
-    if user.role != 'admin' and task.assigned_to != user.username:
+    if not user_can_access_task(user, task):
         return jsonify({"error": "Permission denied"}), 403
 
     subtask.completed = not subtask.completed
@@ -276,8 +299,7 @@ def complete_subtask(subtask_id):
     db.session.add(log)
     db.session.commit()
 
-    action = 'ukończył(a) podzadanie' if subtask.completed else 'przywrócił(a) podzadanie'
-    get_socketio().emit('task_action', {'action': action, 'task': f"{task.title} ({subtask.title})", 'user': user.username})
+    emit_task_event("subtask_completed" if subtask.completed else "subtask_reopened", user, task=task)
     return jsonify(subtask.to_dict())
 
 @tasks_bp.route('/subtasks/<int:subtask_id>', methods=['DELETE'])
@@ -291,7 +313,7 @@ def delete_subtask(subtask_id):
         return jsonify({"error": "Subtask not found"}), 404
 
     task = db.session.get(Task, subtask.task_id)
-    if user.role != 'admin' and task.assigned_to != user.username:
+    if not user_can_access_task(user, task):
         return jsonify({"error": "Permission denied"}), 403
 
     db.session.delete(subtask)
@@ -306,7 +328,7 @@ def filter_tasks():
 
     query = Task.query
     if user.role != 'admin':
-        query = query.filter_by(assigned_to=user.username)
+        query = assigned_task_query(user)
 
     assigned_to = request.args.get('assigned_to')
     priority = request.args.get('priority')
@@ -314,7 +336,7 @@ def filter_tasks():
     completed = request.args.get('completed')
 
     if assigned_to:
-        query = query.filter_by(assigned_to=assigned_to)
+        query = query.filter(Task.assignees.any(User.username == assigned_to))
     if priority:
         query = query.filter_by(priority=priority)
     if project:
@@ -334,7 +356,7 @@ def tasks_by_project():
     if user.role == 'admin':
         tasks = Task.query.all()
     else:
-        tasks = Task.query.filter_by(assigned_to=user.username).all()
+        tasks = assigned_task_query(user).all()
 
     projects = {}
     for task in tasks:
@@ -359,7 +381,7 @@ def search_tasks():
             Task.title.ilike(f'%{query_str}%') | Task.notes.ilike(f'%{query_str}%')
         ).all()
     else:
-        tasks = Task.query.filter_by(assigned_to=user.username).filter(
+        tasks = assigned_task_query(user).filter(
             (Task.title.ilike(f'%{query_str}%')) | (Task.notes.ilike(f'%{query_str}%'))
         ).all()
 
@@ -405,7 +427,7 @@ def bulk_complete_tasks():
             task.status = 'done'
 
     db.session.commit()
-    get_socketio().emit('task_action', {'action': 'zakończono masowo', 'task_ids': task_ids})
+    emit_task_event("bulk_completed", user, task_ids=task_ids)
     return jsonify({"message": f"Zakończono {len(task_ids)} zadań"}), 200
 
 @tasks_bp.route('/tasks/bulk/delete', methods=['DELETE'])
@@ -431,7 +453,7 @@ def bulk_delete_tasks():
             count += 1
 
     db.session.commit()
-    get_socketio().emit('task_action', {'action': 'usunięto masowo', 'task_ids': task_ids})
+    emit_task_event("bulk_deleted", user, task_ids=task_ids)
     return jsonify({"message": f"Usunięto {count} zadań"}), 200
 
 @tasks_bp.route('/tasks/bulk/update', methods=['PUT'])
@@ -454,11 +476,13 @@ def bulk_update_tasks():
         task = db.session.get(Task, task_id)
         if task:
             for key, value in updates.items():
-                if key in TASK_ALLOWED_FIELDS and hasattr(task, key):
+                if key in ('assignee_ids', 'assignees'):
+                    update_task_assignees(task, value or [])
+                elif key in TASK_ALLOWED_FIELDS and hasattr(task, key):
                     if key == 'due_date':
                         value = parse_due_date(value)
                     setattr(task, key, value)
 
     db.session.commit()
-    get_socketio().emit('task_action', {'action': 'zaktualizowano masowo', 'task_ids': task_ids})
+    emit_task_event("bulk_updated", user, task_ids=task_ids)
     return jsonify({"message": f"Zaktualizowano {len(task_ids)} zadań"}), 200
