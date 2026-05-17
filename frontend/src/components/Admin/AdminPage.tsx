@@ -3,6 +3,7 @@ import type { User } from '@/types'
 import { api } from '@/api/client'
 import { useToast } from '@/store/ToastContext'
 import { useAuth } from '@/store/AuthContext'
+import { AdminSkeleton } from '@/components/common/Skeletons'
 
 export default function AdminPage() {
   const [users, setUsers] = useState<User[]>([]);
@@ -34,15 +35,11 @@ export default function AdminPage() {
   };
 
   if (loading) {
-    return (
-      <div className="flex h-64 items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-      </div>
-    );
+    return <AdminSkeleton />;
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 page-enter">
       <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Zarządzanie użytkownikami</h2>
       <div className="card overflow-hidden">
         <table className="w-full">

@@ -3,6 +3,10 @@ export interface User {
   username: string;
   email: string;
   role: 'admin' | 'user';
+  terms_accepted: boolean;
+  privacy_accepted: boolean;
+  marketing_consent: boolean;
+  consented_at: string | null;
   created_at: string;
 }
 
@@ -79,6 +83,8 @@ export interface PaginationResponse<T> {
   page: number;
   pages: number;
   per_page: number;
+  has_next?: boolean;
+  has_prev?: boolean;
 }
 
 export interface Toast {

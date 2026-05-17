@@ -19,6 +19,10 @@ class User(db.Model):
     password = db.Column(db.String(255), nullable=False)
     email = db.Column(db.String(100), unique=True, nullable=False) # Made mandatory
     role = db.Column(db.String(20), default='user')
+    terms_accepted = db.Column(db.Boolean, nullable=False, default=False)
+    privacy_accepted = db.Column(db.Boolean, nullable=False, default=False)
+    marketing_consent = db.Column(db.Boolean, nullable=False, default=False)
+    consented_at = db.Column(db.DateTime, nullable=True)
     tasks = db.relationship('Task', backref='owner', lazy=True, cascade='all, delete-orphan')
     created_at = db.Column(db.DateTime, default=utcnow)
 
@@ -34,6 +38,10 @@ class User(db.Model):
             'username': self.username,
             'email': self.email,
             'role': self.role,
+            'terms_accepted': self.terms_accepted,
+            'privacy_accepted': self.privacy_accepted,
+            'marketing_consent': self.marketing_consent,
+            'consented_at': self.consented_at.isoformat() if self.consented_at else None,
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
 

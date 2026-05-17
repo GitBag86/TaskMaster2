@@ -41,10 +41,17 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ username, password }),
       }),
-    signup: (username: string, password: string, email?: string) =>
+    signup: (data: {
+      username: string;
+      password: string;
+      email: string;
+      accept_terms: boolean;
+      accept_privacy: boolean;
+      accept_marketing: boolean;
+    }) =>
       request<{ message: string; user: User }>('/auth/signup', {
         method: 'POST',
-        body: JSON.stringify({ username, password, email }),
+        body: JSON.stringify(data),
       }),
     logout: () =>
       request<{ message: string }>('/auth/logout', { method: 'POST' }),

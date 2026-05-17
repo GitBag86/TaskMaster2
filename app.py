@@ -25,7 +25,7 @@ def _configure_app(app):
         )
 
     os.makedirs(app.instance_path, exist_ok=True)
-    if not os.environ.get("SQLALCHEMY_DATABASE_URI"):
+    if not app.config.get("SQLALCHEMY_DATABASE_URI"):
         app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + os.path.join(app.instance_path, "tasks.db")
 
     CORS(app, supports_credentials=True, origins=app.config["CORS_ORIGINS"])

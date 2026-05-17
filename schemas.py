@@ -6,6 +6,10 @@ class UserSchema(Schema):
     username = fields.Str(required=True, validate=validate.Length(min=3, max=100))
     email = fields.Email(required=True) # Now mandatory
     role = fields.Str(dump_only=True)
+    terms_accepted = fields.Bool(dump_only=True)
+    privacy_accepted = fields.Bool(dump_only=True)
+    marketing_consent = fields.Bool(dump_only=True)
+    consented_at = fields.DateTime(dump_only=True)
     created_at = fields.DateTime(dump_only=True)
 
 class TaskSchema(Schema):
@@ -40,6 +44,9 @@ class SignupSchema(Schema):
     username = fields.Str(required=True, validate=validate.Length(min=3, max=100))
     password = fields.Str(required=True, validate=validate.Length(min=6))
     email = fields.Email(required=True) # Now mandatory
+    accept_terms = fields.Bool(required=True, validate=validate.Equal(True))
+    accept_privacy = fields.Bool(required=True, validate=validate.Equal(True))
+    accept_marketing = fields.Bool(load_default=False)
 
 class TagSchema(Schema):
     id = fields.Int(dump_only=True)

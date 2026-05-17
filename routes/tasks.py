@@ -74,7 +74,9 @@ def get_tasks():
         "total": pagination.total,
         "page": pagination.page,
         "pages": pagination.pages,
-        "per_page": pagination.per_page
+        "per_page": pagination.per_page,
+        "has_next": pagination.has_next,
+        "has_prev": pagination.has_prev,
     })
 
 @tasks_bp.route('/tasks', methods=['POST'])
@@ -242,6 +244,7 @@ def add_comment(task_id):
     )
     db.session.add(comment)
     db.session.commit()
+    db.session.refresh(task)
 
     emit_task_event("commented", user, task=task)
     return jsonify(comment.to_dict()), 201
@@ -275,6 +278,7 @@ def add_subtask(task_id):
     log = ActivityLog(user_id=user_id, task_id=task_id, action='subtask_created', details={'title': subtask.title})
     db.session.add(log)
     db.session.commit()
+    db.session.refresh(task)
 
     emit_task_event("subtask_created", user, task=task)
     return jsonify(subtask.to_dict()), 201
@@ -298,6 +302,7 @@ def complete_subtask(subtask_id):
     log = ActivityLog(user_id=user_id, task_id=task.id, action='subtask_toggle', details={'subtask': subtask.title, 'completed': subtask.completed})
     db.session.add(log)
     db.session.commit()
+    db.session.refresh(task)
 
     emit_task_event("subtask_completed" if subtask.completed else "subtask_reopened", user, task=task)
     return jsonify(subtask.to_dict())
@@ -318,6 +323,8 @@ def delete_subtask(subtask_id):
 
     db.session.delete(subtask)
     db.session.commit()
+    db.session.refresh(task)
+    emit_task_event("subtask_deleted", user, task=task)
     return jsonify({"message": "Subtask deleted"}), 200
 
 @tasks_bp.route('/tasks/filter', methods=['GET'])
@@ -390,6 +397,8 @@ def search_tasks():
 @tasks_bp.route('/tasks/<int:task_id>/tags/<int:tag_id>', methods=['POST', 'DELETE'])
 @login_required
 def manage_task_tags(task_id, tag_id):
+    user_id = session.get('user_id')
+    user = db.session.get(User, user_id)
     task = db.session.get(Task, task_id)
     tag = db.session.get(Tag, tag_id)
     if not task or not tag:
@@ -403,6 +412,7 @@ def manage_task_tags(task_id, tag_id):
             task.tags.remove(tag)
 
     db.session.commit()
+    emit_task_event("updated", user, task=task)
     return jsonify(task.to_dict())
 
 @tasks_bp.route('/tasks/bulk/complete', methods=['PUT'])

@@ -3,6 +3,7 @@ import type { DashboardStats } from '@/types'
 import { api } from '@/api/client'
 import { useToast } from '@/store/ToastContext'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts'
+import { DashboardSkeleton } from '@/components/common/Skeletons'
 
 const COLORS = ['#ef4444', '#f59e0b', '#22c55e'];
 
@@ -25,11 +26,7 @@ export default function DashboardPage() {
   useEffect(() => { fetchStats(); }, [fetchStats]);
 
   if (loading) {
-    return (
-      <div className="flex h-64 items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-      </div>
-    );
+    return <DashboardSkeleton />;
   }
 
   if (!stats) return null;
@@ -47,7 +44,7 @@ export default function DashboardPage() {
   }));
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 page-enter">
       <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Statystyki</h2>
 
       {/* Stats cards */}

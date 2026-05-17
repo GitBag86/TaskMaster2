@@ -8,6 +8,9 @@ export default function AuthPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [email, setEmail] = useState('');
+  const [acceptTerms, setAcceptTerms] = useState(false);
+  const [acceptPrivacy, setAcceptPrivacy] = useState(false);
+  const [acceptMarketing, setAcceptMarketing] = useState(false);
   const [loading, setLoading] = useState(false);
   const { login, signup } = useAuth();
   const { addToast } = useToast();
@@ -18,7 +21,14 @@ export default function AuthPage() {
     setLoading(true);
     try {
       if (isSignup) {
-        await signup(username, password, email || undefined);
+        await signup({
+          username,
+          password,
+          email,
+          accept_terms: acceptTerms,
+          accept_privacy: acceptPrivacy,
+          accept_marketing: acceptMarketing,
+        });
         addToast('Rejestracja pomyślna', 'success');
       } else {
         await login(username, password);
@@ -75,18 +85,60 @@ export default function AuthPage() {
             </div>
 
             {isSignup && (
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                  E-mail *
-                </label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  className="input"
-                  required
-                />
-              </div>
+              <>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    E-mail *
+                  </label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    className="input"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-3 text-sm">
+                  <label className="flex items-start gap-2">
+                    <input
+                      type="checkbox"
+                      checked={acceptTerms}
+                      onChange={e => setAcceptTerms(e.target.checked)}
+                      required
+                      className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                    />
+                    <span className="text-gray-700 dark:text-gray-300">
+                      Akceptuję <a href="/terms.html" target="_blank" rel="noreferrer" className="text-primary hover:underline">Regulamin</a>. *
+                    </span>
+                  </label>
+
+                  <label className="flex items-start gap-2">
+                    <input
+                      type="checkbox"
+                      checked={acceptPrivacy}
+                      onChange={e => setAcceptPrivacy(e.target.checked)}
+                      required
+                      className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                    />
+                    <span className="text-gray-700 dark:text-gray-300">
+                      Potwierdzam zapoznanie z <a href="/privacy.html" target="_blank" rel="noreferrer" className="text-primary hover:underline">Polityką prywatności</a>. *
+                    </span>
+                  </label>
+
+                  <label className="flex items-start gap-2">
+                    <input
+                      type="checkbox"
+                      checked={acceptMarketing}
+                      onChange={e => setAcceptMarketing(e.target.checked)}
+                      className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                    />
+                    <span className="text-gray-700 dark:text-gray-300">
+                      Chcę otrzymywać informacje marketingowe (opcjonalne).
+                    </span>
+                  </label>
+                </div>
+              </>
             )}
 
             <button

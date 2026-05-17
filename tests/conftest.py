@@ -1,8 +1,19 @@
+from pathlib import Path
+import sys
+import os
+
 import pytest
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+# Keep tests isolated from the process-global APScheduler instance created in app.py.
+os.environ.setdefault("ENABLE_SCHEDULER", "false")
+
 from app import create_app
 from config import TestingConfig
 from models import db, User, Task
-import os
 
 @pytest.fixture
 def app():

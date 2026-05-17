@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import type { ActivityLog } from '@/types'
 import { api } from '@/api/client'
 import { useToast } from '@/store/ToastContext'
+import { ActivitySkeleton } from '@/components/common/Skeletons'
 
 export default function ActivityPage() {
   const [activity, setActivity] = useState<ActivityLog[]>([]);
@@ -22,15 +23,11 @@ export default function ActivityPage() {
   useEffect(() => { fetchActivity(); }, [fetchActivity]);
 
   if (loading) {
-    return (
-      <div className="flex h-64 items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-      </div>
-    );
+    return <ActivitySkeleton />;
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 page-enter">
       <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Historia aktywności</h2>
       <div className="space-y-2">
         {activity.map(a => (

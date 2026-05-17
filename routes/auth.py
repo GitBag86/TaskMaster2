@@ -5,6 +5,7 @@ from models import db, User
 from schemas import LoginSchema, SignupSchema
 import time
 from collections import defaultdict
+from datetime import datetime, timezone
 
 rate_limit_store = defaultdict(list)
 RATE_LIMIT_MAX = 60
@@ -59,7 +60,11 @@ def signup():
     user = User(
         username=username,
         email=email,
-        role='admin' if is_first_user else 'user'
+        role='admin' if is_first_user else 'user',
+        terms_accepted=validated.get('accept_terms', False),
+        privacy_accepted=validated.get('accept_privacy', False),
+        marketing_consent=validated.get('accept_marketing', False),
+        consented_at=datetime.now(timezone.utc),
     )
     user.set_password(password)
     db.session.add(user)
