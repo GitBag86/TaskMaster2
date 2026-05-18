@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import type { Task } from '@/types'
 import { api } from '@/api/client'
 import { useToast } from '@/store/ToastContext'
@@ -12,7 +13,7 @@ import { TasksPageSkeleton } from '@/components/common/Skeletons'
 interface TaskFormData {
   title: string;
   assignee_ids?: number[];
-  priority?: string;
+  priority?: 'low' | 'medium' | 'high';
   project?: string;
   due_date?: string;
   notes?: string;
@@ -320,6 +321,10 @@ export default function TasksPage() {
             task={selectedTask}
             onDelete={id => void handleDelete(id)}
             onComplete={id => void handleComplete(id)}
+            onUpdate={updatedTask => {
+              replaceTask(updatedTask)
+              setSelectedTask(updatedTask)
+            }}
           />
         </Modal>
       )}
@@ -328,15 +333,20 @@ export default function TasksPage() {
 }
 
 function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+  if (typeof document === 'undefined') {
+    return null
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div
         className="w-full max-w-lg rounded-xl bg-white shadow-xl dark:bg-gray-900"
         onClick={e => e.stopPropagation()}
       >
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 

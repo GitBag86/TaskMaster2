@@ -13,6 +13,20 @@ import type {
 
 const API_BASE = '';
 
+type TaskPayload = {
+  title: string;
+  assignee_ids?: number[];
+  priority?: 'low' | 'medium' | 'high';
+  project?: string;
+  due_date?: string;
+  notes?: string;
+};
+
+type TaskUpdatePayload = Partial<TaskPayload> & {
+  completed?: boolean;
+  status?: 'todo' | 'in_progress' | 'done';
+};
+
 async function request<T>(
   url: string,
   options: RequestInit = {}
@@ -70,19 +84,12 @@ export const api = {
   tasks: {
     getAll: (page = 1, perPage = 50) =>
       request<PaginationResponse<Task>>(`/tasks?page=${page}&per_page=${perPage}`),
-    create: (data: {
-      title: string;
-      assignee_ids?: number[];
-      priority?: string;
-      project?: string;
-      due_date?: string;
-      notes?: string;
-    }) =>
+    create: (data: TaskPayload) =>
       request<Task>('/tasks', {
         method: 'POST',
         body: JSON.stringify(data),
       }),
-    update: (id: number, data: Partial<Task>) =>
+    update: (id: number, data: TaskUpdatePayload) =>
       request<Task>(`/tasks/${id}`, {
         method: 'PUT',
         body: JSON.stringify(data),

@@ -3,18 +3,30 @@ import type { Task, Subtask } from '@/types'
 import { api } from '@/api/client'
 import { useToast } from '@/store/ToastContext'
 import { useAuth } from '@/store/AuthContext'
+import TaskForm from './TaskForm'
 
 interface Props {
   task: Task;
   onDelete: (id: number) => void;
   onComplete: (id: number) => void;
+  onUpdate: (task: Task) => void;
 }
 
-export default function TaskDetail({ task, onDelete, onComplete }: Props) {
+interface TaskFormData {
+  title: string;
+  assignee_ids?: number[];
+  priority?: 'low' | 'medium' | 'high';
+  project?: string;
+  due_date?: string;
+  notes?: string;
+}
+
+export default function TaskDetail({ task, onDelete, onComplete, onUpdate }: Props) {
   const [subtasks, setSubtasks] = useState(task.subtasks)
   const [newSubtask, setNewSubtask] = useState('')
   const [newComment, setNewComment] = useState('')
   const [comments, setComments] = useState(task.comments)
+  const [isEditing, setIsEditing] = useState(false)
   const { addToast } = useToast()
   const { user } = useAuth()
 
@@ -72,6 +84,37 @@ export default function TaskDetail({ task, onDelete, onComplete }: Props) {
   const assigneeLabel = task.assignees.length > 0
     ? task.assignees.map(assignee => assignee.username).join(', ')
     : 'Nieprzypisane'
+
+  const editInitialData: TaskFormData = {
+    title: task.title,
+    assignee_ids: task.assignees.map(assignee => assignee.id),
+    priority: task.priority,
+    project: task.project,
+    due_date: task.due_date ?? '',
+    notes: task.notes,
+  }
+
+  const handleUpdateTask = async (data: TaskFormData) => {
+    try {
+      const updatedTask = await api.tasks.update(task.id, data)
+      onUpdate(updatedTask)
+      setIsEditing(false)
+      addToast('Zadanie zaktualizowane', 'success')
+    } catch {
+      addToast('Błąd aktualizacji zadania', 'error')
+    }
+  }
+
+  if (isEditing) {
+    return (
+      <TaskForm
+        initialData={editInitialData}
+        submitLabel="Zapisz zmiany"
+        onSubmit={data => void handleUpdateTask(data)}
+        onCancel={() => setIsEditing(false)}
+      />
+    )
+  }
 
   return (
     <div className="flex max-h-[80vh] flex-col">
@@ -195,7 +238,10 @@ export default function TaskDetail({ task, onDelete, onComplete }: Props) {
             {task.completed ? 'Przywróć zadanie' : 'Oznacz jako zakończone'}
           </button>
           {user?.role === 'admin' && (
-            <button onClick={() => onDelete(task.id)} className="btn btn-destructive btn-sm">Usuń zadanie</button>
+            <div className="flex gap-2">
+              <button onClick={() => setIsEditing(true)} className="btn btn-secondary btn-sm">Edytuj</button>
+              <button onClick={() => onDelete(task.id)} className="btn btn-destructive btn-sm">Usuń zadanie</button>
+            </div>
           )}
         </div>
       </div>

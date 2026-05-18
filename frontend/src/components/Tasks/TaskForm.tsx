@@ -10,7 +10,7 @@ interface User {
 interface TaskFormData {
   title: string;
   assignee_ids?: number[]; // Changed to array of numbers
-  priority?: string;
+  priority?: 'low' | 'medium' | 'high';
   project?: string;
   due_date?: string;
   notes?: string;
@@ -25,7 +25,7 @@ interface Props {
 
 export default function TaskForm({ onSubmit, onCancel, initialData, submitLabel = 'Utwórz zadanie' }: Props) {
   const [title, setTitle] = useState(initialData?.title || '');
-  const [assignedUserIds, setAssignedUserIds] = useState<number[]>(initialData?.assignee_ids || []); // New state for multi-select
+  const [assignedUserIds, setAssignedUserIds] = useState<number[]>(initialData?.assignee_ids || []);
   const [priority, setPriority] = useState(initialData?.priority || 'medium');
   const [project, setProject] = useState(initialData?.project || '');
   const [dueDate, setDueDate] = useState(initialData?.due_date || '');
@@ -65,7 +65,7 @@ export default function TaskForm({ onSubmit, onCancel, initialData, submitLabel 
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Priorytet</label>
-            <select value={priority} onChange={e => setPriority(e.target.value)} className="input">
+            <select value={priority} onChange={e => setPriority(e.target.value as 'low' | 'medium' | 'high')} className="input">
               <option value="low">Niski</option>
               <option value="medium">Średni</option>
               <option value="high">Wysoki</option>
@@ -82,17 +82,23 @@ export default function TaskForm({ onSubmit, onCancel, initialData, submitLabel 
           <select
             id="assigned-to-select"
             multiple
-            value={assignedUserIds.map(String)} // Convert numbers to strings for select value
-            onChange={e => setAssignedUserIds(Array.from(e.target.selectedOptions, option => Number(option.value)))} // Convert strings back to numbers
+            value={assignedUserIds.map(String)}
+            onChange={e =>
+              setAssignedUserIds(
+                Array.from(e.target.selectedOptions, option => Number(option.value)).filter(id => Number.isFinite(id) && id > 0)
+              )
+            }
             className="input h-auto min-h-[40px]"
           >
-            <option value="">Nieprzypisane</option>
             {users.map(user => (
               <option key={user.id} value={user.id}>
                 {user.username}
               </option>
             ))}
           </select>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Wybierz jednego lub wielu użytkowników. Aby zostawić bez przypisania, nie zaznaczaj nikogo.
+          </p>
         </div>
 
         <div>
