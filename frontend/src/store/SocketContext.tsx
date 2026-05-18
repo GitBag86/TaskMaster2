@@ -33,7 +33,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
 
     const socket = io(window.location.origin, {
       path: '/socket.io',
-      transports: ['websocket', 'polling'],
+      transports: ['websocket'],
       withCredentials: true,
       timeout: 20000,
       reconnection: true,
