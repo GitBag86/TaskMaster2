@@ -25,6 +25,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 COPY --from=python-builder /install /usr/local
 
 COPY app.py config.py extensions.py models.py schemas.py requirements.txt ./
+COPY start.sh ./
 COPY routes ./routes
 COPY utils ./utils
 COPY jobs ./jobs
@@ -32,6 +33,7 @@ COPY migrations ./migrations
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 RUN mkdir -p /app/instance && \
+    chmod +x /app/start.sh && \
     adduser --disabled-password --gecos '' --uid 10001 appuser && \
     chown -R appuser:appuser /app
 USER appuser
@@ -39,6 +41,6 @@ USER appuser
 EXPOSE 5000
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health')"
+  CMD python -c "import os, urllib.request; urllib.request.urlopen(f\"http://127.0.0.1:{os.environ.get('PORT', '5000')}/health\")"
 
-CMD ["gunicorn", "--worker-class", "gthread", "-w", "1", "--threads", "4", "--bind", "0.0.0.0:5000", "--timeout", "120", "app:app"]
+CMD ["./start.sh"]
