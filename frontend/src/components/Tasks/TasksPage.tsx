@@ -325,6 +325,7 @@ export default function TasksPage() {
               replaceTask(updatedTask)
               setSelectedTask(updatedTask)
             }}
+            onClose={() => setSelectedTask(null)}
           />
         </Modal>
       )}

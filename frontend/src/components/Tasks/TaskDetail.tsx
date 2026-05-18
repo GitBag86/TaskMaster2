@@ -10,6 +10,7 @@ interface Props {
   onDelete: (id: number) => void;
   onComplete: (id: number) => void;
   onUpdate: (task: Task) => void;
+  onClose: () => void;
 }
 
 interface TaskFormData {
@@ -21,7 +22,7 @@ interface TaskFormData {
   notes?: string;
 }
 
-export default function TaskDetail({ task, onDelete, onComplete, onUpdate }: Props) {
+export default function TaskDetail({ task, onDelete, onComplete, onUpdate, onClose }: Props) {
   const [subtasks, setSubtasks] = useState(task.subtasks)
   const [newSubtask, setNewSubtask] = useState('')
   const [newComment, setNewComment] = useState('')
@@ -100,6 +101,7 @@ export default function TaskDetail({ task, onDelete, onComplete, onUpdate }: Pro
       onUpdate(updatedTask)
       setIsEditing(false)
       addToast('Zadanie zaktualizowane', 'success')
+      onClose()
     } catch {
       addToast('Błąd aktualizacji zadania', 'error')
     }
@@ -109,7 +111,7 @@ export default function TaskDetail({ task, onDelete, onComplete, onUpdate }: Pro
     return (
       <TaskForm
         initialData={editInitialData}
-        submitLabel="Zapisz zmiany"
+        submitLabel="Zapisz"
         onSubmit={data => void handleUpdateTask(data)}
         onCancel={() => setIsEditing(false)}
       />
@@ -124,9 +126,9 @@ export default function TaskDetail({ task, onDelete, onComplete, onUpdate }: Pro
             <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{task.project}</p>
             <h3 className="text-xl font-semibold text-gray-900 dark:text-white">{task.title}</h3>
           </div>
-          <button onClick={() => onComplete(task.id)} className={`btn btn-sm ${task.completed ? 'btn-secondary' : 'btn-primary'}`}>
-            {task.completed ? 'Przywróć' : 'Zakończ'}
-          </button>
+          {user?.role === 'admin' && (
+            <button onClick={() => setIsEditing(true)} className="btn btn-secondary btn-sm">Edytuj</button>
+          )}
         </div>
 
         <div className="mb-3 flex flex-wrap gap-2">
@@ -239,7 +241,6 @@ export default function TaskDetail({ task, onDelete, onComplete, onUpdate }: Pro
           </button>
           {user?.role === 'admin' && (
             <div className="flex gap-2">
-              <button onClick={() => setIsEditing(true)} className="btn btn-secondary btn-sm">Edytuj</button>
               <button onClick={() => onDelete(task.id)} className="btn btn-destructive btn-sm">Usuń zadanie</button>
             </div>
           )}
