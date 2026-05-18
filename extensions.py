@@ -7,4 +7,8 @@ from flask_socketio import SocketIO
 mail = Mail()
 migrate = Migrate()
 scheduler = APScheduler()
-socketio = SocketIO(async_mode="threading")
+socketio = SocketIO(
+    async_mode="threading",
+    ping_interval=25,
+    ping_timeout=60,
+)

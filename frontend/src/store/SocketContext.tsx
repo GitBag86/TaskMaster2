@@ -31,15 +31,21 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!user) return;
 
-    const socket = io({
+    const socket = io(window.location.origin, {
+      path: '/socket.io',
+      transports: ['websocket', 'polling'],
+      withCredentials: true,
+      timeout: 20000,
       reconnection: true,
-      reconnectionAttempts: 10,
+      reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
     });
     socketRef.current = socket;
 
     socket.on('connect', () => setConnected(true));
     socket.on('disconnect', () => setConnected(false));
+    socket.on('connect_error', () => setConnected(false));
 
     socket.on('task_action', (data: TaskEvent) => {
       setLastTaskEvent(data);
@@ -51,7 +57,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     return () => {
       socket.disconnect();
     };
-  }, [user]);
+  }, [addToast, user]);
 
   return (
     <SocketContext.Provider value={{ socket: socketRef.current, connected, lastTaskEvent }}>
