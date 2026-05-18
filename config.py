@@ -1,8 +1,13 @@
 import os
 
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+INSTANCE_DB_PATH = os.path.join(BASE_DIR, "instance", "tasks.db")
 
 class Config:
-    SQLALCHEMY_DATABASE_URI = os.environ.get("SQLALCHEMY_DATABASE_URI", "sqlite:///" + os.path.join("instance", "tasks.db"))
+    SQLALCHEMY_DATABASE_URI = os.environ.get(
+        "SQLALCHEMY_DATABASE_URI",
+        f"sqlite:///{INSTANCE_DB_PATH}",
+    )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-key-change-me")
     CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "http://localhost:5000").split(",")
