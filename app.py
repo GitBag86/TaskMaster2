@@ -49,6 +49,13 @@ def _register_routes(app):
         except Exception:
             return jsonify({"error": "Frontend not built. Run: cd frontend && npm run build"}), 503
 
+    @app.route("/auth")
+    def auth_page():
+        try:
+            return send_from_directory(app.static_folder, "index.html")
+        except Exception:
+            return jsonify({"error": "Frontend not built. Run: cd frontend && npm run build"}), 503
+
     @app.route("/manifest.json")
     def manifest():
         return send_from_directory(app.static_folder, "manifest.json")
