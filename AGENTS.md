@@ -4,7 +4,32 @@
 
 ---
 
-## 🚀 Quick Start
+## � Quick Navigation
+
+**For AI Agents:**
+- 🎯 **[Quick Decision Tree](#quick-decision-tree)** ← Start here to pick your task type
+- 🔧 **[Critical Rules](#critical-rules--do-not-skip)** ← Non-negotiable patterns (Socket.IO, Marshmallow, etc.)
+- 📂 **[Key Files & Patterns](#key-files--exemplary-patterns)** ← See best practices in real code
+- ⚠️ **[Common Pitfalls](#common-pitfalls)** ← Avoid known issues
+- 📚 **[Instruction Files](#related-instruction-files)** ← Domain-specific guidelines
+
+---
+
+## 🎯 Quick Decision Tree
+
+**What are you implementing or fixing?**
+
+| Task Type | First Steps | See Also |
+|-----------|------------|----------|
+| **New REST endpoint** | 1. Create route in `routes/` <br> 2. Add Marshmallow schema <br> 3. If POST/PATCH/DELETE: emit `task_action` <br> 4. Add pytest tests | [Socket.IO Patterns](#socket-io-real-time-sync), [Exemplary: routes/tasks.py](#key-files--exemplary-patterns) |
+| **Database schema change** | 1. Update `models.py` <br> 2. `flask db migrate -m "desc"` <br> 3. `flask db upgrade` <br> 4. Add tests | [Resolved Issues: Migrations](#resolved-issues-for-agent-awareness) |
+| **New frontend page/component** | 1. Create in `frontend/src/components/` <br> 2. Lazy-load in `App.tsx` <br> 3. Use `useAuth()`, `useSocket()`, `useTheme()` hooks <br> 4. Style with Tailwind | [Frontend Guidelines](#related-instruction-files), [Exemplary: DashboardLayout.tsx](#key-files--exemplary-patterns) |
+| **Real-time sync issue** | 1. Check: Backend emits `socketio.emit()` after DB commit <br> 2. Verify: Frontend listens in `SocketContext.tsx` <br> 3. Check browser console for Socket.IO events | [Socket.IO Patterns](#socket-io-real-time-sync), [Pitfall: Missing Socket.IO Emit](#common-pitfalls) |
+| **Bug or performance issue** | 1. Review [Common Pitfalls](#common-pitfalls) <br> 2. Check [Resolved Issues](#resolved-issues-for-agent-awareness) <br> 3. Check instruction files for domain-specific rules | [Pitfalls Table](#common-pitfalls) |
+
+---
+
+## �🚀 Quick Start
 
 ### Option 1: Docker (Recommended)
 ```bash
@@ -75,7 +100,16 @@ See [CLOUD_RUN_SETUP.md](CLOUD_RUN_SETUP.md) for detailed step-by-step instructi
 - Cloud SQL instance setup
 - Docker image configuration
 - Environment variables
-- Troubleshooting common issues
+- Complete deployment workflow
+
+**Troubleshooting Database Issues:**
+If deployment fails with database errors, see [CLOUD_RUN_TROUBLESHOOTING.md](CLOUD_RUN_TROUBLESHOOTING.md) for:
+- Socket connection errors
+- User/database not found
+- Migration failures
+- IAM permission issues
+- Connection timeouts
+- Debugging checklist
 
 **Local Postgres Testing:**
 Before deploying to Cloud Run, test locally with Postgres. See [POSTGRES_MIGRATION.md](POSTGRES_MIGRATION.md) for:
@@ -378,18 +412,28 @@ gcloud sql instances patch taskmaster --database-flags max_connections=200
 - Cloud SQL instance ran out of storage
 - Resize: `gcloud sql instances patch taskmaster --storage-size=20GB`
 
-## Agent Skills & Guidelines
+## Related Instruction Files
+
+When modifying this codebase, agents should follow these domain-specific guidelines:
+
+| File | Purpose | Apply To |
+|------|---------|----------|
+| [Socket.IO Patterns](.github/instructions/socketio-patterns.instructions.md) | Real-time sync emission and listener patterns | `routes/**/*.py`, `frontend/src/store/SocketContext.tsx` |
+| [Frontend TypeScript Guidelines](.github/instructions/frontend-typescript-guidelines.instructions.md) | React, TypeScript, Context API, Tailwind best practices | `frontend/src/**/*.tsx`, `frontend/src/**/*.ts` |
+| [Python Security Guidelines](.github/instructions/python-security-guidelines.instructions.md) | Secure credential & secret handling | `**/*.py` |
+| [Python Test Guidelines](.github/instructions/python-test-guidelines.instructions.md) | TDD requirement: automated tests for all Python changes | `**/*.py` |
+| [Python Conventions Skill](.github/skills/python-conventions/SKILL.md) | Code style and pragmatic conventions | `**/*.py` |
+
+## Agent Skills & Guidelines (Legacy)
 - [Frontend Responsive Check](.vscode/prompts/frontend-responsive-check.prompt.md) - Enforces UI standards.
 - [Backend Test Generator](.vscode/prompts/backend-test-generator.prompt.md) - Scaffolds pytest suites.
-- [SocketIO Patterns](.vscode/prompts/socketio-patterns.prompt.md) - Real-time feature conventions.
 - [Post-Migration Check](.vscode/prompts/post-migration-check.prompt.md) - Schema consistency verification.
-- [Python Conventions Skill](SKILL.md) - Pragmatic Python conventions for readability and maintainability
-- [Python Security Guidelines](.github/instructions/python-security-guidelines.instructions.md) - Secure credential handling
-- [Python Test Guidelines](.github/instructions/python-test-guidelines.instructions.md) - TDD requirement: every Python change needs automated tests
 
 ## Deployment Guides
 
+- [Cloud Run Quickstart](CLOUD_RUN_QUICKSTART.md) - **Copy-paste commands for step-by-step deployment** ← Start here!
 - [Cloud Run Setup Guide](CLOUD_RUN_SETUP.md) - Complete Google Cloud Run + Cloud SQL deployment
+- [Cloud Run Troubleshooting](CLOUD_RUN_TROUBLESHOOTING.md) - **Fixes for common database errors** ← Start here if deployment fails
 - [Postgres Migration Guide](POSTGRES_MIGRATION.md) - SQLite → Postgres migration for testing locally
 - [Deploy Script](deploy-cloud-run.sh) - Automated Cloud Run deployment (run with `./deploy-cloud-run.sh PROJECT_ID REGION`)
 
