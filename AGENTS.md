@@ -220,6 +220,33 @@ Use **Flask-Migrate** (Alembic):
 - Review generated migration files in `migrations/versions/`
 - Roll back if needed: `flask db downgrade`
 
+### Task Dependencies
+Tasks can depend on other tasks via the `TaskDependency` model. When implementing dependency-related features:
+
+```python
+# Get all tasks this task depends on
+dependencies = TaskDependency.query.filter_by(task_id=1).all()
+
+# Check if a task can be deleted (has dependents)
+dependents = TaskDependency.query.filter_by(depends_on_id=1).all()
+if dependents:
+    return {"error": "Cannot delete task with dependent tasks"}, 409
+
+# Add a dependency
+dep = TaskDependency(task_id=1, depends_on_id=2)
+db.session.add(dep)
+db.session.commit()
+
+# Emit dependency change via Socket.IO
+socketio.emit('task_action', {
+    'action': 'dependency_added',
+    'task_id': 1,
+    'depends_on_id': 2
+}, broadcast=True)
+```
+
+**Important**: Tasks with dependencies use CASCADE delete. Deleting a task automatically deletes its dependency records. Test carefully when implementing delete endpoints.
+
 ### Database & Permissions
 
 - **Session-based Auth**: `user_id` stored in Flask session via `@login_required`
@@ -297,12 +324,19 @@ npm run preview    # Preview production build locally
 
 Key `.env` variables (optional; defaults provided):
 ```
-FLASK_ENV=development      # development or production
-SECRET_KEY=your-secret     # Session encryption (auto-generated in dev)
-DATABASE_URL=...           # Override SQLite location (optional)
-CORS_ORIGINS=http://localhost:5000   # Allow cross-origin in dev
-LOG_LEVEL=INFO             # Logging verbosity
+FLASK_ENV=development              # development or production
+SECRET_KEY=your-secret             # Session encryption (auto-generated in dev)
+DATABASE_URL=...                   # Override SQLite location (optional)
+CORS_ORIGINS=http://localhost:5000 # Allow cross-origin in dev
+LOG_LEVEL=INFO                     # Logging verbosity
+SOCKETIO_ASYNC_MODE=threading      # threading (dev) or gthread (Docker)
+SOCKETIO_MESSAGE_QUEUE=...         # Redis URL for multi-worker deployments (optional)
 ```
+
+**Socket.IO Async Mode:**
+- `threading` — Local development (default, Flask debug server)
+- `gthread` — Docker/Gunicorn production (worker-class: gthread)
+- ❌ **Avoid `eventlet`** — Deprecated, known compatibility issues
 
 In Docker, these are set in `docker-compose.yml`.
 
@@ -424,10 +458,11 @@ When modifying this codebase, agents should follow these domain-specific guideli
 | [Python Test Guidelines](.github/instructions/python-test-guidelines.instructions.md) | TDD requirement: automated tests for all Python changes | `**/*.py` |
 | [Python Conventions Skill](.github/skills/python-conventions/SKILL.md) | Code style and pragmatic conventions | `**/*.py` |
 
-## Agent Skills & Guidelines (Legacy)
-- [Frontend Responsive Check](.vscode/prompts/frontend-responsive-check.prompt.md) - Enforces UI standards.
-- [Backend Test Generator](.vscode/prompts/backend-test-generator.prompt.md) - Scaffolds pytest suites.
-- [Post-Migration Check](.vscode/prompts/post-migration-check.prompt.md) - Schema consistency verification.
+## Available Agent Skills
+- [Socket.IO Patterns](.vscode/prompts/socketio-patterns.prompt.md) - Real-time sync implementation guide for Flask + Socket.IO.
+- [Frontend Responsive Check](.vscode/prompts/frontend-responsive-check.prompt.md) - Validates responsive design and prevents UI overflow.
+- [Post-Migration Check](.vscode/prompts/post-migration-check.prompt.md) - Ensures schema integrity after `flask db upgrade`.
+- [Backend Test Generator](.vscode/prompts/backend-test-generator.prompt.md) - Scaffolds pytest suites for new endpoints.
 
 ## Deployment Guides
 
@@ -455,6 +490,107 @@ When working with Docker containers for this application, AI agents should be aw
    - Use slim base images
 
 3. **Health Checks**: Add health check endpoints to ensure container reliability
+## Health Checks (For Production Readiness)
+
+Add health check endpoints for monitoring and load balancers:
+
+```python
+# app.py
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Simple health check endpoint."""
+    try:
+        # Verify database connection
+        db.session.execute('SELECT 1')
+        return jsonify({'status': 'healthy', 'timestamp': datetime.utcnow().isoformat()}), 200
+    except Exception as e:
+        return jsonify({'status': 'unhealthy', 'error': str(e)}), 503
+
+@app.route('/ready', methods=['GET'])
+def readiness_check():
+    """Readiness check for Kubernetes/Cloud Run."""
+    try:
+        # Check: Database connected
+        db.session.execute('SELECT COUNT(*) FROM user')
+        # Check: Socket.IO initialized
+        assert socketio is not None
+        return jsonify({'status': 'ready'}), 200
+    except Exception as e:
+        return jsonify({'status': 'not_ready', 'error': str(e)}), 503
+```
+
+**Cloud Run Configuration:**
+```yaml
+# In container health checks
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 8080
+  initialDelaySeconds: 10
+  periodSeconds: 10
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: 8080
+  initialDelaySeconds: 5
+  periodSeconds: 5
+```
+
+### Development Troubleshooting
+
+**Port 5000 already in use:**
+```bash
+# Find process using port 5000
+lsof -i :5000          # macOS/Linux
+netstat -ano | findstr :5000  # Windows
+
+# Kill process
+kill -9 <PID>          # macOS/Linux
+taskkill /PID <PID> /F # Windows
+
+# Or use different port
+FLASK_RUN_PORT=5001 python app.py
+```
+
+**Flask dev server not reloading:**
+```bash
+# Ensure FLASK_ENV is set
+export FLASK_ENV=development
+
+# Files must be in watched directories (not ignored by .gitignore)
+# Common issue: editing files in venv/ or node_modules/
+```
+
+**Socket.IO connection timeout:**
+```bash
+# 1. Verify Flask is running
+lsof -i :5000
+
+# 2. Check CORS is configured in app.py
+print(app.config.get('CORS_ORIGINS'))
+
+# 3. Frontend console (F12): check socket URL
+console.log(socket.io.uri)  # Should be http://localhost:5000
+
+# 4. Restart both frontend and backend
+```
+
+**npm install cache issues:**
+```bash
+cd frontend
+rm -rf node_modules package-lock.json
+npm cache clean --force
+npm install
+```
+
+**Python venv not activated:**
+```bash
+# Check if activated (should show (venv) in prompt)
+source .venv/bin/activate        # macOS/Linux
+.venv\Scripts\activate.bat       # Windows (cmd)
+.venv\Scripts\Activate.ps1       # Windows (PowerShell)
+```
+
 
 4. **Environment Configuration**: Properly manage environment variables and secrets
 

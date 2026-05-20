@@ -383,3 +383,4 @@ describe('TaskCard', () => {
 | Ignoring Socket.IO events | Ensure components respond to `loadTasks()` after mutations |
 | Not memoizing expensive components | Use `React.memo()` for large lists |
 | Inline styles instead of Tailwind | Use Tailwind classes; define theme in CSS |
+

@@ -173,60 +173,241 @@ const handleCreateTask = async (formData) => {
 
 ## Testing Socket.IO Emissions
 
-### Backend Test Example
+### Backend Test Example (TDD Required)
+
+Write tests **BEFORE** implementing the endpoint:
 
 ```python
-def test_create_task_emits_socket_event(client, mocker):
+import pytest
+from unittest.mock import patch, call
+
+@pytest.fixture
+def app_client(app):
+    return app.test_client()
+
+def test_create_task_emits_socket_event(app_client, mocker):
+    """Test that creating a task emits task_action event."""
     # Mock socketio.emit
-    mock_emit = mocker.patch('socketio.emit')
+    mock_emit = mocker.patch('app.socketio.emit')
+    
+    # Mock authentication
+    with app_client.session_transaction() as sess:
+        sess['user_id'] = 1
     
     # Create task
-    response = client.post('/api/tasks', json={'title': 'Test'})
+    response = app_client.post('/api/tasks', json={'title': 'Test Task'})
     assert response.status_code == 201
     
-    # Verify emit was called
-    mock_emit.assert_called_once_with(
-        'task_action',
-        {
-            'action': 'create',
-            'task_id': 1,
-            'task': {'id': 1, 'title': 'Test', ...}
-        },
-        broadcast=True
-    )
+    # Verify emit was called with correct payload
+    mock_emit.assert_called_once()
+    call_args = mock_emit.call_args
+    assert call_args[0][0] == 'task_action'  # event name
+    assert call_args[0][1]['action'] == 'create'
+    assert call_args[1]['broadcast'] is True
+
+def test_update_task_emits_socket_event(app_client, mocker):
+    """Test that updating a task emits task_action event."""
+    mock_emit = mocker.patch('app.socketio.emit')
+    
+    with app_client.session_transaction() as sess:
+        sess['user_id'] = 1
+    
+    # Update task
+    response = app_client.patch('/api/tasks/1', json={'status': 'completed'})
+    assert response.status_code == 200
+    
+    # Verify emit
+    mock_emit.assert_called_once()
+    assert mock_emit.call_args[0][1]['action'] == 'update'
+
+def test_delete_task_emits_socket_event(app_client, mocker):
+    """Test that deleting a task emits task_action event."""
+    mock_emit = mocker.patch('app.socketio.emit')
+    
+    with app_client.session_transaction() as sess:
+        sess['user_id'] = 1
+    
+    # Delete task
+    response = app_client.delete('/api/tasks/1')
+    assert response.status_code == 204
+    
+    # Verify emit
+    mock_emit.assert_called_once()
+    assert mock_emit.call_args[0][1]['action'] == 'delete'
+```
+
+### Run Tests
+
+```bash
+# Run Socket.IO emission tests only
+pytest tests/ -k "socket" -v
+
+# Run all tests with coverage
+pytest --cov=routes tests/
 ```
 
 ## Debugging Socket.IO Issues
 
-### Check Browser Console
+### 1. Verify Backend Emission (Flask)
 
-1. Open DevTools (F12)
-2. Look for Socket.IO connection logs:
-   ```
-   ✓ Socket connected (check Network tab for handshake)
-   ✓ task_action event received (check Console for logged events)
-   ```
-
-### Check Server Logs
+**Is the endpoint emitting the event?**
 
 ```bash
-# In terminal running Flask dev server
-[2026-05-19 10:30:45] Socket.IO server initialized
-[2026-05-19 10:31:00] task_action emitted: {'action': 'create', 'task_id': 1}
+# Add debug logging to your route handler
+@app.route('/api/tasks', methods=['POST'])
+@login_required
+def create_task():
+    data = request.json
+    task = Task(title=data['title'], owner_id=current_user.id)
+    db.session.add(task)
+    db.session.commit()
+    
+    # Debug: Log before emitting
+    print(f"[DEBUG] Emitting task_action: {{'action': 'create', 'task_id': {task.id}}}")
+    socketio.emit('task_action', {
+        'action': 'create',
+        'task_id': task.id,
+        'task': task.to_dict()
+    }, broadcast=True)
+    
+    return jsonify(task.to_dict()), 201
 ```
 
-### Common Issues
+Run server with verbose logging:
+```bash
+FLASK_ENV=development python app.py
+# Look for [DEBUG] Emitting task_action in terminal
+```
 
-**Issue**: Socket events not reaching frontend
-- Check: Is `broadcast=True` used in backend?
-- Check: Is Socket connected? (check Network tab)
-- Fix: Restart both backend and frontend
+### 2. Check Browser Console (Frontend)
 
-**Issue**: Old data showing in UI
-- Check: Is `db.session.commit()` called before emit?
-- Check: Is task list reloading (`loadTasks()` called)?
-- Fix: Verify payload includes updated task object
+1. Open DevTools (F12 → Console tab)
+2. Check for Socket.IO connection messages:
+   ```
+   ✓ Socket connected
+   ✓ Socket.IO: Successfully connected to http://localhost:5000/
+   ```
+3. Check for event logs:
+   ```
+   [Socket.IO] task_action: {action: 'create', task_id: 1, task: {...}}
+   ```
 
-**Issue**: Multiple duplicate events
-- Check: Is event listener duplicated (multiple `socket.on()` calls)?
-- Fix: Ensure `useEffect` cleanup removes listener with `socket?.off()`
+4. Check Network tab (F12 → Network):
+   - Filter by WebSocket
+   - Look for `/socket.io/?` requests
+   - Status should be `101 Switching Protocols`
+
+### 3. Common Issues & Fixes
+
+#### Issue: "WebSocket connection failed"
+**Symptoms**: 
+- Console shows "WebSocket connection to 'ws://localhost:5000/socket.io/' failed"
+- Browser Network tab shows red X on socket.io requests
+
+**Fixes**:
+```bash
+# 1. Verify Flask backend is running
+lsof -i :5000  # On macOS/Linux
+netstat -ano | findstr :5000  # On Windows
+
+# 2. Verify Socket.IO is initialized in app.py
+# Should see: socketio = SocketIO(app, cors_allowed_origins=[...])
+
+# 3. Restart both frontend and backend
+kill -9 $(lsof -t -i:5000)  # Kill Flask
+cd frontend && npm run dev    # Restart frontend
+python app.py                 # Restart Flask in new terminal
+```
+
+#### Issue: "Socket connected but events not received"
+**Symptoms**:
+- Browser shows socket connected (✓)
+- But `loadTasks()` not triggered after creating a task
+- Old data still showing
+
+**Fixes**:
+```python
+# 1. Verify emit is called AFTER db.session.commit()
+db.session.commit()  # MUST come before emit
+socketio.emit('task_action', {...}, broadcast=True)  # THEN emit
+
+# 2. Check broadcast=True is set
+# Wrong: socketio.emit('task_action', {...})  # Defaults to broadcast=False
+# Right: socketio.emit('task_action', {...}, broadcast=True)
+
+# 3. Verify SocketContext listener is active
+# In browser console:
+console.log(socket);  // Should show Socket object, not null
+```
+
+#### Issue: "Events received but old data in UI"
+**Symptoms**:
+- Socket event fires (see in Network tab)
+- But task list shows old data
+- Need to refresh page to see changes
+
+**Fixes**:
+```typescript
+// In SocketContext.tsx, ensure loadTasks() is called
+const handleTaskAction = (data: TaskAction) => {
+  console.log('Task action received:', data);
+  // MUST trigger full reload
+  loadTasks();  // Reload from /api/tasks
+  showToast(`Task ${data.action}d`, 'info');
+};
+```
+
+#### Issue: "Duplicate events or infinite loops"
+**Symptoms**:
+- `loadTasks()` called multiple times
+- Network tab shows many GET /api/tasks requests
+- Events firing 2-3 times per action
+
+**Fixes**:
+```typescript
+// Ensure useEffect cleanup removes old listener
+useEffect(() => {
+  const handleTaskAction = (data: TaskAction) => {
+    console.log('Task action received:', data);
+    loadTasks();
+  };
+  
+  socket?.on('task_action', handleTaskAction);
+  
+  // CRITICAL: Remove listener on cleanup
+  return () => {
+    socket?.off('task_action', handleTaskAction);  // Prevent duplicates
+  };
+}, [socket, loadTasks]);  // Re-subscribe if dependencies change
+```
+
+### 4. Enable Verbose Socket.IO Logging
+
+**Backend** (Flask):
+```python
+import logging
+logging.getLogger('socketio').setLevel(logging.DEBUG)
+logging.getLogger('engineio').setLevel(logging.DEBUG)
+```
+
+**Frontend** (React):
+```typescript
+// In SocketContext.tsx, before creating socket
+const socket = io(socketUrl, {
+  reconnection: true,
+  transports: ['websocket', 'polling'],
+  debug: true  // Verbose logging
+});
+```
+
+### 5. Test Checklist
+
+- [ ] Backend endpoint calls `db.session.commit()` before emit
+- [ ] Backend emits with `broadcast=True`
+- [ ] Event name is exactly `task_action`
+- [ ] Action name matches (create/update/delete/comment)
+- [ ] Frontend Socket is connected (check console)
+- [ ] SocketContext listener exists for `task_action`
+- [ ] `loadTasks()` called in listener
+- [ ] useEffect cleanup removes listener with `socket?.off()`
+- [ ] Tests pass: `pytest -k socket -v`

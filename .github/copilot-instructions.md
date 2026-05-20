@@ -61,11 +61,11 @@ description: AI coding agent instructions for TaskMaster2 workspace
 
 ## Critical Rules (Do Not Skip)
 
-1. **Socket.IO Emission**: Every POST/PATCH/DELETE that changes task state MUST emit `task_action`. Without it, other clients won't see updates.
-2. **Marshmallow v3.x**: Use `load_default`, not `default`, in schema field definitions.
-3. **Decorator Order**: `@app.route()` MUST come BEFORE `@login_required()`.
-4. **Frontend Build**: After frontend edits, run `cd frontend && npm run build` (Flask serves from `frontend/dist/`).
-5. **Tests Required**: Every Python change requires automated tests in `tests/`.
+1. **Tests First (TDD)**: Write automated tests BEFORE implementation for all Python changes. No code without tests. See [Python Test Guidelines](.github/instructions/python-test-guidelines.instructions.md).
+2. **Socket.IO Emission**: Every POST/PATCH/DELETE that changes task state MUST emit `task_action`. Without it, other clients won't see updates.
+3. **Marshmallow v3.x**: Use `load_default`, not `default`, in schema field definitions.
+4. **Decorator Order**: `@app.route()` MUST come BEFORE `@login_required()`.
+5. **Frontend Build**: After frontend edits, run `cd frontend && npm run build` (Flask serves from `frontend/dist/`).
 6. **Cascade Deletes**: Models use cascade deletes—deleting a parent task cascades to subtasks, comments, etc.
 
 ## Deployment
