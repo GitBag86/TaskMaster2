@@ -21,13 +21,7 @@ WORKDIR /app
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PORT=8080
-
-# Install cloud-sql-proxy for Cloud SQL connectivity (required for Cloud Run)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    cloud-sql-proxy \
-    postgresql-client \
-    && rm -rf /var/lib/apt/lists/*
+    PORT=5000
 
 COPY --from=python-builder /install /usr/local
 
@@ -45,9 +39,9 @@ RUN mkdir -p /app/instance && \
     chown -R appuser:appuser /app
 USER appuser
 
-EXPOSE 8080
+EXPOSE 5000
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-  CMD python -c "import os, urllib.request; urllib.request.urlopen(f\"http://127.0.0.1:{os.environ.get('PORT', '8080')}/health\")"
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health')"
 
 CMD ["./start.sh"]
