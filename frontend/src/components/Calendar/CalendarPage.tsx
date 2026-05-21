@@ -1,21 +1,51 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import type { Task } from '@/types'
 import { api } from '@/api/client'
 import { useToast } from '@/store/ToastContext'
 import { useSocket } from '@/store/SocketContext'
+import { useAuth } from '@/store/AuthContext'
 import { CalendarSkeleton } from '@/components/common/Skeletons'
+import TaskDetail from '@/components/Tasks/TaskDetail'
+import TaskForm from '@/components/Tasks/TaskForm'
 
 const days = ['Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'So', 'Nd']
 const months = ['Styczeń', 'Luty', 'Marzec', 'Kwiecień', 'Maj', 'Czerwiec', 'Lipiec', 'Sierpień', 'Wrzesień', 'Październik', 'Listopad', 'Grudzień']
+
+type CalendarDay = {
+  day: number;
+  weekday: number;
+}
+
+type CalendarWeek = {
+  weekNumber: number;
+  days: Array<CalendarDay | null>;
+}
+
+type TaskFormData = {
+  title: string;
+  assignee_ids?: number[];
+  priority?: Task['priority'];
+  project?: string;
+  due_date?: string;
+  notes?: string;
+}
 
 export default function CalendarPage() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [currentDate, setCurrentDate] = useState(new Date())
   const [selectedDay, setSelectedDay] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
+  const [priorityFilter, setPriorityFilter] = useState<'' | Task['priority']>('')
+  const [projectFilter, setProjectFilter] = useState('')
+  const [hideCompleted, setHideCompleted] = useState(false)
+  const [onlyMine, setOnlyMine] = useState(false)
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null)
+  const [showCreate, setShowCreate] = useState(false)
 
   const { addToast } = useToast()
   const { lastTaskEvent } = useSocket()
+  const { user } = useAuth()
 
   const year = currentDate.getFullYear()
   const month = currentDate.getMonth()
@@ -75,6 +105,34 @@ export default function CalendarPage() {
   const daysInMonth = lastDay.getDate()
   const startDay = (firstDay.getDay() + 6) % 7
 
+  const calendarWeeks = useMemo(() => {
+    const weeks: CalendarWeek[] = []
+    let currentWeek: Array<CalendarDay | null> = Array.from({ length: startDay }, () => null)
+
+    for (let day = 1; day <= daysInMonth; day += 1) {
+      const weekday = (new Date(year, month, day).getDay() + 6) % 7
+      currentWeek.push({ day, weekday })
+
+      if (currentWeek.length === 7) {
+        weeks.push({
+          weekNumber: getIsoWeekNumber(new Date(year, month, day)),
+          days: currentWeek,
+        })
+        currentWeek = []
+      }
+    }
+
+    if (currentWeek.length > 0) {
+      const lastMonthDay = [...currentWeek].reverse().find(day => day !== null)?.day ?? daysInMonth
+      weeks.push({
+        weekNumber: getIsoWeekNumber(new Date(year, month, lastMonthDay)),
+        days: [...currentWeek, ...Array.from({ length: 7 - currentWeek.length }, () => null)],
+      })
+    }
+
+    return weeks
+  }, [daysInMonth, month, startDay, year])
+
   const prevMonth = () => {
     setCurrentDate(new Date(year, month - 1, 1))
     setSelectedDay(null)
@@ -90,10 +148,24 @@ export default function CalendarPage() {
     setSelectedDay(new Date().getDate())
   }
 
+  const selectedDate = selectedDay === null
+    ? ''
+    : `${year}-${String(month + 1).padStart(2, '0')}-${String(selectedDay).padStart(2, '0')}`
+
+  const projects = useMemo(() => [...new Set(tasks.map(task => task.project))].sort(), [tasks])
+
+  const filteredTasks = useMemo(() => tasks.filter(task => {
+    if (priorityFilter && task.priority !== priorityFilter) return false
+    if (projectFilter && task.project !== projectFilter) return false
+    if (hideCompleted && task.completed) return false
+    if (onlyMine && user && !task.assignees.some(assignee => assignee.id === user.id)) return false
+    return true
+  }), [hideCompleted, onlyMine, priorityFilter, projectFilter, tasks, user])
+
   const getDayTasks = useCallback((day: number) => {
     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-    return tasks.filter(task => task.due_date === dateStr)
-  }, [month, tasks, year])
+    return filteredTasks.filter(task => task.due_date === dateStr)
+  }, [filteredTasks, month, year])
 
   const selectedTasks = useMemo(() => {
     if (selectedDay === null) return []
@@ -105,13 +177,25 @@ export default function CalendarPage() {
 
   const monthTasksCount = useMemo(() => {
     const prefix = `${year}-${String(month + 1).padStart(2, '0')}-`
-    return tasks.filter(task => task.due_date?.startsWith(prefix)).length
-  }, [month, tasks, year])
+    return filteredTasks.filter(task => task.due_date?.startsWith(prefix)).length
+  }, [filteredTasks, month, year])
 
   const overdueCount = useMemo(
-    () => tasks.filter(task => task.due_date && !task.completed && new Date(task.due_date) < new Date(new Date().toDateString())).length,
-    [tasks],
+    () => filteredTasks.filter(task => task.due_date && !task.completed && new Date(task.due_date) < new Date(new Date().toDateString())).length,
+    [filteredTasks],
   )
+
+  useEffect(() => {
+    if (!selectedTask) return
+    const syncedTask = tasks.find(task => task.id === selectedTask.id)
+    if (!syncedTask) {
+      setSelectedTask(null)
+      return
+    }
+    if (syncedTask !== selectedTask) {
+      setSelectedTask(syncedTask)
+    }
+  }, [selectedTask, tasks])
 
   const toggleTaskComplete = async (taskId: number) => {
     try {
@@ -121,6 +205,40 @@ export default function CalendarPage() {
     } catch {
       addToast('Błąd aktualizacji zadania', 'error')
     }
+  }
+
+  const createTask = async (data: TaskFormData) => {
+    try {
+      const createdTask = await api.tasks.create(data)
+      setTasks(prev => [createdTask, ...prev])
+      setShowCreate(false)
+      addToast('Zadanie utworzone', 'success')
+    } catch (err: unknown) {
+      addToast(err instanceof Error ? err.message : 'Błąd tworzenia zadania', 'error')
+    }
+  }
+
+  const updateTask = (updatedTask: Task) => {
+    setTasks(prev => prev.map(task => (task.id === updatedTask.id ? updatedTask : task)))
+    setSelectedTask(updatedTask)
+  }
+
+  const deleteTask = async (taskId: number) => {
+    try {
+      await api.tasks.delete(taskId)
+      setTasks(prev => prev.filter(task => task.id !== taskId))
+      setSelectedTask(null)
+      addToast('Zadanie usunięte', 'success')
+    } catch {
+      addToast('Błąd usuwania zadania', 'error')
+    }
+  }
+
+  const clearFilters = () => {
+    setPriorityFilter('')
+    setProjectFilter('')
+    setHideCompleted(false)
+    setOnlyMine(false)
   }
 
   if (loading) {
@@ -151,61 +269,147 @@ export default function CalendarPage() {
         <Legend label={`Po terminie: ${overdueCount}`} className="bg-destructive/10 text-destructive" />
       </div>
 
+      <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+          <select
+            value={priorityFilter}
+            onChange={event => setPriorityFilter(event.target.value as '' | Task['priority'])}
+            className="input sm:w-40"
+          >
+            <option value="">Priorytet</option>
+            <option value="high">Wysoki</option>
+            <option value="medium">Średni</option>
+            <option value="low">Niski</option>
+          </select>
+          <select value={projectFilter} onChange={event => setProjectFilter(event.target.value)} className="input sm:w-44">
+            <option value="">Projekt</option>
+            {projects.map(project => <option key={project} value={project}>{project}</option>)}
+          </select>
+          <label className="inline-flex h-10 items-center gap-2 rounded-md border border-border px-3 text-sm text-gray-700 dark:text-gray-300">
+            <input
+              type="checkbox"
+              checked={hideCompleted}
+              onChange={event => setHideCompleted(event.target.checked)}
+              className="h-4 w-4 rounded border-border text-primary focus:ring-primary/50"
+            />
+            Ukryj zakończone
+          </label>
+          <label className="inline-flex h-10 items-center gap-2 rounded-md border border-border px-3 text-sm text-gray-700 dark:text-gray-300">
+            <input
+              type="checkbox"
+              checked={onlyMine}
+              onChange={event => setOnlyMine(event.target.checked)}
+              className="h-4 w-4 rounded border-border text-primary focus:ring-primary/50"
+            />
+            Tylko moje
+          </label>
+        </div>
+
+        <div className="flex gap-2">
+          <button onClick={clearFilters} className="btn btn-ghost btn-sm">Wyczyść</button>
+          {user?.role === 'admin' && (
+            <button
+              onClick={() => setShowCreate(true)}
+              disabled={selectedDay === null}
+              className="btn btn-primary btn-sm"
+            >
+              <svg className="mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+              Dodaj na dzień
+            </button>
+          )}
+        </div>
+      </div>
+
       <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
         <div className="card overflow-hidden">
-          <div className="grid grid-cols-7 border-b border-border bg-muted/40">
-            {days.map(day => (
-              <div key={day} className="py-2 text-center text-xs font-semibold text-muted-foreground">{day}</div>
+          <div className="grid grid-cols-[3rem_repeat(7,minmax(0,1fr))] border-b border-border bg-muted/40">
+            <div className="border-r border-border py-2 text-center text-[11px] font-semibold uppercase text-muted-foreground">Tydz.</div>
+            {days.map((day, index) => (
+              <div key={day} className={`py-2 text-center text-xs font-semibold ${weekdayHeaderClass(index)}`}>{day}</div>
             ))}
           </div>
 
-          <div className="grid grid-cols-7">
-            {Array.from({ length: startDay }).map((_, index) => (
-              <div key={`empty-${index}`} className="min-h-[92px] border-b border-r border-border bg-gray-50/50 dark:bg-gray-900/30" />
-            ))}
+          <div>
+            {calendarWeeks.map(week => (
+              <div key={`${year}-${month}-${week.weekNumber}`} className="grid grid-cols-[3rem_repeat(7,minmax(0,1fr))]">
+                <div className="flex min-h-[92px] items-start justify-center border-b border-r border-border bg-muted/30 px-1 py-2 text-[11px] font-semibold text-muted-foreground">
+                  {week.weekNumber}
+                </div>
 
-            {Array.from({ length: daysInMonth }).map((_, index) => {
-              const day = index + 1
-              const dayTasks = getDayTasks(day)
-              const isToday = day === today.getDate() && month === today.getMonth() && year === today.getFullYear()
-              const isSelected = selectedDay === day
+                {week.days.map((calendarDay, index) => {
+                  if (!calendarDay) {
+                    return (
+                      <div
+                        key={`empty-${week.weekNumber}-${index}`}
+                        className={`min-h-[92px] border-b border-r border-border ${emptyDayClass(index)}`}
+                      />
+                    )
+                  }
 
-              return (
-                <button
-                  key={day}
-                  type="button"
-                  onClick={() => setSelectedDay(day)}
-                  className={`min-h-[92px] border-b border-r border-border p-1.5 text-left transition-colors ${
-                    isSelected ? 'bg-primary/10' : isToday ? 'bg-primary/5 hover:bg-primary/10' : 'hover:bg-muted/40'
-                  }`}
-                >
-                  <span className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold ${
-                    isToday ? 'bg-primary text-white' : 'text-gray-700 dark:text-gray-300'
-                  }`}>
-                    {day}
-                  </span>
+                  const dayTasks = getDayTasks(calendarDay.day)
+                  const isToday = calendarDay.day === today.getDate() && month === today.getMonth() && year === today.getFullYear()
+                  const isSelected = selectedDay === calendarDay.day
 
-                  <div className="mt-1 space-y-1">
-                    {dayTasks.slice(0, 2).map(task => (
-                      <div key={task.id} className={`truncate rounded px-1.5 py-0.5 text-[10px] font-medium ${taskBadgeClass(task)}`}>
-                        {task.title}
+                  return (
+                    <div
+                      key={calendarDay.day}
+                      onClick={() => setSelectedDay(calendarDay.day)}
+                      onKeyDown={event => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          setSelectedDay(calendarDay.day)
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      className={`min-h-[92px] border-b border-r border-border p-1.5 text-left transition-colors ${dayCellClass(calendarDay.weekday, isToday, isSelected)}`}
+                    >
+                      <span className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold ${dayNumberClass(calendarDay.weekday, isToday)}`}>
+                        {calendarDay.day}
+                      </span>
+
+                      <div className="mt-1 space-y-1">
+                        {dayTasks.slice(0, 2).map(task => (
+                          <button
+                            key={task.id}
+                            type="button"
+                            onClick={event => {
+                              event.stopPropagation()
+                              setSelectedDay(calendarDay.day)
+                              setSelectedTask(task)
+                            }}
+                            className={`block w-full truncate rounded px-1.5 py-0.5 text-left text-[10px] font-medium ${taskBadgeClass(task)}`}
+                            title={task.title}
+                          >
+                            {task.title}
+                          </button>
+                        ))}
+                        {dayTasks.length > 2 && (
+                          <div className="text-[10px] text-muted-foreground">+{dayTasks.length - 2} więcej</div>
+                        )}
                       </div>
-                    ))}
-                    {dayTasks.length > 2 && (
-                      <div className="text-[10px] text-muted-foreground">+{dayTasks.length - 2} więcej</div>
-                    )}
-                  </div>
-                </button>
-              )
-            })}
+                    </div>
+                  )
+                })}
+              </div>
+            ))}
           </div>
         </div>
 
         <aside className="card p-4">
-          <h3 className="mb-1 text-sm font-semibold text-gray-900 dark:text-white">
-            {selectedDay ? `Plan dnia: ${selectedDay} ${months[month].toLowerCase()}` : 'Wybierz dzień'}
-          </h3>
-          <p className="mb-3 text-xs text-muted-foreground">Kliknij dzień w kalendarzu, aby zarządzać zadaniami.</p>
+          <div className="mb-3 flex items-start justify-between gap-3">
+            <div>
+              <h3 className="mb-1 text-sm font-semibold text-gray-900 dark:text-white">
+                {selectedDay ? `Plan dnia: ${selectedDay} ${months[month].toLowerCase()}` : 'Wybierz dzień'}
+              </h3>
+              <p className="text-xs text-muted-foreground">Kliknij zadanie, aby otworzyć szczegóły.</p>
+            </div>
+            {user?.role === 'admin' && selectedDay !== null && (
+              <button onClick={() => setShowCreate(true)} className="btn btn-secondary btn-sm">Dodaj</button>
+            )}
+          </div>
 
           <div className="space-y-2">
             {selectedDay === null || selectedTasks.length === 0 ? (
@@ -214,11 +418,14 @@ export default function CalendarPage() {
               </p>
             ) : (
               selectedTasks.map(task => (
-                <div key={task.id} className="rounded-lg border border-border p-3">
+                <div key={task.id} className="rounded-lg border border-border p-3 transition-colors hover:bg-muted/30">
                   <div className="mb-1 flex items-start justify-between gap-2">
-                    <p className={`text-sm font-semibold ${task.completed ? 'line-through text-muted-foreground' : 'text-gray-900 dark:text-white'}`}>
+                    <button
+                      onClick={() => setSelectedTask(task)}
+                      className={`min-w-0 flex-1 text-left text-sm font-semibold hover:text-primary ${task.completed ? 'line-through text-muted-foreground' : 'text-gray-900 dark:text-white'}`}
+                    >
                       {task.title}
-                    </p>
+                    </button>
                     <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${priorityClass(task.priority)}`}>
                       {priorityLabel(task.priority)}
                     </span>
@@ -236,6 +443,30 @@ export default function CalendarPage() {
           </div>
         </aside>
       </div>
+
+      {showCreate && (
+        <Modal onClose={() => setShowCreate(false)}>
+          <TaskForm
+            initialData={{ title: '', due_date: selectedDate, priority: 'medium', project: '', notes: '', assignee_ids: [] }}
+            heading="Nowe zadanie"
+            submitLabel="Utwórz"
+            onSubmit={data => void createTask(data)}
+            onCancel={() => setShowCreate(false)}
+          />
+        </Modal>
+      )}
+
+      {selectedTask && (
+        <Modal onClose={() => setSelectedTask(null)}>
+          <TaskDetail
+            task={selectedTask}
+            onDelete={id => void deleteTask(id)}
+            onComplete={id => void toggleTaskComplete(id)}
+            onUpdate={updateTask}
+            onClose={() => setSelectedTask(null)}
+          />
+        </Modal>
+      )}
     </div>
   )
 }
@@ -257,6 +488,59 @@ function priorityClass(priority: Task['priority']) {
   return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
 }
 
+function getIsoWeekNumber(date: Date) {
+  const target = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()))
+  const dayNumber = target.getUTCDay() || 7
+  target.setUTCDate(target.getUTCDate() + 4 - dayNumber)
+  const yearStart = new Date(Date.UTC(target.getUTCFullYear(), 0, 1))
+  return Math.ceil((((target.getTime() - yearStart.getTime()) / 86400000) + 1) / 7)
+}
+
+function weekdayHeaderClass(weekday: number) {
+  if (weekday === 5) return 'bg-amber-100/80 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300'
+  if (weekday === 6) return 'bg-red-100/80 text-red-700 dark:bg-red-900/20 dark:text-red-300'
+  return 'text-muted-foreground'
+}
+
+function emptyDayClass(weekday: number) {
+  if (weekday === 5) return 'bg-amber-50/40 dark:bg-amber-950/10'
+  if (weekday === 6) return 'bg-red-50/40 dark:bg-red-950/10'
+  return 'bg-gray-50/50 dark:bg-gray-900/30'
+}
+
+function dayCellClass(weekday: number, isToday: boolean, isSelected: boolean) {
+  if (isSelected) return 'bg-primary/10 ring-1 ring-inset ring-primary/30'
+  if (isToday) return 'bg-primary/5 hover:bg-primary/10'
+  if (weekday === 5) return 'bg-amber-50/70 hover:bg-amber-100/80 dark:bg-amber-950/20 dark:hover:bg-amber-900/30'
+  if (weekday === 6) return 'bg-red-50/70 hover:bg-red-100/80 dark:bg-red-950/20 dark:hover:bg-red-900/30'
+  return 'hover:bg-muted/40'
+}
+
+function dayNumberClass(weekday: number, isToday: boolean) {
+  if (isToday) return 'bg-primary text-white'
+  if (weekday === 5) return 'text-amber-700 dark:text-amber-300'
+  if (weekday === 6) return 'text-red-700 dark:text-red-300'
+  return 'text-gray-700 dark:text-gray-300'
+}
+
 function Legend({ label, className }: { label: string; className: string }) {
   return <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${className}`}>{label}</span>
+}
+
+function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+  if (typeof document === 'undefined') {
+    return null
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div
+        className="w-full max-w-lg rounded-xl bg-white shadow-xl dark:bg-gray-900"
+        onClick={event => event.stopPropagation()}
+      >
+        {children}
+      </div>
+    </div>,
+    document.body,
+  )
 }

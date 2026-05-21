@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import type { Task } from '@/types'
 import { api } from '@/api/client'
@@ -21,6 +21,13 @@ interface TaskFormData {
 
 const PER_PAGE = 24
 
+type BulkUpdates = {
+  priority?: Task['priority'];
+  project?: string;
+  completed?: boolean;
+  status?: Task['status'];
+}
+
 export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
@@ -33,6 +40,10 @@ export default function TasksPage() {
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [isSearchMode, setIsSearchMode] = useState(false)
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<number>>(() => new Set())
+  const [bulkStatus, setBulkStatus] = useState<'' | Task['status']>('')
+  const [bulkPriority, setBulkPriority] = useState<'' | Task['priority']>('')
+  const [bulkProject, setBulkProject] = useState('')
 
   const { addToast } = useToast()
   const { user } = useAuth()
@@ -139,24 +150,57 @@ export default function TasksPage() {
     setFilterProject('')
     setFilterStatus('')
     setSearchQuery('')
+    setSelectedTaskIds(new Set())
     setPage(1)
     void fetchTasks(1)
   }
 
-  const filteredTasks = tasks.filter(t => {
+  const filteredTasks = useMemo(() => tasks.filter(t => {
     if (filterPriority && t.priority !== filterPriority) return false
     if (filterProject && t.project !== filterProject) return false
     if (filterStatus === 'completed' && !t.completed) return false
     if (filterStatus === 'pending' && t.completed) return false
     return true
-  })
+  }), [filterPriority, filterProject, filterStatus, tasks])
 
-  const projects = [...new Set(tasks.map(t => t.project))]
+  const projects = useMemo(() => [...new Set(tasks.map(t => t.project))], [tasks])
+  const visibleTaskIds = useMemo(() => filteredTasks.map(task => task.id), [filteredTasks])
+  const allVisibleSelected = visibleTaskIds.length > 0 && visibleTaskIds.every(id => selectedTaskIds.has(id))
+
+  useEffect(() => {
+    const visibleIds = new Set(visibleTaskIds)
+    setSelectedTaskIds(prev => {
+      const next = new Set([...prev].filter(id => visibleIds.has(id)))
+      const unchanged = next.size === prev.size && [...next].every(id => prev.has(id))
+      return unchanged ? prev : next
+    })
+  }, [visibleTaskIds])
+
+  const toggleTaskSelection = (taskId: number, selected: boolean) => {
+    setSelectedTaskIds(prev => {
+      const next = new Set(prev)
+      if (selected) {
+        next.add(taskId)
+      } else {
+        next.delete(taskId)
+      }
+      return next
+    })
+  }
+
+  const toggleVisibleSelection = (selected: boolean) => {
+    setSelectedTaskIds(selected ? new Set(visibleTaskIds) : new Set())
+  }
 
   const handleDelete = async (id: number) => {
     try {
       await api.tasks.delete(id)
       setTasks(prev => prev.filter(task => task.id !== id))
+      setSelectedTaskIds(prev => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
       setTotal(prev => Math.max(0, prev - 1))
       if (selectedTask?.id === id) {
         setSelectedTask(null)
@@ -165,6 +209,71 @@ export default function TasksPage() {
     } catch {
       addToast('Błąd usuwania', 'error')
     }
+  }
+
+  const handleBulkComplete = async () => {
+    const taskIds = [...selectedTaskIds]
+    if (taskIds.length === 0) return
+
+    try {
+      await api.tasks.bulkComplete(taskIds)
+      setTasks(prev => prev.map(task => (
+        selectedTaskIds.has(task.id) ? { ...task, completed: true, status: 'done' } : task
+      )))
+      setSelectedTaskIds(new Set())
+      addToast(`Zakończono ${taskIds.length} zadań`, 'success')
+    } catch (err: unknown) {
+      addToast(err instanceof Error ? err.message : 'Błąd operacji masowej', 'error')
+    }
+  }
+
+  const handleBulkUpdate = async (updates: BulkUpdates) => {
+    const taskIds = [...selectedTaskIds]
+    if (taskIds.length === 0) return
+
+    try {
+      await api.tasks.bulkUpdate(taskIds, updates)
+      await fetchTasks(page)
+      setSelectedTaskIds(new Set())
+      addToast(`Zaktualizowano ${taskIds.length} zadań`, 'success')
+    } catch (err: unknown) {
+      addToast(err instanceof Error ? err.message : 'Błąd operacji masowej', 'error')
+    }
+  }
+
+  const handleBulkDelete = async () => {
+    const taskIds = [...selectedTaskIds]
+    if (taskIds.length === 0) return
+    if (!window.confirm(`Usunąć ${taskIds.length} zaznaczonych zadań?`)) return
+
+    try {
+      await api.tasks.bulkDelete(taskIds)
+      setTasks(prev => prev.filter(task => !selectedTaskIds.has(task.id)))
+      setTotal(prev => Math.max(0, prev - taskIds.length))
+      setSelectedTaskIds(new Set())
+      addToast(`Usunięto ${taskIds.length} zadań`, 'success')
+    } catch (err: unknown) {
+      addToast(err instanceof Error ? err.message : 'Błąd usuwania masowego', 'error')
+    }
+  }
+
+  const applyBulkStatus = () => {
+    if (!bulkStatus) return
+    void handleBulkUpdate({ status: bulkStatus, completed: bulkStatus === 'done' })
+    setBulkStatus('')
+  }
+
+  const applyBulkPriority = () => {
+    if (!bulkPriority) return
+    void handleBulkUpdate({ priority: bulkPriority })
+    setBulkPriority('')
+  }
+
+  const applyBulkProject = () => {
+    const project = bulkProject.trim()
+    if (!project) return
+    void handleBulkUpdate({ project })
+    setBulkProject('')
   }
 
   const handleComplete = async (id: number) => {
@@ -261,6 +370,94 @@ export default function TasksPage() {
         <button onClick={clearFilters} className="btn btn-ghost btn-sm">Wyczyść</button>
       </div>
 
+      {user?.role === 'admin' && (
+        <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+              <input
+                type="checkbox"
+                checked={allVisibleSelected}
+                onChange={event => toggleVisibleSelection(event.target.checked)}
+                className="h-4 w-4 rounded border-border text-primary focus:ring-primary/50"
+              />
+              Widoczne
+            </label>
+            <span className="text-sm text-muted-foreground">{selectedTaskIds.size} zaznaczone</span>
+            <button
+              onClick={() => void handleBulkComplete()}
+              disabled={selectedTaskIds.size === 0}
+              className="btn btn-secondary btn-sm"
+            >
+              <svg className="mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+              Ukończ
+            </button>
+          </div>
+
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap lg:justify-end">
+            <div className="flex gap-2">
+              <select
+                value={bulkStatus}
+                onChange={event => setBulkStatus(event.target.value as '' | Task['status'])}
+                disabled={selectedTaskIds.size === 0}
+                className="input sm:w-36"
+              >
+                <option value="">Status</option>
+                <option value="todo">Do zrobienia</option>
+                <option value="in_progress">W toku</option>
+                <option value="done">Zakończone</option>
+              </select>
+              <button onClick={applyBulkStatus} disabled={!bulkStatus || selectedTaskIds.size === 0} className="btn btn-secondary btn-sm">
+                Zmień
+              </button>
+            </div>
+
+            <div className="flex gap-2">
+              <select
+                value={bulkPriority}
+                onChange={event => setBulkPriority(event.target.value as '' | Task['priority'])}
+                disabled={selectedTaskIds.size === 0}
+                className="input sm:w-32"
+              >
+                <option value="">Priorytet</option>
+                <option value="high">Wysoki</option>
+                <option value="medium">Średni</option>
+                <option value="low">Niski</option>
+              </select>
+              <button onClick={applyBulkPriority} disabled={!bulkPriority || selectedTaskIds.size === 0} className="btn btn-secondary btn-sm">
+                Ustaw
+              </button>
+            </div>
+
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={bulkProject}
+                onChange={event => setBulkProject(event.target.value)}
+                disabled={selectedTaskIds.size === 0}
+                placeholder="Projekt"
+                className="input sm:w-36"
+              />
+              <button onClick={applyBulkProject} disabled={!bulkProject.trim() || selectedTaskIds.size === 0} className="btn btn-secondary btn-sm">
+                Przenieś
+              </button>
+            </div>
+
+            <button
+              onClick={() => void handleBulkDelete()}
+              disabled={selectedTaskIds.size === 0}
+              className="btn btn-destructive btn-sm"
+            >
+              <svg className="mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-8 0 1 12a2 2 0 002 2h4a2 2 0 002-2l1-12" />
+              </svg>
+              Usuń
+            </button>
+          </div>
+        </div>
+      )}
+
       {filteredTasks.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-16 text-center">
           <svg className="mb-4 h-12 w-12 text-gray-300 dark:text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
@@ -279,6 +476,9 @@ export default function TasksPage() {
               task={task}
               onClick={() => setSelectedTask(task)}
               onComplete={() => void handleComplete(task.id)}
+              selectable={user?.role === 'admin'}
+              selected={selectedTaskIds.has(task.id)}
+              onSelectionChange={selected => toggleTaskSelection(task.id, selected)}
             />
           ))}
         </div>

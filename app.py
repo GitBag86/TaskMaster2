@@ -1,9 +1,11 @@
 import logging
 import os
+from datetime import datetime, timezone
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
+from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from config import Config
@@ -67,15 +69,27 @@ def _register_routes(app):
 
     @app.route("/health")
     def health():
-        return jsonify({"status": "healthy"}), 200
+        return jsonify({
+            "status": "healthy",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }), 200
 
     @app.route("/ready")
     def ready():
+        checks = {"database": False, "socketio": socketio is not None}
         try:
-            db.session.execute(db.text("SELECT 1"))
-            return jsonify({"status": "ready"}), 200
+            db.session.execute(text("SELECT 1"))
+            checks["database"] = True
         except Exception:
-            return jsonify({"status": "not_ready"}), 503
+            logger.exception("Readiness database check failed")
+
+        status_code = 200 if all(checks.values()) else 503
+        status = "ready" if status_code == 200 else "not_ready"
+        return jsonify({
+            "status": status,
+            "checks": checks,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }), status_code
 
     @app.route("/<path:path>")
     def serve_spa(path):

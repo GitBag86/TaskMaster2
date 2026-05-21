@@ -1,11 +1,22 @@
 import sqlite3
+from datetime import date, timedelta
 
-from models import User, Task
+from models import db, User, Task
 
 def test_health_check(client):
     response = client.get('/health')
     assert response.status_code == 200
-    assert response.get_json() == {"status": "healthy"}
+    data = response.get_json()
+    assert data["status"] == "healthy"
+    assert "timestamp" in data
+
+def test_readiness_check_reports_database_and_socketio(client):
+    response = client.get('/ready')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["status"] == "ready"
+    assert data["checks"] == {"database": True, "socketio": True}
+    assert "timestamp" in data
 
 def test_signup(client):
     response = client.post('/auth/signup', json={
@@ -118,6 +129,47 @@ def test_get_tasks_per_page_has_upper_bound(auth_client):
     assert response.status_code == 200
     data = response.get_json()
     assert data["per_page"] == 100
+
+def test_today_tasks_groups_visible_open_tasks_by_due_date(auth_client):
+    today = date.today()
+    auth_client.post('/tasks', json={"title": "Overdue", "due_date": (today - timedelta(days=1)).isoformat()})
+    auth_client.post('/tasks', json={"title": "Today", "due_date": today.isoformat()})
+    auth_client.post('/tasks', json={"title": "Soon", "due_date": (today + timedelta(days=3)).isoformat()})
+    later = auth_client.post('/tasks', json={"title": "Later", "due_date": (today + timedelta(days=9)).isoformat()})
+    auth_client.put(f'/tasks/{later.get_json()["id"]}/complete')
+
+    response = auth_client.get('/tasks/today')
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert [task["title"] for task in data["overdue"]] == ["Overdue"]
+    assert [task["title"] for task in data["today"]] == ["Today"]
+    assert [task["title"] for task in data["upcoming"]] == ["Soon"]
+    assert data["counts"] == {"overdue": 1, "today": 1, "upcoming": 1, "total": 3}
+
+def test_today_tasks_regular_user_only_sees_assigned_tasks(client, app):
+    today = date.today()
+    with app.app_context():
+        regular = User(username="today_user", email="today_user@example.com", role="user")
+        regular.set_password("password")
+        admin = User(username="today_admin", email="today_admin@example.com", role="admin")
+        admin.set_password("password")
+        db.session.add_all([regular, admin])
+        db.session.commit()
+        visible = Task(user_id=admin.id, title="Assigned today", due_date=today)
+        hidden = Task(user_id=admin.id, title="Hidden today", due_date=today)
+        visible.assignees.append(regular)
+        db.session.add_all([visible, hidden])
+        db.session.commit()
+        regular_id = regular.id
+
+    with client.session_transaction() as sess:
+        sess['user_id'] = regular_id
+
+    response = client.get('/tasks/today')
+
+    assert response.status_code == 200
+    assert [task["title"] for task in response.get_json()["today"]] == ["Assigned today"]
 
 def test_create_task_with_assignees(auth_client, app):
     with app.app_context():
@@ -303,6 +355,61 @@ def test_delete_task_emits_snapshot_event(auth_client, monkeypatch):
     assert emitted["payload"]["action"] == "deleted"
     assert emitted["payload"]["task_id"] == task_id
     assert emitted["payload"]["task"]["title"] == "Delete me"
+
+def test_bulk_complete_emits_socket_event(auth_client, monkeypatch):
+    first = auth_client.post('/tasks', json={"title": "Bulk complete 1"}).get_json()
+    second = auth_client.post('/tasks', json={"title": "Bulk complete 2"}).get_json()
+    emitted = {}
+
+    def fake_emit(event_name, payload):
+        emitted["event_name"] = event_name
+        emitted["payload"] = payload
+
+    monkeypatch.setattr("routes.tasks.socketio.emit", fake_emit)
+
+    response = auth_client.put('/tasks/bulk/complete', json={"task_ids": [first["id"], second["id"]]})
+
+    assert response.status_code == 200
+    assert emitted["event_name"] == "task_action"
+    assert emitted["payload"]["action"] == "bulk_completed"
+    assert emitted["payload"]["task_ids"] == [first["id"], second["id"]]
+
+def test_bulk_update_emits_socket_event(auth_client, monkeypatch):
+    task = auth_client.post('/tasks', json={"title": "Bulk update"}).get_json()
+    emitted = {}
+
+    def fake_emit(event_name, payload):
+        emitted["event_name"] = event_name
+        emitted["payload"] = payload
+
+    monkeypatch.setattr("routes.tasks.socketio.emit", fake_emit)
+
+    response = auth_client.put('/tasks/bulk/update', json={
+        "task_ids": [task["id"]],
+        "updates": {"priority": "high", "status": "in_progress"},
+    })
+
+    assert response.status_code == 200
+    assert emitted["event_name"] == "task_action"
+    assert emitted["payload"]["action"] == "bulk_updated"
+    assert emitted["payload"]["task_ids"] == [task["id"]]
+
+def test_bulk_delete_emits_socket_event(auth_client, monkeypatch):
+    task = auth_client.post('/tasks', json={"title": "Bulk delete"}).get_json()
+    emitted = {}
+
+    def fake_emit(event_name, payload):
+        emitted["event_name"] = event_name
+        emitted["payload"] = payload
+
+    monkeypatch.setattr("routes.tasks.socketio.emit", fake_emit)
+
+    response = auth_client.delete('/tasks/bulk/delete', json={"task_ids": [task["id"]]})
+
+    assert response.status_code == 200
+    assert emitted["event_name"] == "task_action"
+    assert emitted["payload"]["action"] == "bulk_deleted"
+    assert emitted["payload"]["task_ids"] == [task["id"]]
 
 def test_migration_upgrade_smoke_fresh_sqlite(tmp_path, monkeypatch):
     db_path = tmp_path / "migration-smoke.db"

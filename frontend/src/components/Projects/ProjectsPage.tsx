@@ -1,0 +1,546 @@
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
+import type { Task } from '@/types'
+import { api } from '@/api/client'
+import { useAuth } from '@/store/AuthContext'
+import { useSocket } from '@/store/SocketContext'
+import { useToast } from '@/store/ToastContext'
+import { TasksPageSkeleton } from '@/components/common/Skeletons'
+import TaskDetail from '@/components/Tasks/TaskDetail'
+
+type ProjectSummary = {
+  name: string;
+  tasks: Task[];
+  total: number;
+  completed: number;
+  overdue: number;
+  highPriority: number;
+  nextDueDate: string | null;
+}
+
+const projectAccents = [
+  'border-t-blue-500',
+  'border-t-emerald-500',
+  'border-t-amber-500',
+  'border-t-rose-500',
+  'border-t-cyan-500',
+  'border-t-fuchsia-500',
+]
+
+const taskEventActions = new Set([
+  'created',
+  'updated',
+  'completed',
+  'reopened',
+  'deleted',
+  'bulk_completed',
+  'bulk_deleted',
+  'bulk_updated',
+])
+
+export default function ProjectsPage() {
+  const [groupedTasks, setGroupedTasks] = useState<Record<string, Task[]>>({})
+  const [loading, setLoading] = useState(true)
+  const [selectedProjectName, setSelectedProjectName] = useState<string | null>(null)
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null)
+  const [taskToAssignId, setTaskToAssignId] = useState('')
+  const [targetProjectName, setTargetProjectName] = useState('')
+  const [showNewProject, setShowNewProject] = useState(false)
+  const [newProjectName, setNewProjectName] = useState('')
+  const [newProjectTaskTitle, setNewProjectTaskTitle] = useState('')
+  const [newProjectDueDate, setNewProjectDueDate] = useState('')
+  const [newProjectPriority, setNewProjectPriority] = useState<Task['priority']>('medium')
+
+  const { user } = useAuth()
+  const { lastTaskEvent } = useSocket()
+  const { addToast } = useToast()
+
+  const loadProjects = useCallback(async () => {
+    try {
+      const projects = await api.tasks.byProject()
+      setGroupedTasks(projects)
+    } catch (err: unknown) {
+      addToast(err instanceof Error ? err.message : 'Błąd ładowania projektów', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }, [addToast])
+
+  useEffect(() => {
+    void loadProjects()
+  }, [loadProjects])
+
+  useEffect(() => {
+    if (!lastTaskEvent || !taskEventActions.has(lastTaskEvent.action)) return
+    void loadProjects()
+  }, [lastTaskEvent, loadProjects])
+
+  const projects = useMemo(
+    () => Object.entries(groupedTasks)
+      .map(([name, tasks]) => buildProjectSummary(name, tasks))
+      .sort((a, b) => a.name.localeCompare(b.name, 'pl')),
+    [groupedTasks],
+  )
+
+  useEffect(() => {
+    if (projects.length === 0) {
+      setSelectedProjectName(null)
+      return
+    }
+    if (!selectedProjectName || !projects.some(project => project.name === selectedProjectName)) {
+      setSelectedProjectName(projects[0].name)
+    }
+  }, [projects, selectedProjectName])
+
+  useEffect(() => {
+    if (selectedProjectName) {
+      setTargetProjectName(selectedProjectName)
+    }
+  }, [selectedProjectName])
+
+  const selectedProject = projects.find(project => project.name === selectedProjectName) ?? null
+  const allTasks = useMemo(() => projects.flatMap(project => project.tasks), [projects])
+  const assignableTasks = useMemo(
+    () => allTasks
+      .filter(task => task.project !== targetProjectName.trim())
+      .sort((a, b) => a.title.localeCompare(b.title, 'pl')),
+    [allTasks, targetProjectName],
+  )
+
+  useEffect(() => {
+    if (assignableTasks.length === 0) {
+      setTaskToAssignId('')
+      return
+    }
+    if (!assignableTasks.some(task => String(task.id) === taskToAssignId)) {
+      setTaskToAssignId(String(assignableTasks[0].id))
+    }
+  }, [assignableTasks, taskToAssignId])
+
+  useEffect(() => {
+    if (!selectedTask) return
+    const syncedTask = allTasks.find(task => task.id === selectedTask.id)
+    if (!syncedTask) {
+      setSelectedTask(null)
+      return
+    }
+    if (syncedTask !== selectedTask) {
+      setSelectedTask(syncedTask)
+    }
+  }, [allTasks, selectedTask])
+
+  const assignTaskToProject = async () => {
+    const projectName = targetProjectName.trim()
+    const taskId = Number(taskToAssignId)
+    if (!projectName || !taskId) return
+
+    try {
+      await api.tasks.update(taskId, { project: projectName })
+      await loadProjects()
+      setSelectedProjectName(projectName)
+      addToast(`Zadanie przypisane do projektu ${projectName}`, 'success')
+    } catch (err: unknown) {
+      addToast(err instanceof Error ? err.message : 'Błąd przypisywania zadania', 'error')
+    }
+  }
+
+  const createProject = async (event: React.FormEvent) => {
+    event.preventDefault()
+    const projectName = newProjectName.trim()
+    const taskTitle = newProjectTaskTitle.trim()
+    if (!projectName || !taskTitle) return
+
+    try {
+      await api.tasks.create({
+        title: taskTitle,
+        project: projectName,
+        priority: newProjectPriority,
+        due_date: newProjectDueDate,
+      })
+      await loadProjects()
+      setSelectedProjectName(projectName)
+      setTargetProjectName(projectName)
+      setShowNewProject(false)
+      setNewProjectName('')
+      setNewProjectTaskTitle('')
+      setNewProjectDueDate('')
+      setNewProjectPriority('medium')
+      addToast(`Projekt ${projectName} utworzony`, 'success')
+    } catch (err: unknown) {
+      addToast(err instanceof Error ? err.message : 'Błąd tworzenia projektu', 'error')
+    }
+  }
+
+  const toggleTaskComplete = async (taskId: number) => {
+    try {
+      const updatedTask = await api.tasks.complete(taskId)
+      await loadProjects()
+      setSelectedTask(prev => (prev?.id === updatedTask.id ? updatedTask : prev))
+      addToast(updatedTask.completed ? 'Zadanie zakończone' : 'Zadanie przywrócone', 'success')
+    } catch (err: unknown) {
+      addToast(err instanceof Error ? err.message : 'Błąd zmiany stanu', 'error')
+    }
+  }
+
+  const deleteTask = async (taskId: number) => {
+    try {
+      await api.tasks.delete(taskId)
+      await loadProjects()
+      setSelectedTask(null)
+      addToast('Zadanie usunięte', 'success')
+    } catch (err: unknown) {
+      addToast(err instanceof Error ? err.message : 'Błąd usuwania zadania', 'error')
+    }
+  }
+
+  const updateTask = async (task: Task) => {
+    await loadProjects()
+    setSelectedTask(task)
+  }
+
+  if (loading) {
+    return <TasksPageSkeleton />
+  }
+
+  return (
+    <div className="space-y-6 page-enter">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Projekty</h2>
+          <p className="text-sm text-muted-foreground">Przegląd zadań pogrupowanych według pola projektu.</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {user?.role === 'admin' && (
+            <button onClick={() => setShowNewProject(true)} className="btn btn-primary btn-sm">
+              <svg className="mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+              Nowy projekt
+            </button>
+          )}
+          <Metric label="Projekty" value={projects.length} />
+          <Metric label="Zadania" value={allTasks.length} />
+        </div>
+      </div>
+
+      {projects.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border py-16 text-center">
+          <p className="text-lg font-medium text-gray-500 dark:text-gray-400">Brak projektów</p>
+          <p className="text-sm text-muted-foreground">Utwórz zadanie z nazwą projektu, aby pojawiło się w tym widoku.</p>
+          {user?.role === 'admin' && (
+            <button onClick={() => setShowNewProject(true)} className="btn btn-primary btn-sm mt-4">
+              Nowy projekt
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+          <div className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
+              {projects.map((project, index) => (
+                <button
+                  key={project.name}
+                  type="button"
+                  onClick={() => setSelectedProjectName(project.name)}
+                  className={`card border-t-4 p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-md ${projectAccents[index % projectAccents.length]} ${
+                    selectedProjectName === project.name ? 'ring-2 ring-primary/30' : ''
+                  }`}
+                >
+                  <div className="mb-4 flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="truncate text-base font-semibold text-gray-900 dark:text-white">{project.name}</h3>
+                      <p className="text-xs text-muted-foreground">{project.completed}/{project.total} zakończone</p>
+                    </div>
+                    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">{project.total}</span>
+                  </div>
+
+                  <div className="mb-3 h-2 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+                    <div
+                      className="h-full rounded-full bg-primary transition-all"
+                      style={{ width: `${project.total > 0 ? (project.completed / project.total) * 100 : 0}%` }}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    <ProjectStat label="Po terminie" value={project.overdue} tone={project.overdue > 0 ? 'danger' : 'default'} />
+                    <ProjectStat label="Wysoki" value={project.highPriority} tone={project.highPriority > 0 ? 'warning' : 'default'} />
+                    <ProjectStat label="Najbliżej" value={project.nextDueDate ? formatShortDate(project.nextDueDate) : '-'} />
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            {selectedProject && (
+              <section className="rounded-lg border border-border bg-card p-4">
+                <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{selectedProject.name}</h3>
+                    <p className="text-sm text-muted-foreground">Zadania w projekcie: {selectedProject.total}</p>
+                  </div>
+                  <span className="text-sm text-muted-foreground">
+                    Postęp: {selectedProject.total > 0 ? Math.round((selectedProject.completed / selectedProject.total) * 100) : 0}%
+                  </span>
+                </div>
+
+                <div className="space-y-2">
+                  {selectedProject.tasks
+                    .slice()
+                    .sort(compareProjectTasks)
+                    .map(task => (
+                      <ProjectTaskRow
+                        key={task.id}
+                        task={task}
+                        onOpen={() => setSelectedTask(task)}
+                        onComplete={() => void toggleTaskComplete(task.id)}
+                      />
+                    ))}
+                </div>
+              </section>
+            )}
+          </div>
+
+          <aside className="rounded-lg border border-border bg-card p-4">
+            <h3 className="mb-1 text-sm font-semibold text-gray-900 dark:text-white">Przypisywanie</h3>
+            <p className="mb-4 text-xs text-muted-foreground">
+              {user?.role === 'admin'
+                ? 'Przenieś istniejące zadanie do wybranego albo nowego projektu.'
+                : 'Tylko administrator może przenosić zadania między projektami.'}
+            </p>
+
+            {user?.role === 'admin' ? (
+              <div className="space-y-3">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">Projekt docelowy</label>
+                  <input
+                    type="text"
+                    value={targetProjectName}
+                    onChange={event => setTargetProjectName(event.target.value)}
+                    className="input"
+                    placeholder="Nazwa projektu"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">Zadanie</label>
+                  <select
+                    value={taskToAssignId}
+                    onChange={event => setTaskToAssignId(event.target.value)}
+                    disabled={assignableTasks.length === 0}
+                    className="input"
+                  >
+                    {assignableTasks.length === 0 ? (
+                      <option value="">Brak zadań do przeniesienia</option>
+                    ) : (
+                      assignableTasks.map(task => (
+                        <option key={task.id} value={task.id}>
+                          {task.title} ({task.project})
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </div>
+
+                <button
+                  onClick={() => void assignTaskToProject()}
+                  disabled={!targetProjectName.trim() || !taskToAssignId}
+                  className="btn btn-primary btn-sm w-full"
+                >
+                  Przypisz do projektu
+                </button>
+              </div>
+            ) : (
+              <div className="rounded-lg border border-dashed border-border p-3 text-sm text-muted-foreground">
+                Możesz przeglądać projekty, w których masz przypisane zadania.
+              </div>
+            )}
+          </aside>
+        </div>
+      )}
+
+      {selectedTask && (
+        <Modal onClose={() => setSelectedTask(null)}>
+          <TaskDetail
+            task={selectedTask}
+            onDelete={id => void deleteTask(id)}
+            onComplete={id => void toggleTaskComplete(id)}
+            onUpdate={task => void updateTask(task)}
+            onClose={() => setSelectedTask(null)}
+          />
+        </Modal>
+      )}
+
+      {showNewProject && (
+        <Modal onClose={() => setShowNewProject(false)}>
+          <form onSubmit={event => void createProject(event)} className="p-6">
+            <h3 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">Nowy projekt</h3>
+
+            <div className="space-y-4">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Nazwa projektu *</label>
+                <input
+                  type="text"
+                  value={newProjectName}
+                  onChange={event => setNewProjectName(event.target.value)}
+                  className="input"
+                  required
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Pierwsze zadanie *</label>
+                <input
+                  type="text"
+                  value={newProjectTaskTitle}
+                  onChange={event => setNewProjectTaskTitle(event.target.value)}
+                  className="input"
+                  placeholder="Np. Przygotować plan projektu"
+                  required
+                />
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Priorytet</label>
+                  <select
+                    value={newProjectPriority}
+                    onChange={event => setNewProjectPriority(event.target.value as Task['priority'])}
+                    className="input"
+                  >
+                    <option value="low">Niski</option>
+                    <option value="medium">Średni</option>
+                    <option value="high">Wysoki</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Termin</label>
+                  <input
+                    type="date"
+                    value={newProjectDueDate}
+                    onChange={event => setNewProjectDueDate(event.target.value)}
+                    className="input"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button type="button" onClick={() => setShowNewProject(false)} className="btn btn-secondary btn-sm">Anuluj</button>
+              <button type="submit" className="btn btn-primary btn-sm">Utwórz projekt</button>
+            </div>
+          </form>
+        </Modal>
+      )}
+    </div>
+  )
+}
+
+function buildProjectSummary(name: string, tasks: Task[]): ProjectSummary {
+  const today = new Date(new Date().toDateString())
+  const openTasks = tasks.filter(task => !task.completed)
+  const nextDueDate = openTasks
+    .map(task => task.due_date)
+    .filter((date): date is string => Boolean(date))
+    .sort()[0] ?? null
+
+  return {
+    name: name.trim() || 'Bez projektu',
+    tasks,
+    total: tasks.length,
+    completed: tasks.filter(task => task.completed).length,
+    overdue: tasks.filter(task => task.due_date && !task.completed && new Date(task.due_date) < today).length,
+    highPriority: openTasks.filter(task => task.priority === 'high').length,
+    nextDueDate,
+  }
+}
+
+function compareProjectTasks(a: Task, b: Task) {
+  if (a.completed !== b.completed) return a.completed ? 1 : -1
+  const priorityRank = { high: 0, medium: 1, low: 2 }
+  if (priorityRank[a.priority] !== priorityRank[b.priority]) return priorityRank[a.priority] - priorityRank[b.priority]
+  return (a.due_date ?? '9999-12-31').localeCompare(b.due_date ?? '9999-12-31')
+}
+
+function ProjectTaskRow({ task, onOpen, onComplete }: { task: Task; onOpen: () => void; onComplete: () => void }) {
+  return (
+    <div className="rounded-lg border border-border p-3 transition-colors hover:bg-muted/30">
+      <div className="flex items-start justify-between gap-3">
+        <button
+          onClick={onOpen}
+          className={`min-w-0 flex-1 text-left text-sm font-semibold hover:text-primary ${task.completed ? 'line-through text-muted-foreground' : 'text-gray-900 dark:text-white'}`}
+        >
+          {task.title}
+        </button>
+        <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${priorityClass(task.priority)}`}>
+          {priorityLabel(task.priority)}
+        </span>
+      </div>
+
+      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        {task.due_date && <span>{formatShortDate(task.due_date)}</span>}
+        <span>{task.assignees.length > 0 ? task.assignees.map(assignee => assignee.username).join(', ') : 'Nieprzypisane'}</span>
+      </div>
+
+      <button onClick={onComplete} className={`btn btn-sm mt-3 w-full ${task.completed ? 'btn-secondary' : 'btn-primary'}`}>
+        {task.completed ? 'Przywróć' : 'Zakończ'}
+      </button>
+    </div>
+  )
+}
+
+function Metric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-lg border border-border bg-card px-3 py-2 text-right">
+      <p className="text-[11px] text-muted-foreground">{label}</p>
+      <p className="text-sm font-semibold text-gray-900 dark:text-white">{value}</p>
+    </div>
+  )
+}
+
+function ProjectStat({ label, value, tone = 'default' }: { label: string; value: number | string; tone?: 'default' | 'danger' | 'warning' }) {
+  const toneClass = tone === 'danger'
+    ? 'text-red-700 dark:text-red-300'
+    : tone === 'warning'
+      ? 'text-amber-700 dark:text-amber-300'
+      : 'text-gray-900 dark:text-white'
+
+  return (
+    <div className="rounded-md border border-border px-2 py-1">
+      <p className="text-[10px] text-muted-foreground">{label}</p>
+      <p className={`truncate text-xs font-semibold ${toneClass}`}>{value}</p>
+    </div>
+  )
+}
+
+function priorityLabel(priority: Task['priority']) {
+  return priority === 'high' ? 'Wysoki' : priority === 'medium' ? 'Średni' : 'Niski'
+}
+
+function priorityClass(priority: Task['priority']) {
+  if (priority === 'high') return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+  if (priority === 'medium') return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+  return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+}
+
+function formatShortDate(date: string) {
+  return new Date(date).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' })
+}
+
+function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+  if (typeof document === 'undefined') {
+    return null
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div
+        className="w-full max-w-lg rounded-xl bg-white shadow-xl dark:bg-gray-900"
+        onClick={event => event.stopPropagation()}
+      >
+        {children}
+      </div>
+    </div>,
+    document.body,
+  )
+}

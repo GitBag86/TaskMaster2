@@ -87,6 +87,19 @@ export interface PaginationResponse<T> {
   has_prev?: boolean;
 }
 
+export interface TodayTasksResponse {
+  overdue: Task[];
+  today: Task[];
+  upcoming: Task[];
+  counts: {
+    overdue: number;
+    today: number;
+    upcoming: number;
+    total: number;
+  };
+  generated_at: string;
+}
+
 export interface Toast {
   id: string;
   message: string;

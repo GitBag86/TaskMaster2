@@ -21,9 +21,10 @@ interface Props {
   onCancel: () => void;
   initialData?: TaskFormData;
   submitLabel?: string;
+  heading?: string;
 }
 
-export default function TaskForm({ onSubmit, onCancel, initialData, submitLabel = 'Utwórz zadanie' }: Props) {
+export default function TaskForm({ onSubmit, onCancel, initialData, submitLabel = 'Utwórz zadanie', heading }: Props) {
   const [title, setTitle] = useState(initialData?.title || '');
   const [assignedUserIds, setAssignedUserIds] = useState<number[]>(initialData?.assignee_ids || []);
   const [priority, setPriority] = useState(initialData?.priority || 'medium');
@@ -53,7 +54,7 @@ export default function TaskForm({ onSubmit, onCancel, initialData, submitLabel 
   return (
     <form onSubmit={handleSubmit} className="p-6">
       <h3 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">
-        {initialData ? 'Edytuj zadanie' : 'Nowe zadanie'}
+        {heading ?? (initialData ? 'Edytuj zadanie' : 'Nowe zadanie')}
       </h3>
 
       <div className="space-y-4">

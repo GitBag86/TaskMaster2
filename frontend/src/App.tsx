@@ -7,6 +7,8 @@ import { SocketProvider } from './store/SocketContext'
 const AuthPage = lazy(() => import('./components/Auth/AuthPage'))
 import DashboardLayout from './components/Layout/DashboardLayout'
 const TasksPage = lazy(() => import('./components/Tasks/TasksPage'))
+const TodayPage = lazy(() => import('./components/Today/TodayPage'))
+const ProjectsPage = lazy(() => import('./components/Projects/ProjectsPage'))
 const KanbanPage = lazy(() => import('./components/Kanban/KanbanPage'))
 const DashboardPage = lazy(() => import('./components/Dashboard/DashboardPage'))
 const CalendarPage = lazy(() => import('./components/Calendar/CalendarPage'))
@@ -45,6 +47,8 @@ function AppRoutes() {
           }
         >
           <Route index element={<TasksPage />} />
+          <Route path="today" element={<TodayPage />} />
+          <Route path="projects" element={<ProjectsPage />} />
           <Route path="kanban" element={<KanbanPage />} />
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="calendar" element={<CalendarPage />} />

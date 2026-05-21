@@ -1,5 +1,5 @@
 from flask import request, jsonify, session, url_for, current_app
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from marshmallow import ValidationError
 from extensions import socketio
 from routes import tasks_bp
@@ -43,6 +43,11 @@ def user_can_access_task(user, task):
 def assigned_task_query(user):
     return Task.query.filter(Task.assignees.any(User.id == user.id))
 
+def visible_task_query(user):
+    if user.role == 'admin':
+        return Task.query
+    return assigned_task_query(user)
+
 def assignee_names(task):
     return ', '.join(user.username for user in task.assignees)
 
@@ -61,10 +66,7 @@ def get_tasks():
     per_page = request.args.get('per_page', 50, type=int)
     per_page = min(per_page, 100)
 
-    if user.role == 'admin':
-        query = Task.query
-    else:
-        query = assigned_task_query(user)
+    query = visible_task_query(user)
 
     pagination = query.order_by(Task.created_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
     tasks = pagination.items
@@ -77,6 +79,45 @@ def get_tasks():
         "per_page": pagination.per_page,
         "has_next": pagination.has_next,
         "has_prev": pagination.has_prev,
+    })
+
+@tasks_bp.route('/tasks/today', methods=['GET'])
+@login_required
+def get_today_tasks():
+    user_id = session.get('user_id')
+    user = db.session.get(User, user_id)
+    today = date.today()
+    week_end = today + timedelta(days=7)
+
+    tasks = (
+        visible_task_query(user)
+        .filter(Task.completed.is_(False), Task.due_date.isnot(None), Task.due_date <= week_end)
+        .order_by(Task.due_date.asc(), Task.priority.asc(), Task.created_at.desc())
+        .all()
+    )
+
+    overdue = []
+    due_today = []
+    upcoming = []
+    for task in tasks:
+        if task.due_date < today:
+            overdue.append(task.to_dict())
+        elif task.due_date == today:
+            due_today.append(task.to_dict())
+        else:
+            upcoming.append(task.to_dict())
+
+    return jsonify({
+        "overdue": overdue,
+        "today": due_today,
+        "upcoming": upcoming,
+        "counts": {
+            "overdue": len(overdue),
+            "today": len(due_today),
+            "upcoming": len(upcoming),
+            "total": len(tasks),
+        },
+        "generated_at": datetime.now(timezone.utc).isoformat(),
     })
 
 @tasks_bp.route('/tasks', methods=['POST'])

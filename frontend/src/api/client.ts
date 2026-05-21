@@ -9,6 +9,7 @@ import type {
   SavedFilter,
   TaskTemplate,
   PaginationResponse,
+  TodayTasksResponse,
 } from '@/types';
 
 const API_BASE = '';
@@ -23,6 +24,13 @@ type TaskPayload = {
 };
 
 type TaskUpdatePayload = Partial<TaskPayload> & {
+  completed?: boolean;
+  status?: 'todo' | 'in_progress' | 'done';
+};
+
+type BulkTaskUpdatePayload = {
+  priority?: 'low' | 'medium' | 'high';
+  project?: string;
   completed?: boolean;
   status?: 'todo' | 'in_progress' | 'done';
 };
@@ -135,6 +143,8 @@ export const api = {
   tasks: {
     getAll: (page = 1, perPage = 50) =>
       request<PaginationResponse<Task>>(`/tasks?page=${page}&per_page=${perPage}`),
+    today: () => request<TodayTasksResponse>('/tasks/today'),
+    byProject: () => request<Record<string, Task[]>>('/tasks/by-project'),
     create: (data: TaskPayload) =>
       request<Task>('/tasks', {
         method: 'POST',
@@ -165,7 +175,7 @@ export const api = {
         method: 'DELETE',
         body: JSON.stringify({ task_ids: taskIds }),
       }),
-    bulkUpdate: (taskIds: number[], updates: Record<string, string>) =>
+    bulkUpdate: (taskIds: number[], updates: BulkTaskUpdatePayload) =>
       request<{ message: string }>('/tasks/bulk/update', {
         method: 'PUT',
         body: JSON.stringify({ task_ids: taskIds, updates }),

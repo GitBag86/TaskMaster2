@@ -16,9 +16,12 @@ interface Props {
   task: Task;
   onClick: () => void;
   onComplete: () => void;
+  selectable?: boolean;
+  selected?: boolean;
+  onSelectionChange?: (selected: boolean) => void;
 }
 
-export default function TaskCard({ task, onClick, onComplete }: Props) {
+export default function TaskCard({ task, onClick, onComplete, selectable = false, selected = false, onSelectionChange }: Props) {
   const priority = priorityConfig[task.priority]
   const status = statusConfig[task.status] || statusConfig.todo
   const completedSubtasks = task.subtasks.filter(subtask => subtask.completed).length
@@ -27,12 +30,22 @@ export default function TaskCard({ task, onClick, onComplete }: Props) {
     <div
       className={`group card cursor-pointer border-l-4 transition-all hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md ${
         priority.accent
-      } ${task.completed ? 'opacity-70' : ''}`}
+      } ${selected ? 'ring-2 ring-primary/40' : ''} ${task.completed ? 'opacity-70' : ''}`}
       onClick={onClick}
     >
       <div className="p-4">
         <div className="mb-3 flex items-start justify-between gap-3">
-          <div className="min-w-0">
+          {selectable && (
+            <input
+              type="checkbox"
+              checked={selected}
+              onChange={event => onSelectionChange?.(event.target.checked)}
+              onClick={event => event.stopPropagation()}
+              className="mt-1 h-4 w-4 rounded border-border text-primary focus:ring-primary/50"
+              aria-label={`Zaznacz zadanie ${task.title}`}
+            />
+          )}
+          <div className="min-w-0 flex-1">
             <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{task.project}</p>
             <h3 className={`truncate text-base font-semibold ${task.completed ? 'line-through text-muted-foreground' : 'text-gray-900 dark:text-white'}`}>
               {task.title}
