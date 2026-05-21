@@ -96,6 +96,7 @@ def _register_routes(app):
         api_prefixes = (
             "auth",
             "tasks",
+            "projects",
             "users",
             "stats",
             "activity",

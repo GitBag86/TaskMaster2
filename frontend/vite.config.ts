@@ -14,6 +14,7 @@ export default defineConfig({
     proxy: {
       '/auth': 'http://localhost:5000',
       '/tasks': 'http://localhost:5000',
+      '/projects': 'http://localhost:5000',
       '/users': 'http://localhost:5000',
       '/stats': 'http://localhost:5000',
       '/activity': 'http://localhost:5000',

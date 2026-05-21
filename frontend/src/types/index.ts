@@ -16,6 +16,8 @@ export interface Task {
   assignees: User[];
   priority: 'low' | 'medium' | 'high';
   project: string;
+  project_id: number | null;
+  project_info: Project | null;
   due_date: string | null;
   notes: string;
   completed: boolean;
@@ -42,10 +44,22 @@ export interface Subtask {
 export interface ActivityLog {
   id: number;
   user_id: number;
-  task_id: number;
+  username?: string;
+  task_id: number | null;
   action: string;
   details: Record<string, unknown> | null;
   created_at: string;
+}
+
+export interface Project {
+  id: number;
+  name: string;
+  description: string;
+  color: string;
+  archived: boolean;
+  created_by_id: number | null;
+  created_at: string | null;
+  tasks?: Task[];
 }
 
 export interface DashboardStats {

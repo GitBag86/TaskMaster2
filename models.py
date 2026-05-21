@@ -48,6 +48,7 @@ class User(db.Model):
 class Task(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=True)
     assignees = db.relationship('User', secondary=task_assignees, lazy='subquery',
                                backref=db.backref('assigned_tasks', lazy=True)) # New relationship
     title = db.Column(db.String(200), nullable=False)
@@ -68,6 +69,8 @@ class Task(db.Model):
             'assignees': [u.to_dict() for u in self.assignees], # Updated to include assignees
             'priority': self.priority,
             'project': self.project,
+            'project_id': self.project_id,
+            'project_info': self.project_record.to_dict(include_tasks=False) if self.project_record else None,
             'due_date': self.due_date.isoformat() if self.due_date else None,
             'notes': self.notes,
             'completed': self.completed,
@@ -215,3 +218,27 @@ class CustomField(db.Model):
             'field_value': self.field_value,
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
+
+class Project(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), unique=True, nullable=False)
+    description = db.Column(db.String(500), default='')
+    color = db.Column(db.String(7), default='#3b82f6')
+    archived = db.Column(db.Boolean, nullable=False, default=False)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=utcnow)
+    tasks = db.relationship('Task', backref='project_record', lazy=True)
+
+    def to_dict(self, include_tasks=True):
+        data = {
+            'id': self.id,
+            'name': self.name,
+            'description': self.description or '',
+            'color': self.color,
+            'archived': self.archived,
+            'created_by_id': self.created_by_id,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+        if include_tasks:
+            data['tasks'] = [task.to_dict() for task in self.tasks]
+        return data

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { Task, Subtask } from '@/types'
+import type { ActivityLog, Task, Subtask } from '@/types'
 import { api } from '@/api/client'
 import { useToast } from '@/store/ToastContext'
 import { useAuth } from '@/store/AuthContext'
@@ -28,6 +28,7 @@ export default function TaskDetail({ task, onDelete, onComplete, onUpdate, onClo
   const [newComment, setNewComment] = useState('')
   const [comments, setComments] = useState(task.comments)
   const [isEditing, setIsEditing] = useState(false)
+  const [activity, setActivity] = useState<ActivityLog[]>([])
   const { addToast } = useToast()
   const { user } = useAuth()
 
@@ -35,6 +36,19 @@ export default function TaskDetail({ task, onDelete, onComplete, onUpdate, onClo
     setSubtasks(task.subtasks)
     setComments(task.comments)
   }, [task.comments, task.subtasks])
+
+  useEffect(() => {
+    const loadActivity = async () => {
+      try {
+        const response = await api.activity.getForTask(task.id)
+        setActivity(response.activity)
+      } catch {
+        setActivity([])
+      }
+    }
+
+    void loadActivity()
+  }, [task.id])
 
   const completedSubtasks = useMemo(
     () => subtasks.filter(subtask => subtask.completed).length,
@@ -47,6 +61,7 @@ export default function TaskDetail({ task, onDelete, onComplete, onUpdate, onClo
       const subtask = await api.subtasks.add(task.id, newSubtask)
       setSubtasks(prev => [...prev, subtask])
       setNewSubtask('')
+      void reloadActivity(task.id, setActivity)
       addToast('Podzadanie dodane', 'success')
     } catch {
       addToast('Błąd dodawania podzadania', 'error')
@@ -57,6 +72,7 @@ export default function TaskDetail({ task, onDelete, onComplete, onUpdate, onClo
     try {
       await api.subtasks.complete(subtask.id)
       setSubtasks(prev => prev.map(item => (item.id === subtask.id ? { ...item, completed: !item.completed } : item)))
+      void reloadActivity(task.id, setActivity)
     } catch {
       addToast('Błąd zmiany stanu', 'error')
     }
@@ -66,6 +82,7 @@ export default function TaskDetail({ task, onDelete, onComplete, onUpdate, onClo
     try {
       await api.subtasks.delete(id)
       setSubtasks(prev => prev.filter(item => item.id !== id))
+      void reloadActivity(task.id, setActivity)
     } catch {
       addToast('Błąd usuwania', 'error')
     }
@@ -77,6 +94,7 @@ export default function TaskDetail({ task, onDelete, onComplete, onUpdate, onClo
       const comment = await api.comments.add(task.id, newComment)
       setComments(prev => [...prev, comment])
       setNewComment('')
+      void reloadActivity(task.id, setActivity)
     } catch {
       addToast('Błąd dodawania komentarza', 'error')
     }
@@ -232,6 +250,26 @@ export default function TaskDetail({ task, onDelete, onComplete, onUpdate, onClo
             <button onClick={() => void handleAddComment()} className="btn btn-secondary btn-sm">Wyślij</button>
           </div>
         </section>
+
+        <section className="rounded-lg border border-border p-4">
+          <h4 className="mb-3 text-sm font-semibold text-gray-900 dark:text-white">Historia zmian</h4>
+          {activity.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Brak zapisanej aktywności.</p>
+          ) : (
+            <div className="space-y-3">
+              {activity.map(item => (
+                <div key={item.id} className="border-l-2 border-primary/30 pl-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">{activityLabel(item.action)}</p>
+                    <span className="text-[11px] text-muted-foreground">{formatDateTime(item.created_at)}</span>
+                  </div>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{item.username ?? 'System'}</p>
+                  <p className="mt-1 text-xs text-gray-600 dark:text-gray-300">{activityDetails(item)}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
       </div>
 
       <div className="border-t border-border bg-card p-4">
@@ -264,4 +302,63 @@ function formatDateTime(value: string) {
 
 function Badge({ children }: { children: React.ReactNode }) {
   return <span className="badge bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">{children}</span>
+}
+
+async function reloadActivity(taskId: number, setActivity: React.Dispatch<React.SetStateAction<ActivityLog[]>>) {
+  try {
+    const response = await api.activity.getForTask(taskId)
+    setActivity(response.activity)
+  } catch {
+    setActivity([])
+  }
+}
+
+function activityLabel(action: string) {
+  return ({
+    created: 'Utworzono zadanie',
+    updated: 'Zaktualizowano zadanie',
+    completed: 'Zakończono zadanie',
+    reopened: 'Przywrócono zadanie',
+    commented: 'Dodano komentarz',
+    subtask_created: 'Dodano podzadanie',
+    subtask_toggle: 'Zmieniono podzadanie',
+    subtask_deleted: 'Usunięto podzadanie',
+  }[action] || action)
+}
+
+function activityDetails(item: ActivityLog) {
+  const details = item.details ?? {}
+  const changes = details.changes
+
+  if (changes && typeof changes === 'object' && !Array.isArray(changes)) {
+    const labels = Object.entries(changes as Record<string, { from?: unknown; to?: unknown }>)
+      .map(([field, change]) => `${fieldLabel(field)}: ${formatChangeValue(change.from)} -> ${formatChangeValue(change.to)}`)
+    return labels.join(', ') || 'Zmieniono dane zadania.'
+  }
+
+  if (typeof details.title === 'string') return details.title
+  if (typeof details.text === 'string') return details.text
+  if (typeof details.subtask === 'string') return details.subtask
+  return 'Zapisano zdarzenie.'
+}
+
+function fieldLabel(field: string) {
+  return ({
+    title: 'Tytuł',
+    priority: 'Priorytet',
+    project: 'Projekt',
+    project_id: 'Projekt',
+    due_date: 'Termin',
+    notes: 'Notatki',
+    completed: 'Ukończone',
+    status: 'Status',
+    assignee_ids: 'Przypisani',
+  }[field] || field)
+}
+
+function formatChangeValue(value: unknown) {
+  if (value === null || value === undefined || value === '') return '-'
+  if (Array.isArray(value)) return value.join(', ') || '-'
+  if (typeof value === 'boolean') return value ? 'tak' : 'nie'
+  return String(value)
 }

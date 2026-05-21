@@ -15,6 +15,7 @@ const CalendarPage = lazy(() => import('./components/Calendar/CalendarPage'))
 const ActivityPage = lazy(() => import('./components/Activity/ActivityPage'))
 const AdminPage = lazy(() => import('./components/Admin/AdminPage'))
 import { Toaster } from './components/common/Toaster'
+import { CommandPalette } from './components/common/CommandPalette'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth()
@@ -67,6 +68,7 @@ export default function App() {
       <AuthProvider>
         <ToastProvider>
           <AppRoutes />
+          <CommandPalette />
           <Toaster />
         </ToastProvider>
       </AuthProvider>

@@ -18,10 +18,19 @@ class TaskSchema(Schema):
     assignees = fields.List(fields.Int(), load_default=[], data_key='assignee_ids') # New: multiple assignees
     priority = fields.Str(load_default='medium', validate=validate.OneOf(['low', 'medium', 'high']))
     project = fields.Str(load_default='Ogólny', validate=validate.Length(max=100))
+    project_id = fields.Int(load_default=None, allow_none=True)
     due_date = fields.Date(load_default=None)
     notes = fields.Str(load_default='', allow_none=True)
     completed = fields.Bool(load_default=False)
     status = fields.Str(load_default='todo', validate=validate.OneOf(['todo', 'in_progress', 'done']))
+    created_at = fields.DateTime(dump_only=True)
+
+class ProjectSchema(Schema):
+    id = fields.Int(dump_only=True)
+    name = fields.Str(required=True, validate=validate.Length(min=1, max=100))
+    description = fields.Str(load_default='', allow_none=True, validate=validate.Length(max=500))
+    color = fields.Str(load_default='#3b82f6', validate=validate.Regexp(r'^#[0-9a-fA-F]{6}$'))
+    archived = fields.Bool(load_default=False)
     created_at = fields.DateTime(dump_only=True)
 
 class CommentSchema(Schema):

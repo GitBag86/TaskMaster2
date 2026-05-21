@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type { Task } from '@/types'
+import type { Project, Task } from '@/types'
 import { api } from '@/api/client'
 import { useAuth } from '@/store/AuthContext'
 import { useSocket } from '@/store/SocketContext'
@@ -8,8 +8,7 @@ import { useToast } from '@/store/ToastContext'
 import { TasksPageSkeleton } from '@/components/common/Skeletons'
 import TaskDetail from '@/components/Tasks/TaskDetail'
 
-type ProjectSummary = {
-  name: string;
+type ProjectSummary = Project & {
   tasks: Task[];
   total: number;
   completed: number;
@@ -17,15 +16,6 @@ type ProjectSummary = {
   highPriority: number;
   nextDueDate: string | null;
 }
-
-const projectAccents = [
-  'border-t-blue-500',
-  'border-t-emerald-500',
-  'border-t-amber-500',
-  'border-t-rose-500',
-  'border-t-cyan-500',
-  'border-t-fuchsia-500',
-]
 
 const taskEventActions = new Set([
   'created',
@@ -36,20 +26,22 @@ const taskEventActions = new Set([
   'bulk_completed',
   'bulk_deleted',
   'bulk_updated',
+  'project_created',
+  'project_updated',
+  'project_archived',
 ])
 
 export default function ProjectsPage() {
-  const [groupedTasks, setGroupedTasks] = useState<Record<string, Task[]>>({})
+  const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
-  const [selectedProjectName, setSelectedProjectName] = useState<string | null>(null)
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null)
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
   const [taskToAssignId, setTaskToAssignId] = useState('')
-  const [targetProjectName, setTargetProjectName] = useState('')
+  const [targetProjectId, setTargetProjectId] = useState('')
   const [showNewProject, setShowNewProject] = useState(false)
   const [newProjectName, setNewProjectName] = useState('')
-  const [newProjectTaskTitle, setNewProjectTaskTitle] = useState('')
-  const [newProjectDueDate, setNewProjectDueDate] = useState('')
-  const [newProjectPriority, setNewProjectPriority] = useState<Task['priority']>('medium')
+  const [newProjectDescription, setNewProjectDescription] = useState('')
+  const [newProjectColor, setNewProjectColor] = useState('#3b82f6')
 
   const { user } = useAuth()
   const { lastTaskEvent } = useSocket()
@@ -57,8 +49,8 @@ export default function ProjectsPage() {
 
   const loadProjects = useCallback(async () => {
     try {
-      const projects = await api.tasks.byProject()
-      setGroupedTasks(projects)
+      const response = await api.projects.getAll()
+      setProjects(response.projects)
     } catch (err: unknown) {
       addToast(err instanceof Error ? err.message : 'Błąd ładowania projektów', 'error')
     } finally {
@@ -75,36 +67,39 @@ export default function ProjectsPage() {
     void loadProjects()
   }, [lastTaskEvent, loadProjects])
 
-  const projects = useMemo(
-    () => Object.entries(groupedTasks)
-      .map(([name, tasks]) => buildProjectSummary(name, tasks))
-      .sort((a, b) => a.name.localeCompare(b.name, 'pl')),
-    [groupedTasks],
+  const summaries = useMemo(
+    () => projects
+      .map(buildProjectSummary)
+      .sort((a, b) => Number(a.archived) - Number(b.archived) || a.name.localeCompare(b.name, 'pl')),
+    [projects],
   )
 
   useEffect(() => {
-    if (projects.length === 0) {
-      setSelectedProjectName(null)
+    const activeProjects = summaries.filter(project => !project.archived)
+    const candidates = activeProjects.length > 0 ? activeProjects : summaries
+    if (candidates.length === 0) {
+      setSelectedProjectId(null)
       return
     }
-    if (!selectedProjectName || !projects.some(project => project.name === selectedProjectName)) {
-      setSelectedProjectName(projects[0].name)
+    if (!selectedProjectId || !summaries.some(project => project.id === selectedProjectId)) {
+      setSelectedProjectId(candidates[0].id)
     }
-  }, [projects, selectedProjectName])
+  }, [selectedProjectId, summaries])
 
   useEffect(() => {
-    if (selectedProjectName) {
-      setTargetProjectName(selectedProjectName)
+    if (selectedProjectId) {
+      setTargetProjectId(String(selectedProjectId))
     }
-  }, [selectedProjectName])
+  }, [selectedProjectId])
 
-  const selectedProject = projects.find(project => project.name === selectedProjectName) ?? null
-  const allTasks = useMemo(() => projects.flatMap(project => project.tasks), [projects])
+  const selectedProject = summaries.find(project => project.id === selectedProjectId) ?? null
+  const activeProjects = summaries.filter(project => !project.archived)
+  const allTasks = useMemo(() => summaries.flatMap(project => project.tasks), [summaries])
   const assignableTasks = useMemo(
     () => allTasks
-      .filter(task => task.project !== targetProjectName.trim())
+      .filter(task => String(task.project_id ?? '') !== targetProjectId)
       .sort((a, b) => a.title.localeCompare(b.title, 'pl')),
-    [allTasks, targetProjectName],
+    [allTasks, targetProjectId],
   )
 
   useEffect(() => {
@@ -129,45 +124,53 @@ export default function ProjectsPage() {
     }
   }, [allTasks, selectedTask])
 
-  const assignTaskToProject = async () => {
-    const projectName = targetProjectName.trim()
-    const taskId = Number(taskToAssignId)
-    if (!projectName || !taskId) return
+  const createProject = async (event: React.FormEvent) => {
+    event.preventDefault()
+    const name = newProjectName.trim()
+    if (!name) return
 
     try {
-      await api.tasks.update(taskId, { project: projectName })
+      const project = await api.projects.create({
+        name,
+        description: newProjectDescription.trim(),
+        color: newProjectColor,
+      })
       await loadProjects()
-      setSelectedProjectName(projectName)
-      addToast(`Zadanie przypisane do projektu ${projectName}`, 'success')
+      setSelectedProjectId(project.id)
+      setTargetProjectId(String(project.id))
+      setShowNewProject(false)
+      setNewProjectName('')
+      setNewProjectDescription('')
+      setNewProjectColor('#3b82f6')
+      addToast(`Projekt ${project.name} utworzony`, 'success')
+    } catch (err: unknown) {
+      addToast(err instanceof Error ? err.message : 'Błąd tworzenia projektu', 'error')
+    }
+  }
+
+  const assignTaskToProject = async () => {
+    const taskId = Number(taskToAssignId)
+    const projectId = Number(targetProjectId)
+    if (!taskId || !projectId) return
+
+    try {
+      await api.tasks.update(taskId, { project_id: projectId })
+      await loadProjects()
+      setSelectedProjectId(projectId)
+      addToast('Zadanie przypisane do projektu', 'success')
     } catch (err: unknown) {
       addToast(err instanceof Error ? err.message : 'Błąd przypisywania zadania', 'error')
     }
   }
 
-  const createProject = async (event: React.FormEvent) => {
-    event.preventDefault()
-    const projectName = newProjectName.trim()
-    const taskTitle = newProjectTaskTitle.trim()
-    if (!projectName || !taskTitle) return
-
+  const archiveProject = async (projectId: number) => {
     try {
-      await api.tasks.create({
-        title: taskTitle,
-        project: projectName,
-        priority: newProjectPriority,
-        due_date: newProjectDueDate,
-      })
+      const archived = await api.projects.archive(projectId)
       await loadProjects()
-      setSelectedProjectName(projectName)
-      setTargetProjectName(projectName)
-      setShowNewProject(false)
-      setNewProjectName('')
-      setNewProjectTaskTitle('')
-      setNewProjectDueDate('')
-      setNewProjectPriority('medium')
-      addToast(`Projekt ${projectName} utworzony`, 'success')
+      setSelectedProjectId(archived.id)
+      addToast('Projekt zarchiwizowany', 'success')
     } catch (err: unknown) {
-      addToast(err instanceof Error ? err.message : 'Błąd tworzenia projektu', 'error')
+      addToast(err instanceof Error ? err.message : 'Błąd archiwizacji projektu', 'error')
     }
   }
 
@@ -207,7 +210,7 @@ export default function ProjectsPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Projekty</h2>
-          <p className="text-sm text-muted-foreground">Przegląd zadań pogrupowanych według pola projektu.</p>
+          <p className="text-sm text-muted-foreground">Prawdziwe projekty z opisem, kolorem, archiwum i przypisanymi zadaniami.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {user?.role === 'admin' && (
@@ -218,15 +221,15 @@ export default function ProjectsPage() {
               Nowy projekt
             </button>
           )}
-          <Metric label="Projekty" value={projects.length} />
+          <Metric label="Aktywne" value={activeProjects.length} />
           <Metric label="Zadania" value={allTasks.length} />
         </div>
       </div>
 
-      {projects.length === 0 ? (
+      {summaries.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border py-16 text-center">
           <p className="text-lg font-medium text-gray-500 dark:text-gray-400">Brak projektów</p>
-          <p className="text-sm text-muted-foreground">Utwórz zadanie z nazwą projektu, aby pojawiło się w tym widoku.</p>
+          <p className="text-sm text-muted-foreground">Utwórz pusty projekt i przypisz do niego zadania, kiedy będą gotowe.</p>
           {user?.role === 'admin' && (
             <button onClick={() => setShowNewProject(true)} className="btn btn-primary btn-sm mt-4">
               Nowy projekt
@@ -237,27 +240,30 @@ export default function ProjectsPage() {
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
           <div className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
-              {projects.map((project, index) => (
+              {summaries.map(project => (
                 <button
-                  key={project.name}
+                  key={project.id}
                   type="button"
-                  onClick={() => setSelectedProjectName(project.name)}
-                  className={`card border-t-4 p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-md ${projectAccents[index % projectAccents.length]} ${
-                    selectedProjectName === project.name ? 'ring-2 ring-primary/30' : ''
-                  }`}
+                  onClick={() => setSelectedProjectId(project.id)}
+                  className={`card border-t-4 p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-md ${
+                    selectedProjectId === project.id ? 'ring-2 ring-primary/30' : ''
+                  } ${project.archived ? 'opacity-65' : ''}`}
+                  style={{ borderTopColor: project.color }}
                 >
                   <div className="mb-4 flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <h3 className="truncate text-base font-semibold text-gray-900 dark:text-white">{project.name}</h3>
-                      <p className="text-xs text-muted-foreground">{project.completed}/{project.total} zakończone</p>
+                      <p className="line-clamp-2 text-xs text-muted-foreground">
+                        {project.description || `${project.completed}/${project.total} zakończone`}
+                      </p>
                     </div>
                     <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">{project.total}</span>
                   </div>
 
                   <div className="mb-3 h-2 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
                     <div
-                      className="h-full rounded-full bg-primary transition-all"
-                      style={{ width: `${project.total > 0 ? (project.completed / project.total) * 100 : 0}%` }}
+                      className="h-full rounded-full transition-all"
+                      style={{ width: `${project.total > 0 ? (project.completed / project.total) * 100 : 0}%`, backgroundColor: project.color }}
                     />
                   </div>
 
@@ -275,26 +281,41 @@ export default function ProjectsPage() {
                 <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{selectedProject.name}</h3>
-                    <p className="text-sm text-muted-foreground">Zadania w projekcie: {selectedProject.total}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {selectedProject.archived ? 'Projekt zarchiwizowany' : `Zadania w projekcie: ${selectedProject.total}`}
+                    </p>
                   </div>
-                  <span className="text-sm text-muted-foreground">
-                    Postęp: {selectedProject.total > 0 ? Math.round((selectedProject.completed / selectedProject.total) * 100) : 0}%
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">
+                      Postęp: {selectedProject.total > 0 ? Math.round((selectedProject.completed / selectedProject.total) * 100) : 0}%
+                    </span>
+                    {user?.role === 'admin' && !selectedProject.archived && (
+                      <button onClick={() => void archiveProject(selectedProject.id)} className="btn btn-secondary btn-sm">
+                        Archiwizuj
+                      </button>
+                    )}
+                  </div>
                 </div>
 
-                <div className="space-y-2">
-                  {selectedProject.tasks
-                    .slice()
-                    .sort(compareProjectTasks)
-                    .map(task => (
-                      <ProjectTaskRow
-                        key={task.id}
-                        task={task}
-                        onOpen={() => setSelectedTask(task)}
-                        onComplete={() => void toggleTaskComplete(task.id)}
-                      />
-                    ))}
-                </div>
+                {selectedProject.tasks.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+                    Ten projekt nie ma jeszcze zadań.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {selectedProject.tasks
+                      .slice()
+                      .sort(compareProjectTasks)
+                      .map(task => (
+                        <ProjectTaskRow
+                          key={task.id}
+                          task={task}
+                          onOpen={() => setSelectedTask(task)}
+                          onComplete={() => void toggleTaskComplete(task.id)}
+                        />
+                      ))}
+                  </div>
+                )}
               </section>
             )}
           </div>
@@ -303,21 +324,28 @@ export default function ProjectsPage() {
             <h3 className="mb-1 text-sm font-semibold text-gray-900 dark:text-white">Przypisywanie</h3>
             <p className="mb-4 text-xs text-muted-foreground">
               {user?.role === 'admin'
-                ? 'Przenieś istniejące zadanie do wybranego albo nowego projektu.'
-                : 'Tylko administrator może przenosić zadania między projektami.'}
+                ? 'Przenieś istniejące zadanie do aktywnego projektu.'
+                : 'Możesz przeglądać projekty, w których masz przypisane zadania.'}
             </p>
 
             {user?.role === 'admin' ? (
               <div className="space-y-3">
                 <div>
                   <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">Projekt docelowy</label>
-                  <input
-                    type="text"
-                    value={targetProjectName}
-                    onChange={event => setTargetProjectName(event.target.value)}
+                  <select
+                    value={targetProjectId}
+                    onChange={event => setTargetProjectId(event.target.value)}
+                    disabled={activeProjects.length === 0}
                     className="input"
-                    placeholder="Nazwa projektu"
-                  />
+                  >
+                    {activeProjects.length === 0 ? (
+                      <option value="">Brak aktywnych projektów</option>
+                    ) : (
+                      activeProjects.map(project => (
+                        <option key={project.id} value={project.id}>{project.name}</option>
+                      ))
+                    )}
+                  </select>
                 </div>
 
                 <div>
@@ -342,7 +370,7 @@ export default function ProjectsPage() {
 
                 <button
                   onClick={() => void assignTaskToProject()}
-                  disabled={!targetProjectName.trim() || !taskToAssignId}
+                  disabled={activeProjects.length === 0 || !targetProjectId || !taskToAssignId}
                   className="btn btn-primary btn-sm w-full"
                 >
                   Przypisz do projektu
@@ -350,7 +378,7 @@ export default function ProjectsPage() {
               </div>
             ) : (
               <div className="rounded-lg border border-dashed border-border p-3 text-sm text-muted-foreground">
-                Możesz przeglądać projekty, w których masz przypisane zadania.
+                Tylko administrator może przenosić zadania między projektami.
               </div>
             )}
           </aside>
@@ -388,38 +416,30 @@ export default function ProjectsPage() {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Pierwsze zadanie *</label>
-                <input
-                  type="text"
-                  value={newProjectTaskTitle}
-                  onChange={event => setNewProjectTaskTitle(event.target.value)}
-                  className="input"
-                  placeholder="Np. Przygotować plan projektu"
-                  required
+                <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Opis</label>
+                <textarea
+                  value={newProjectDescription}
+                  onChange={event => setNewProjectDescription(event.target.value)}
+                  className="input min-h-[88px]"
+                  maxLength={500}
                 />
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Priorytet</label>
-                  <select
-                    value={newProjectPriority}
-                    onChange={event => setNewProjectPriority(event.target.value as Task['priority'])}
-                    className="input"
-                  >
-                    <option value="low">Niski</option>
-                    <option value="medium">Średni</option>
-                    <option value="high">Wysoki</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Termin</label>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Kolor</label>
+                <div className="flex gap-2">
                   <input
-                    type="date"
-                    value={newProjectDueDate}
-                    onChange={event => setNewProjectDueDate(event.target.value)}
+                    type="color"
+                    value={newProjectColor}
+                    onChange={event => setNewProjectColor(event.target.value)}
+                    className="h-10 w-14 rounded-md border border-border bg-background p-1"
+                  />
+                  <input
+                    type="text"
+                    value={newProjectColor}
+                    onChange={event => setNewProjectColor(event.target.value)}
                     className="input"
+                    pattern="#[0-9a-fA-F]{6}"
                   />
                 </div>
               </div>
@@ -436,7 +456,8 @@ export default function ProjectsPage() {
   )
 }
 
-function buildProjectSummary(name: string, tasks: Task[]): ProjectSummary {
+function buildProjectSummary(project: Project): ProjectSummary {
+  const tasks = project.tasks ?? []
   const today = new Date(new Date().toDateString())
   const openTasks = tasks.filter(task => !task.completed)
   const nextDueDate = openTasks
@@ -445,7 +466,7 @@ function buildProjectSummary(name: string, tasks: Task[]): ProjectSummary {
     .sort()[0] ?? null
 
   return {
-    name: name.trim() || 'Bez projektu',
+    ...project,
     tasks,
     total: tasks.length,
     completed: tasks.filter(task => task.completed).length,

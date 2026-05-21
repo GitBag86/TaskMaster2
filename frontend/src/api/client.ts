@@ -10,6 +10,7 @@ import type {
   TaskTemplate,
   PaginationResponse,
   TodayTasksResponse,
+  Project,
 } from '@/types';
 
 const API_BASE = '';
@@ -19,6 +20,7 @@ type TaskPayload = {
   assignee_ids?: number[];
   priority?: 'low' | 'medium' | 'high';
   project?: string;
+  project_id?: number | null;
   due_date?: string;
   notes?: string;
 };
@@ -31,8 +33,16 @@ type TaskUpdatePayload = Partial<TaskPayload> & {
 type BulkTaskUpdatePayload = {
   priority?: 'low' | 'medium' | 'high';
   project?: string;
+  project_id?: number | null;
   completed?: boolean;
   status?: 'todo' | 'in_progress' | 'done';
+};
+
+type ProjectPayload = {
+  name: string;
+  description?: string;
+  color?: string;
+  archived?: boolean;
 };
 
 type UserCreatePayload = {
@@ -182,6 +192,22 @@ export const api = {
       }),
   },
 
+  projects: {
+    getAll: () => request<{ projects: Project[] }>('/projects'),
+    create: (data: ProjectPayload) =>
+      request<Project>('/projects', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    update: (id: number, data: Partial<ProjectPayload>) =>
+      request<Project>(`/projects/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+    archive: (id: number) =>
+      request<Project>(`/projects/${id}`, { method: 'DELETE' }),
+  },
+
   comments: {
     add: (taskId: number, text: string) =>
       request<Comment>(`/tasks/${taskId}/comments`, {
@@ -209,6 +235,8 @@ export const api = {
   activity: {
     getAll: (limit = 50) =>
       request<{ activity: ActivityLog[] }>(`/activity?limit=${limit}`),
+    getForTask: (taskId: number) =>
+      request<{ activity: ActivityLog[] }>(`/tasks/${taskId}/activity`),
   },
 
   tags: {

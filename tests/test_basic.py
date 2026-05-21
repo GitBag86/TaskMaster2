@@ -1,7 +1,7 @@
 import sqlite3
 from datetime import date, timedelta
 
-from models import db, User, Task
+from models import db, User, Task, Project, Tag
 
 def test_health_check(client):
     response = client.get('/health')
@@ -86,6 +86,69 @@ def test_create_task(auth_client):
     data = response.get_json()
     assert data["title"] == "Test Task"
     assert data["status"] == "todo"
+    assert data["project_id"] is not None
+
+def test_admin_can_create_empty_project(auth_client, app):
+    response = auth_client.post('/projects', json={
+        "name": "Launch",
+        "description": "Launch work",
+        "color": "#10b981",
+    })
+
+    assert response.status_code == 201
+    data = response.get_json()
+    assert data["name"] == "Launch"
+    assert data["description"] == "Launch work"
+    assert data["color"] == "#10b981"
+
+    projects_response = auth_client.get('/projects')
+    assert projects_response.status_code == 200
+    projects = projects_response.get_json()["projects"]
+    assert projects[0]["name"] == "Launch"
+    assert projects[0]["tasks"] == []
+
+    with app.app_context():
+        assert Project.query.filter_by(name="Launch").first() is not None
+
+def test_create_task_can_attach_existing_project(auth_client):
+    project = auth_client.post('/projects', json={"name": "Existing Project"}).get_json()
+
+    response = auth_client.post('/tasks', json={
+        "title": "Project task",
+        "project_id": project["id"],
+    })
+
+    assert response.status_code == 201
+    data = response.get_json()
+    assert data["project"] == "Existing Project"
+    assert data["project_id"] == project["id"]
+
+def test_regular_user_only_sees_projects_with_assigned_tasks(client, app):
+    with app.app_context():
+        regular = User(username="project_user", email="project_user@example.com", role="user")
+        regular.set_password("password")
+        admin = User(username="project_admin", email="project_admin@example.com", role="admin")
+        admin.set_password("password")
+        visible_project = Project(name="Visible Project")
+        hidden_project = Project(name="Hidden Project")
+        db.session.add_all([regular, admin, visible_project, hidden_project])
+        db.session.flush()
+        visible_task = Task(user_id=admin.id, title="Visible project task", project="Visible Project", project_id=visible_project.id)
+        hidden_task = Task(user_id=admin.id, title="Hidden project task", project="Hidden Project", project_id=hidden_project.id)
+        visible_task.assignees.append(regular)
+        db.session.add_all([visible_task, hidden_task])
+        db.session.commit()
+        regular_id = regular.id
+
+    with client.session_transaction() as sess:
+        sess['user_id'] = regular_id
+
+    response = client.get('/projects')
+
+    assert response.status_code == 200
+    projects = response.get_json()["projects"]
+    assert [project["name"] for project in projects] == ["Visible Project"]
+    assert projects[0]["tasks"][0]["title"] == "Visible project task"
 
 def test_get_tasks(auth_client):
     auth_client.post('/tasks', json={"title": "Task 1"})
@@ -321,6 +384,83 @@ def test_regular_user_can_complete_assigned_task(client, app):
     assert response.status_code == 200
     assert response.get_json()["completed"] is True
 
+def test_regular_user_cannot_comment_unassigned_task(client, app):
+    with app.app_context():
+        admin = User(username="admin_comment", email="admin_comment@example.com", role="admin")
+        admin.set_password("password")
+        regular = User(username="regular_comment", email="regular_comment@example.com", role="user")
+        regular.set_password("password")
+        db.session.add_all([admin, regular])
+        db.session.commit()
+        task = Task(user_id=admin.id, title="Private comment task")
+        db.session.add(task)
+        db.session.commit()
+        regular_id = regular.id
+        task_id = task.id
+
+    with client.session_transaction() as sess:
+        sess['user_id'] = regular_id
+
+    response = client.post(f'/tasks/{task_id}/comments', json={"text": "Should not appear"})
+
+    assert response.status_code == 403
+    with app.app_context():
+        assert db.session.get(Task, task_id).comments == []
+
+def test_regular_user_cannot_tag_unassigned_task(client, app):
+    with app.app_context():
+        admin = User(username="admin_tag", email="admin_tag@example.com", role="admin")
+        admin.set_password("password")
+        regular = User(username="regular_tag", email="regular_tag@example.com", role="user")
+        regular.set_password("password")
+        db.session.add_all([admin, regular])
+        db.session.commit()
+        task = Task(user_id=admin.id, title="Private tag task")
+        tag = Tag(user_id=regular.id, name="Mine", color="#3b82f6")
+        db.session.add_all([task, tag])
+        db.session.commit()
+        regular_id = regular.id
+        task_id = task.id
+        tag_id = tag.id
+
+    with client.session_transaction() as sess:
+        sess['user_id'] = regular_id
+
+    response = client.post(f'/tasks/{task_id}/tags/{tag_id}')
+
+    assert response.status_code == 403
+    with app.app_context():
+        assert db.session.get(Task, task_id).tags == []
+
+def test_regular_user_cannot_use_another_users_tag_on_assigned_task(client, app):
+    with app.app_context():
+        admin = User(username="admin_other_tag", email="admin_other_tag@example.com", role="admin")
+        admin.set_password("password")
+        regular = User(username="regular_other_tag", email="regular_other_tag@example.com", role="user")
+        regular.set_password("password")
+        other = User(username="other_tag_owner", email="other_tag_owner@example.com", role="user")
+        other.set_password("password")
+        db.session.add_all([admin, regular, other])
+        db.session.commit()
+        task = Task(user_id=admin.id, title="Assigned private tag task")
+        db.session.add(task)
+        task.assignees.append(regular)
+        tag = Tag(user_id=other.id, name="Other", color="#ef4444")
+        db.session.add(tag)
+        db.session.commit()
+        regular_id = regular.id
+        task_id = task.id
+        tag_id = tag.id
+
+    with client.session_transaction() as sess:
+        sess['user_id'] = regular_id
+
+    response = client.post(f'/tasks/{task_id}/tags/{tag_id}')
+
+    assert response.status_code == 404
+    with app.app_context():
+        assert db.session.get(Task, task_id).tags == []
+
 def test_create_task_emits_structured_socket_event(auth_client, monkeypatch):
     emitted = {}
 
@@ -336,6 +476,19 @@ def test_create_task_emits_structured_socket_event(auth_client, monkeypatch):
     assert emitted["event_name"] == "task_action"
     assert emitted["payload"]["action"] == "created"
     assert emitted["payload"]["task_id"] == response.get_json()["id"]
+
+def test_task_activity_includes_created_and_updated_events(auth_client):
+    created = auth_client.post('/tasks', json={"title": "Activity Task"}).get_json()
+    auth_client.put(f'/tasks/{created["id"]}', json={"title": "Activity Task Updated", "priority": "high"})
+
+    response = auth_client.get(f'/tasks/{created["id"]}/activity')
+
+    assert response.status_code == 200
+    activity = response.get_json()["activity"]
+    assert [item["action"] for item in activity] == ["updated", "created"]
+    assert activity[0]["details"]["changes"]["title"]["from"] == "Activity Task"
+    assert activity[0]["details"]["changes"]["title"]["to"] == "Activity Task Updated"
+    assert activity[0]["username"] == "admin"
 
 def test_delete_task_emits_snapshot_event(auth_client, monkeypatch):
     created = auth_client.post('/tasks', json={"title": "Delete me"})
@@ -436,7 +589,9 @@ def test_migration_upgrade_smoke_fresh_sqlite(tmp_path, monkeypatch):
     assert "user" in tables
     assert "task" in tables
     assert "task_assignees" in tables
+    assert "project" in tables
     assert "status" in task_columns
+    assert "project_id" in task_columns
     assert "terms_accepted" in user_columns
     assert "privacy_accepted" in user_columns
     assert "marketing_consent" in user_columns

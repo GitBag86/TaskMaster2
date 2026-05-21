@@ -3,12 +3,12 @@ from datetime import date, datetime, timedelta, timezone
 from marshmallow import ValidationError
 from extensions import socketio
 from routes import tasks_bp
-from models import db, User, Task, Comment, Subtask, ActivityLog, Tag
-from schemas import TaskSchema, CommentSchema, SubtaskSchema
+from models import db, User, Task, Comment, Subtask, ActivityLog, Tag, Project
+from schemas import TaskSchema, CommentSchema, SubtaskSchema, ProjectSchema
 from routes.auth import login_required
 from utils.email_sender import send_email, get_task_status_change_body, get_task_assignment_body
 
-TASK_ALLOWED_FIELDS = {'title', 'priority', 'project', 'due_date', 'notes', 'completed', 'status'}
+TASK_ALLOWED_FIELDS = {'title', 'priority', 'project', 'project_id', 'due_date', 'notes', 'completed', 'status'}
 BULK_MAX_TASKS = 100
 
 def emit_task_event(action, user, task=None, task_ids=None, task_id=None, task_payload=None):
@@ -55,6 +55,49 @@ def update_task_assignees(task, assignee_ids):
     users = User.query.filter(User.id.in_(assignee_ids)).all() if assignee_ids else []
     task.assignees = users
     return users
+
+def normalize_project_name(name):
+    return (name or 'Ogólny').strip() or 'Ogólny'
+
+def get_or_create_project(name, user, color='#3b82f6', description=''):
+    project_name = normalize_project_name(name)
+    project = Project.query.filter_by(name=project_name).first()
+    if project:
+        return project
+    project = Project(
+        name=project_name,
+        description=description or '',
+        color=color or '#3b82f6',
+        created_by_id=user.id if user else None,
+    )
+    db.session.add(project)
+    db.session.flush()
+    return project
+
+def resolve_project(project_id, project_name, user):
+    if project_id:
+        project = db.session.get(Project, project_id)
+        if not project:
+            return None, ("Project not found", 404)
+        return project, None
+    return get_or_create_project(project_name, user), None
+
+def set_task_project(task, project):
+    task.project_id = project.id
+    task.project = project.name
+
+def visible_projects_for_user(user):
+    if user.role == 'admin':
+        return Project.query.order_by(Project.archived.asc(), Project.name.asc()).all()
+
+    project_ids = {
+        task.project_id
+        for task in assigned_task_query(user).all()
+        if task.project_id is not None
+    }
+    if not project_ids:
+        return []
+    return Project.query.filter(Project.id.in_(project_ids)).order_by(Project.name.asc()).all()
 
 @tasks_bp.route('/tasks', methods=['GET'])
 @login_required
@@ -137,12 +180,17 @@ def create_task():
         return jsonify({"error": err.messages}), 400
 
     due_date = parse_due_date(validated.get('due_date'))
+    project, project_error = resolve_project(validated.get('project_id'), validated.get('project'), user)
+    if project_error:
+        message, status = project_error
+        return jsonify({"error": message}), status
 
     task = Task(
         user_id=user_id,
         title=validated.get("title", "Untitled"),
         priority=validated.get("priority", "medium"),
-        project=validated.get("project", "General"),
+        project=project.name,
+        project_id=project.id,
         due_date=due_date,
         notes=validated.get("notes", "")
     )
@@ -179,6 +227,17 @@ def update_task(task_id):
     if user.role != 'admin':
         return jsonify({"error": "Only admins can update tasks"}), 403
 
+    old_values = {
+        'title': task.title,
+        'priority': task.priority,
+        'project': task.project,
+        'project_id': task.project_id,
+        'due_date': task.due_date.isoformat() if task.due_date else None,
+        'notes': task.notes,
+        'completed': task.completed,
+        'status': task.status,
+        'assignee_ids': sorted(assignee.id for assignee in task.assignees),
+    }
     old_status = task.status
     old_assignee_ids = {assignee.id for assignee in task.assignees}
 
@@ -186,6 +245,15 @@ def update_task(task_id):
     for key, value in data.items():
         if key in ('assignee_ids', 'assignees'):
             update_task_assignees(task, value or [])
+        elif key == 'project_id':
+            project, project_error = resolve_project(value, None, user)
+            if project_error:
+                message, status = project_error
+                return jsonify({"error": message}), status
+            set_task_project(task, project)
+        elif key == 'project':
+            project, _ = resolve_project(None, value, user)
+            set_task_project(task, project)
         elif key in TASK_ALLOWED_FIELDS and hasattr(task, key):
             if key == 'due_date':
                 value = parse_due_date(value)
@@ -213,7 +281,23 @@ def update_task(task_id):
 
     emit_task_event("updated", user, task=task)
 
-    log = ActivityLog(user_id=user_id, task_id=task_id, action='updated', details={'title': task.title})
+    changes = {}
+    new_values = {
+        'title': task.title,
+        'priority': task.priority,
+        'project': task.project,
+        'project_id': task.project_id,
+        'due_date': task.due_date.isoformat() if task.due_date else None,
+        'notes': task.notes,
+        'completed': task.completed,
+        'status': task.status,
+        'assignee_ids': sorted(assignee.id for assignee in task.assignees),
+    }
+    for key, old_value in old_values.items():
+        if new_values[key] != old_value:
+            changes[key] = {'from': old_value, 'to': new_values[key]}
+
+    log = ActivityLog(user_id=user_id, task_id=task_id, action='updated', details={'title': task.title, 'changes': changes})
     db.session.add(log)
     db.session.commit()
 
@@ -271,6 +355,9 @@ def add_comment(task_id):
     if not task:
         return jsonify({"error": "Task not found"}), 404
 
+    if not user_can_access_task(user, task):
+        return jsonify({"error": "Permission denied"}), 403
+
     data = request.get_json()
     schema = CommentSchema()
     try:
@@ -284,11 +371,38 @@ def add_comment(task_id):
         text=validated.get("text", "")
     )
     db.session.add(comment)
+    log = ActivityLog(user_id=user_id, task_id=task_id, action='commented', details={'text': comment.text})
+    db.session.add(log)
     db.session.commit()
     db.session.refresh(task)
 
     emit_task_event("commented", user, task=task)
     return jsonify(comment.to_dict()), 201
+
+@tasks_bp.route('/tasks/<int:task_id>/activity', methods=['GET'])
+@login_required
+def get_task_activity(task_id):
+    user_id = session.get('user_id')
+    user = db.session.get(User, user_id)
+    task = db.session.get(Task, task_id)
+    if not task:
+        return jsonify({"error": "Task not found"}), 404
+
+    if not user_can_access_task(user, task):
+        return jsonify({"error": "Permission denied"}), 403
+
+    logs = ActivityLog.query.filter_by(task_id=task_id).order_by(ActivityLog.created_at.desc()).all()
+    users = {
+        log_user.id: log_user.username
+        for log_user in User.query.filter(User.id.in_({log.user_id for log in logs if log.user_id})).all()
+    }
+    activity = []
+    for log in logs:
+        item = log.to_dict()
+        item['username'] = users.get(log.user_id, 'System')
+        activity.append(item)
+
+    return jsonify({'activity': activity})
 
 @tasks_bp.route('/tasks/<int:task_id>/subtasks', methods=['POST'])
 @login_required
@@ -401,18 +515,141 @@ def tasks_by_project():
     user_id = session.get('user_id')
     user = db.session.get(User, user_id)
 
-    if user.role == 'admin':
-        tasks = Task.query.all()
-    else:
-        tasks = assigned_task_query(user).all()
+    tasks = visible_task_query(user).all()
 
     projects = {}
+    if user.role == 'admin':
+        for project in Project.query.order_by(Project.name.asc()).all():
+            projects[project.name] = []
     for task in tasks:
         proj = task.project
         if proj not in projects:
             projects[proj] = []
         projects[proj].append(task.to_dict())
     return jsonify(projects)
+
+@tasks_bp.route('/projects', methods=['GET'])
+@login_required
+def get_projects():
+    user_id = session.get('user_id')
+    user = db.session.get(User, user_id)
+    projects = []
+
+    for project in visible_projects_for_user(user):
+        project_data = project.to_dict(include_tasks=False)
+        if user.role == 'admin':
+            project_tasks = project.tasks
+        else:
+            project_tasks = [task for task in project.tasks if user_can_access_task(user, task)]
+        project_data['tasks'] = [task.to_dict() for task in project_tasks]
+        projects.append(project_data)
+
+    return jsonify({'projects': projects})
+
+@tasks_bp.route('/projects', methods=['POST'])
+@login_required
+def create_project():
+    user_id = session.get('user_id')
+    user = db.session.get(User, user_id)
+
+    if user.role != 'admin':
+        return jsonify({"error": "Tylko administrator może tworzyć projekty"}), 403
+
+    schema = ProjectSchema()
+    try:
+        validated = schema.load(request.get_json() or {})
+    except ValidationError as err:
+        return jsonify({"error": err.messages}), 400
+
+    name = normalize_project_name(validated.get('name'))
+    if Project.query.filter_by(name=name).first():
+        return jsonify({"error": "Projekt o tej nazwie już istnieje"}), 409
+
+    project = Project(
+        name=name,
+        description=validated.get('description') or '',
+        color=validated.get('color') or '#3b82f6',
+        archived=validated.get('archived', False),
+        created_by_id=user_id,
+    )
+    db.session.add(project)
+    db.session.commit()
+    socketio.emit("task_action", {
+        "action": "project_created",
+        "user": user.username,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "project": project.to_dict(include_tasks=False),
+    })
+    return jsonify(project.to_dict(include_tasks=False)), 201
+
+@tasks_bp.route('/projects/<int:project_id>', methods=['PUT'])
+@login_required
+def update_project(project_id):
+    user_id = session.get('user_id')
+    user = db.session.get(User, user_id)
+
+    if user.role != 'admin':
+        return jsonify({"error": "Tylko administrator może edytować projekty"}), 403
+
+    project = db.session.get(Project, project_id)
+    if not project:
+        return jsonify({"error": "Project not found"}), 404
+
+    schema = ProjectSchema(partial=True)
+    try:
+        validated = schema.load(request.get_json() or {})
+    except ValidationError as err:
+        return jsonify({"error": err.messages}), 400
+
+    old_name = project.name
+    if 'name' in validated:
+        name = normalize_project_name(validated.get('name'))
+        duplicate = Project.query.filter(Project.name == name, Project.id != project.id).first()
+        if duplicate:
+            return jsonify({"error": "Projekt o tej nazwie już istnieje"}), 409
+        project.name = name
+    if 'description' in validated:
+        project.description = validated.get('description') or ''
+    if 'color' in validated:
+        project.color = validated.get('color') or '#3b82f6'
+    if 'archived' in validated:
+        project.archived = validated.get('archived', False)
+
+    if project.name != old_name:
+        for task in project.tasks:
+            task.project = project.name
+
+    db.session.commit()
+    socketio.emit("task_action", {
+        "action": "project_updated",
+        "user": user.username,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "project": project.to_dict(include_tasks=False),
+    })
+    return jsonify(project.to_dict(include_tasks=True))
+
+@tasks_bp.route('/projects/<int:project_id>', methods=['DELETE'])
+@login_required
+def archive_project(project_id):
+    user_id = session.get('user_id')
+    user = db.session.get(User, user_id)
+
+    if user.role != 'admin':
+        return jsonify({"error": "Tylko administrator może archiwizować projekty"}), 403
+
+    project = db.session.get(Project, project_id)
+    if not project:
+        return jsonify({"error": "Project not found"}), 404
+
+    project.archived = True
+    db.session.commit()
+    socketio.emit("task_action", {
+        "action": "project_archived",
+        "user": user.username,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "project": project.to_dict(include_tasks=False),
+    })
+    return jsonify(project.to_dict(include_tasks=False))
 
 @tasks_bp.route('/tasks/search', methods=['GET'])
 @login_required
@@ -443,6 +680,12 @@ def manage_task_tags(task_id, tag_id):
     task = db.session.get(Task, task_id)
     tag = db.session.get(Tag, tag_id)
     if not task or not tag:
+        return jsonify({"error": "Not found"}), 404
+
+    if not user_can_access_task(user, task):
+        return jsonify({"error": "Permission denied"}), 403
+
+    if tag.user_id != user_id:
         return jsonify({"error": "Not found"}), 404
 
     if request.method == 'POST':
@@ -529,6 +772,15 @@ def bulk_update_tasks():
             for key, value in updates.items():
                 if key in ('assignee_ids', 'assignees'):
                     update_task_assignees(task, value or [])
+                elif key == 'project_id':
+                    project, project_error = resolve_project(value, None, user)
+                    if project_error:
+                        message, status = project_error
+                        return jsonify({"error": message}), status
+                    set_task_project(task, project)
+                elif key == 'project':
+                    project, _ = resolve_project(None, value, user)
+                    set_task_project(task, project)
                 elif key in TASK_ALLOWED_FIELDS and hasattr(task, key):
                     if key == 'due_date':
                         value = parse_due_date(value)
