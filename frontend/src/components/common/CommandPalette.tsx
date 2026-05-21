@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react'
+import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react'
 import { useNavigate, type NavigateFunction } from 'react-router-dom'
 import type { Task } from '@/types'
 import { api } from '@/api/client'
@@ -21,6 +21,7 @@ export function CommandPalette() {
   const { user } = useAuth()
   const { toggle } = useTheme()
   const { addToast } = useToast()
+  const quickAddText = query.trim().startsWith('+') ? query.trim().slice(1).trim() : ''
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -38,7 +39,7 @@ export function CommandPalette() {
   }, [])
 
   useEffect(() => {
-    if (!open || query.trim().length < 2) {
+    if (!open || query.trim().length < 2 || query.trim().startsWith('+')) {
       setResults([])
       return
     }
@@ -54,6 +55,18 @@ export function CommandPalette() {
 
     return () => window.clearTimeout(timeout)
   }, [open, query])
+
+  const handleQuickAdd = useCallback(async () => {
+    if (!quickAddText || user?.role !== 'admin') return
+    try {
+      const response = await api.tasks.quickAdd(quickAddText)
+      addToast(`Dodano: ${response.task.title}`, 'success')
+      setQuery('')
+      setOpen(false)
+    } catch (err: unknown) {
+      addToast(err instanceof Error ? err.message : 'Błąd szybkiego dodawania', 'error')
+    }
+  }, [addToast, quickAddText, user?.role])
 
   const commands = useMemo<Command[]>(() => {
     if (!user) return []
@@ -115,13 +128,35 @@ export function CommandPalette() {
           <input
             value={query}
             onChange={event => setQuery(event.target.value)}
-            placeholder="Szukaj komend albo zadań..."
+            onKeyDown={event => {
+              if (event.key === 'Enter' && quickAddText) {
+                event.preventDefault()
+                void handleQuickAdd()
+              }
+            }}
+            placeholder="Szukaj albo wpisz + Zadanie #Projekt @osoba jutro !high"
             className="input"
             autoFocus
           />
         </div>
 
         <div className="max-h-[60vh] overflow-y-auto p-2">
+          {user.role === 'admin' && quickAddText && (
+            <section className="mb-2">
+              <p className="px-2 py-1 text-[11px] font-semibold uppercase text-muted-foreground">Szybkie dodawanie</p>
+              <button
+                onClick={() => void handleQuickAdd()}
+                className="flex w-full items-center justify-between rounded-md px-3 py-2 text-left hover:bg-muted/60"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-medium text-gray-900 dark:text-white">Dodaj zadanie</span>
+                  <span className="block truncate text-xs text-muted-foreground">{quickAddText}</span>
+                </span>
+                <span className="rounded bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">Enter</span>
+              </button>
+            </section>
+          )}
+
           {filteredCommands.length > 0 && (
             <section className="mb-2">
               <p className="px-2 py-1 text-[11px] font-semibold uppercase text-muted-foreground">Komendy</p>

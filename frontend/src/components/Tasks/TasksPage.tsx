@@ -115,7 +115,7 @@ export default function TasksPage() {
       return
     }
 
-    if (lastTaskEvent.task && ['created', 'updated', 'completed', 'reopened', 'commented', 'subtask_created', 'subtask_completed', 'subtask_reopened', 'subtask_deleted', 'dependency_added', 'dependency_removed'].includes(lastTaskEvent.action)) {
+    if (lastTaskEvent.task && ['created', 'updated', 'completed', 'reopened', 'commented', 'mentioned', 'subtask_created', 'subtask_completed', 'subtask_reopened', 'subtask_deleted', 'dependency_added', 'dependency_removed'].includes(lastTaskEvent.action)) {
       replaceTask(lastTaskEvent.task)
       if (lastTaskEvent.action === 'created') {
         setTotal(prev => prev + 1)

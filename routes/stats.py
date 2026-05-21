@@ -1,5 +1,5 @@
 from flask import request, jsonify, session
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from routes import stats_bp
 from models import db, User, Task, ActivityLog
 from routes.auth import login_required
@@ -11,6 +11,23 @@ def assigned_task_query(user):
 
 def assignee_names(task):
     return ', '.join(assignee.username for assignee in task.assignees)
+
+def task_is_done(task):
+    return task.completed or task.status == 'done'
+
+def task_is_blocked(task):
+    return any(
+        dependency.depends_on_task
+        and not task_is_done(dependency.depends_on_task)
+        for dependency in task.dependencies
+    )
+
+def as_utc(value):
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 @stats_bp.route('/stats/dashboard', methods=['GET'])
 @login_required
@@ -54,6 +71,71 @@ def get_dashboard_stats():
         'completion_rate': completion_rate,
         'by_priority': by_priority,
         'by_project': by_project
+    })
+
+@stats_bp.route('/reports/weekly', methods=['GET'])
+@login_required
+def get_weekly_report():
+    user_id = session.get('user_id')
+    user = db.session.get(User, user_id)
+    now = datetime.now(timezone.utc)
+    week_start = now - timedelta(days=7)
+    today = now.date()
+
+    if user.role == 'admin':
+        tasks = Task.query.all()
+    else:
+        tasks = assigned_task_query(user).all()
+    visible_task_ids = {task.id for task in tasks}
+
+    created = [task for task in tasks if as_utc(task.created_at) and as_utc(task.created_at) >= week_start]
+    completed_logs = (
+        ActivityLog.query
+        .filter(ActivityLog.action == 'completed', ActivityLog.created_at >= week_start)
+        .all()
+    )
+    completed_logs = [log for log in completed_logs if log.task_id in visible_task_ids]
+    overdue = [task for task in tasks if not task_is_done(task) and task.due_date and task.due_date < today]
+    blocked = [task for task in tasks if not task_is_done(task) and task_is_blocked(task)]
+
+    by_project = {}
+    for task in tasks:
+        project = task.project
+        if project not in by_project:
+            by_project[project] = {'total': 0, 'completed': 0, 'open': 0}
+        by_project[project]['total'] += 1
+        if task_is_done(task):
+            by_project[project]['completed'] += 1
+        else:
+            by_project[project]['open'] += 1
+
+    user_names = {
+        found_user.id: found_user.username
+        for found_user in User.query.filter(User.id.in_({log.user_id for log in completed_logs if log.user_id})).all()
+    }
+    completed_by_user = {}
+    for log in completed_logs:
+        username = user_names.get(log.user_id, 'System')
+        completed_by_user[username] = completed_by_user.get(username, 0) + 1
+
+    return jsonify({
+        'range': {
+            'from': week_start.date().isoformat(),
+            'to': today.isoformat(),
+        },
+        'summary': {
+            'created': len(created),
+            'completed': len(completed_logs),
+            'overdue': len(overdue),
+            'blocked': len(blocked),
+            'open': len([task for task in tasks if not task_is_done(task)]),
+        },
+        'created_tasks': [task.summary_dict() for task in created[:10]],
+        'overdue_tasks': [task.summary_dict() for task in overdue[:10]],
+        'blocked_tasks': [task.summary_dict() for task in blocked[:10]],
+        'by_project': by_project,
+        'completed_by_user': completed_by_user,
+        'generated_at': now.isoformat(),
     })
 
 @stats_bp.route('/activity', methods=['GET'])

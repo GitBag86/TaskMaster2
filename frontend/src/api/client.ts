@@ -12,6 +12,9 @@ import type {
   TodayTasksResponse,
   Project,
   ProjectCompletionChecklist,
+  DependencyBoardResponse,
+  WeeklyReport,
+  ProjectTemplate,
 } from '@/types';
 
 const API_BASE = '';
@@ -155,12 +158,18 @@ export const api = {
     getAll: (page = 1, perPage = 50) =>
       request<PaginationResponse<Task>>(`/tasks?page=${page}&per_page=${perPage}`),
     blocked: () => request<{ tasks: Task[]; total: number }>('/tasks/blocked'),
+    dependencyBoard: () => request<DependencyBoardResponse>('/tasks/dependency-board'),
     today: () => request<TodayTasksResponse>('/tasks/today'),
     byProject: () => request<Record<string, Task[]>>('/tasks/by-project'),
     create: (data: TaskPayload) =>
       request<Task>('/tasks', {
         method: 'POST',
         body: JSON.stringify(data),
+      }),
+    quickAdd: (text: string) =>
+      request<{ task: Task; parsed: Record<string, unknown> }>('/tasks/quick-add', {
+        method: 'POST',
+        body: JSON.stringify({ text }),
       }),
     update: (id: number, data: TaskUpdatePayload) =>
       request<Task>(`/tasks/${id}`, {
@@ -203,6 +212,12 @@ export const api = {
 
   projects: {
     getAll: () => request<{ projects: Project[] }>('/projects'),
+    templates: () => request<{ templates: ProjectTemplate[] }>('/project-templates'),
+    useTemplate: (templateId: string, name?: string, startDate?: string) =>
+      request<Project>(`/project-templates/${templateId}/use`, {
+        method: 'POST',
+        body: JSON.stringify({ name, start_date: startDate || undefined }),
+      }),
     create: (data: ProjectPayload) =>
       request<Project>('/projects', {
         method: 'POST',
@@ -243,6 +258,7 @@ export const api = {
 
   stats: {
     dashboard: () => request<DashboardStats>('/stats/dashboard'),
+    weekly: () => request<WeeklyReport>('/reports/weekly'),
   },
 
   activity: {

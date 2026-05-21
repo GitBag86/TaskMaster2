@@ -11,6 +11,7 @@ interface TaskEvent {
   task_id?: number;
   task?: Task;
   task_ids?: number[];
+  mentioned_usernames?: string[];
 }
 
 interface SocketContextType {
@@ -50,7 +51,11 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     socket.on('task_action', (data: TaskEvent) => {
       setLastTaskEvent(data);
       if (data.user !== user?.username) {
-        addToast(`${data.user} zmienił(a) zadanie`, 'info');
+        if (data.action === 'mentioned' && data.mentioned_usernames?.includes(user?.username ?? '')) {
+          addToast(`${data.user} wspomniał(a) Cię w komentarzu`, 'info');
+        } else {
+          addToast(`${data.user} zmienił(a) zadanie`, 'info');
+        }
       }
     });
 

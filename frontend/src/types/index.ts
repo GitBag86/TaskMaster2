@@ -105,6 +105,31 @@ export interface DashboardStats {
   by_project: Record<string, { total: number; completed: number }>;
 }
 
+export interface WeeklyReport {
+  range: { from: string; to: string };
+  summary: {
+    created: number;
+    completed: number;
+    overdue: number;
+    blocked: number;
+    open: number;
+  };
+  created_tasks: TaskSummary[];
+  overdue_tasks: TaskSummary[];
+  blocked_tasks: TaskSummary[];
+  by_project: Record<string, { total: number; completed: number; open: number }>;
+  completed_by_user: Record<string, number>;
+  generated_at: string;
+}
+
+export interface ProjectTemplate {
+  id: string;
+  name: string;
+  description: string;
+  color: string;
+  task_count: number;
+}
+
 export interface Tag {
   id: number;
   name: string;
@@ -143,6 +168,21 @@ export interface TodayTasksResponse {
     today: number;
     upcoming: number;
     total: number;
+    blocked: number;
+    ready: number;
+    high_priority: number;
+  };
+  generated_at: string;
+}
+
+export interface DependencyBoardResponse {
+  blocked: Task[];
+  blockers: Array<TaskSummary & { blocking_count: number; blocking_tasks: TaskSummary[] }>;
+  ready: Task[];
+  counts: {
+    blocked: number;
+    blockers: number;
+    ready: number;
   };
   generated_at: string;
 }

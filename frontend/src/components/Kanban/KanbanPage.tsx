@@ -53,7 +53,7 @@ export default function KanbanPage() {
   useEffect(() => {
     if (!lastTaskEvent) return
 
-    if (lastTaskEvent.task && ['created', 'updated', 'completed', 'reopened', 'commented', 'subtask_created', 'subtask_completed', 'subtask_reopened', 'subtask_deleted', 'dependency_added', 'dependency_removed'].includes(lastTaskEvent.action)) {
+    if (lastTaskEvent.task && ['created', 'updated', 'completed', 'reopened', 'commented', 'mentioned', 'subtask_created', 'subtask_completed', 'subtask_reopened', 'subtask_deleted', 'dependency_added', 'dependency_removed'].includes(lastTaskEvent.action)) {
       const updatedTask = lastTaskEvent.task
       setTasks(prev => {
         const index = prev.findIndex(task => task.id === lastTaskEvent.task_id)

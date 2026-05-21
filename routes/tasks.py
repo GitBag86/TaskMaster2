@@ -1,3 +1,5 @@
+import re
+
 from flask import request, jsonify, session, url_for, current_app
 from datetime import date, datetime, timedelta, timezone
 from marshmallow import ValidationError
@@ -11,7 +13,46 @@ from utils.email_sender import send_email, get_task_status_change_body, get_task
 TASK_ALLOWED_FIELDS = {'title', 'priority', 'project', 'project_id', 'due_date', 'notes', 'completed', 'status'}
 BULK_MAX_TASKS = 100
 
-def emit_task_event(action, user, task=None, task_ids=None, task_id=None, task_payload=None):
+PROJECT_TEMPLATES = {
+    "client_onboarding": {
+        "name": "Wdrożenie klienta",
+        "description": "Standardowy proces startu współpracy z klientem.",
+        "color": "#14b8a6",
+        "tasks": [
+            {"title": "Zebrać wymagania", "priority": "high", "due_offset": 1},
+            {"title": "Przygotować plan wdrożenia", "priority": "high", "due_offset": 3, "depends_on": [0]},
+            {"title": "Skonfigurować środowisko", "priority": "medium", "due_offset": 5, "depends_on": [1]},
+            {"title": "Przeprowadzić szkolenie", "priority": "medium", "due_offset": 7, "depends_on": [2]},
+            {"title": "Zamknąć odbiór", "priority": "high", "due_offset": 10, "depends_on": [3]},
+        ],
+    },
+    "release": {
+        "name": "Release",
+        "description": "Kontrolna lista wydania wersji produkcyjnej.",
+        "color": "#6366f1",
+        "tasks": [
+            {"title": "Zamrozić zakres release'u", "priority": "high", "due_offset": 1},
+            {"title": "Przejść testy regresji", "priority": "high", "due_offset": 2, "depends_on": [0]},
+            {"title": "Przygotować notatki wydania", "priority": "medium", "due_offset": 2, "depends_on": [0]},
+            {"title": "Wdrożyć na produkcję", "priority": "high", "due_offset": 3, "depends_on": [1, 2]},
+            {"title": "Monitorować po wdrożeniu", "priority": "medium", "due_offset": 4, "depends_on": [3]},
+        ],
+    },
+    "campaign": {
+        "name": "Kampania",
+        "description": "Plan przygotowania i uruchomienia kampanii.",
+        "color": "#f59e0b",
+        "tasks": [
+            {"title": "Ustalić cel kampanii", "priority": "high", "due_offset": 1},
+            {"title": "Przygotować treści", "priority": "medium", "due_offset": 3, "depends_on": [0]},
+            {"title": "Skonfigurować kanały", "priority": "medium", "due_offset": 4, "depends_on": [0]},
+            {"title": "Uruchomić kampanię", "priority": "high", "due_offset": 5, "depends_on": [1, 2]},
+            {"title": "Podsumować wyniki", "priority": "medium", "due_offset": 12, "depends_on": [3]},
+        ],
+    },
+}
+
+def emit_task_event(action, user, task=None, task_ids=None, task_id=None, task_payload=None, extra=None):
     payload = {
         "action": action,
         "user": user.username,
@@ -25,6 +66,8 @@ def emit_task_event(action, user, task=None, task_ids=None, task_id=None, task_p
         payload["task"] = task_payload
     if task_ids is not None:
         payload["task_ids"] = task_ids
+    if extra:
+        payload.update(extra)
     socketio.emit("task_action", payload)
 
 def parse_due_date(value):
@@ -162,6 +205,72 @@ def user_can_access_project(user, project):
         return True
     return any(user_can_access_task(user, task) for task in project.tasks)
 
+def extract_mentions(text):
+    return sorted(set(re.findall(r'@([A-Za-z0-9_.-]{3,100})', text or '')))
+
+def parse_quick_task(text):
+    tokens = text.split()
+    title_tokens = []
+    assignee_names = []
+    project_name = None
+    priority = 'medium'
+    due_date = None
+    today = date.today()
+    priority_aliases = {
+        'high': 'high',
+        'wysoki': 'high',
+        'medium': 'medium',
+        'sredni': 'medium',
+        'średni': 'medium',
+        'low': 'low',
+        'niski': 'low',
+    }
+
+    for token in tokens:
+        lowered = token.lower().strip()
+        if token.startswith('@') and len(token) > 1:
+            assignee_names.append(token[1:])
+        elif token.startswith('#') and len(token) > 1:
+            project_name = token[1:].replace('_', ' ')
+        elif lowered.startswith('!') and lowered[1:] in priority_aliases:
+            priority = priority_aliases[lowered[1:]]
+        elif lowered in ('dzis', 'dziś', 'today'):
+            due_date = today
+        elif lowered in ('jutro', 'tomorrow'):
+            due_date = today + timedelta(days=1)
+        elif re.fullmatch(r'\d{4}-\d{2}-\d{2}', lowered):
+            due_date = parse_due_date(lowered)
+        else:
+            title_tokens.append(token)
+
+    title = ' '.join(title_tokens).strip()
+    return {
+        "title": title,
+        "assignee_names": assignee_names,
+        "priority": priority,
+        "project": project_name or 'Ogólny',
+        "due_date": due_date,
+    }
+
+def create_task_record(user, title, priority='medium', project_name='Ogólny', due_date=None, notes='', assignee_ids=None):
+    project, project_error = resolve_project(None, project_name, user)
+    if project_error:
+        return None, project_error
+
+    task = Task(
+        user_id=user.id,
+        title=title,
+        priority=priority,
+        project=project.name,
+        project_id=project.id,
+        due_date=due_date,
+        notes=notes or '',
+    )
+    assignees = update_task_assignees(task, assignee_ids or [])
+    db.session.add(task)
+    db.session.flush()
+    return task, assignees
+
 @tasks_bp.route('/tasks', methods=['GET'])
 @login_required
 def get_tasks():
@@ -213,6 +322,10 @@ def get_today_tasks():
         else:
             upcoming.append(task.to_dict())
 
+    blocked = [task for task in tasks if task_open_dependencies(task)]
+    ready = [task for task in tasks if not task_open_dependencies(task)]
+    high_priority = [task for task in tasks if task.priority == 'high']
+
     return jsonify({
         "overdue": overdue,
         "today": due_today,
@@ -222,6 +335,9 @@ def get_today_tasks():
             "today": len(due_today),
             "upcoming": len(upcoming),
             "total": len(tasks),
+            "blocked": len(blocked),
+            "ready": len(ready),
+            "high_priority": len(high_priority),
         },
         "generated_at": datetime.now(timezone.utc).isoformat(),
     })
@@ -237,6 +353,52 @@ def get_blocked_tasks():
     return jsonify({
         "tasks": [task.to_dict() for task in blocked_tasks],
         "total": len(blocked_tasks),
+    })
+
+@tasks_bp.route('/tasks/dependency-board', methods=['GET'])
+@login_required
+def get_dependency_board():
+    user_id = session.get('user_id')
+    user = db.session.get(User, user_id)
+    tasks = visible_task_query(user).all()
+    priority_rank = {'high': 0, 'medium': 1, 'low': 2}
+
+    def due_sort_value(task):
+        return task.due_date or date.max
+
+    open_tasks = [task for task in tasks if not task_is_done(task)]
+    blocked_tasks = [task for task in open_tasks if task_open_dependencies(task)]
+    ready_tasks = [
+        task for task in open_tasks
+        if not task_open_dependencies(task)
+    ]
+    blocker_tasks = [
+        task for task in open_tasks
+        if task.open_dependent_tasks()
+    ]
+
+    blocked_tasks.sort(key=lambda task: (due_sort_value(task), priority_rank.get(task.priority, 9), task.created_at))
+    ready_tasks.sort(key=lambda task: (due_sort_value(task), priority_rank.get(task.priority, 9), task.created_at))
+    blocker_tasks.sort(key=lambda task: (-len(task.open_dependent_tasks()), due_sort_value(task), task.title.lower()))
+
+    blockers = []
+    for task in blocker_tasks[:10]:
+        blocked_dependents = [dependent.summary_dict() for dependent in task.open_dependent_tasks()]
+        summary = task.summary_dict()
+        summary["blocking_count"] = len(blocked_dependents)
+        summary["blocking_tasks"] = blocked_dependents[:5]
+        blockers.append(summary)
+
+    return jsonify({
+        "blocked": [task.to_dict() for task in blocked_tasks[:10]],
+        "blockers": blockers,
+        "ready": [task.to_dict() for task in ready_tasks[:10]],
+        "counts": {
+            "blocked": len(blocked_tasks),
+            "blockers": len(blocker_tasks),
+            "ready": len(ready_tasks),
+        },
+        "generated_at": datetime.now(timezone.utc).isoformat(),
     })
 
 @tasks_bp.route('/tasks/<int:task_id>/dependencies', methods=['GET', 'POST'])
@@ -319,6 +481,50 @@ def delete_dependency(dep_id):
 
     emit_task_event("dependency_removed", user, task=task)
     return jsonify(task.to_dict())
+
+@tasks_bp.route('/tasks/quick-add', methods=['POST'])
+@login_required
+def quick_add_task():
+    user_id = session.get('user_id')
+    user = db.session.get(User, user_id)
+
+    if user.role != 'admin':
+        return jsonify({"error": "Tylko administrator może tworzyć zadania"}), 403
+
+    text = (request.get_json() or {}).get('text', '').strip()
+    if not text:
+        return jsonify({"error": "Podaj treść zadania"}), 400
+
+    parsed = parse_quick_task(text)
+    if not parsed["title"]:
+        return jsonify({"error": "Nie udało się odczytać tytułu zadania"}), 400
+
+    assignees = User.query.filter(User.username.in_(parsed["assignee_names"])).all() if parsed["assignee_names"] else []
+    task, result = create_task_record(
+        user=user,
+        title=parsed["title"],
+        priority=parsed["priority"],
+        project_name=parsed["project"],
+        due_date=parsed["due_date"],
+        assignee_ids=[assignee.id for assignee in assignees],
+    )
+    if task is None:
+        message, status = result
+        return jsonify({"error": message}), status
+
+    db.session.add(ActivityLog(user_id=user_id, task_id=task.id, action='created', details={'title': task.title, 'source': 'quick_add'}))
+    db.session.commit()
+
+    emit_task_event("created", user, task=task)
+    return jsonify({
+        "task": task.to_dict(),
+        "parsed": {
+            "project": task.project,
+            "priority": task.priority,
+            "due_date": task.due_date.isoformat() if task.due_date else None,
+            "assignees": [assignee.username for assignee in assignees],
+        },
+    }), 201
 
 @tasks_bp.route('/tasks', methods=['POST'])
 @login_required
@@ -536,12 +742,32 @@ def add_comment(task_id):
         text=validated.get("text", "")
     )
     db.session.add(comment)
-    log = ActivityLog(user_id=user_id, task_id=task_id, action='commented', details={'text': comment.text})
+    mentioned_usernames = extract_mentions(comment.text)
+    mentioned_users = User.query.filter(User.username.in_(mentioned_usernames)).all() if mentioned_usernames else []
+    mentioned_names = [mentioned.username for mentioned in mentioned_users]
+    log = ActivityLog(
+        user_id=user_id,
+        task_id=task_id,
+        action='commented',
+        details={'text': comment.text, 'mentions': mentioned_names},
+    )
     db.session.add(log)
+    for mentioned in mentioned_users:
+        db.session.add(ActivityLog(
+            user_id=mentioned.id,
+            task_id=task_id,
+            action='mentioned',
+            details={'by': user.username, 'text': comment.text},
+        ))
     db.session.commit()
     db.session.refresh(task)
 
-    emit_task_event("commented", user, task=task)
+    emit_task_event(
+        "mentioned" if mentioned_names else "commented",
+        user,
+        task=task,
+        extra={"mentioned_usernames": mentioned_names} if mentioned_names else None,
+    )
     return jsonify(comment.to_dict()), 201
 
 @tasks_bp.route('/tasks/<int:task_id>/activity', methods=['GET'])
@@ -746,6 +972,83 @@ def create_project():
         "project": project.to_dict(include_tasks=False),
     })
     return jsonify(project.to_dict(include_tasks=False)), 201
+
+@tasks_bp.route('/project-templates', methods=['GET'])
+@login_required
+def get_project_templates():
+    return jsonify({
+        "templates": [
+            {
+                "id": template_id,
+                "name": template["name"],
+                "description": template["description"],
+                "task_count": len(template["tasks"]),
+                "color": template["color"],
+            }
+            for template_id, template in PROJECT_TEMPLATES.items()
+        ]
+    })
+
+@tasks_bp.route('/project-templates/<template_id>/use', methods=['POST'])
+@login_required
+def use_project_template(template_id):
+    user_id = session.get('user_id')
+    user = db.session.get(User, user_id)
+
+    if user.role != 'admin':
+        return jsonify({"error": "Tylko administrator może tworzyć projekty z szablonu"}), 403
+
+    template = PROJECT_TEMPLATES.get(template_id)
+    if not template:
+        return jsonify({"error": "Template not found"}), 404
+
+    payload = request.get_json() or {}
+    name = normalize_project_name(payload.get("name") or template["name"])
+    if Project.query.filter_by(name=name).first():
+        return jsonify({"error": "Projekt o tej nazwie już istnieje"}), 409
+    start_date = parse_due_date(payload.get("start_date")) or date.today()
+
+    project = Project(
+        name=name,
+        description=payload.get("description") or template["description"],
+        color=payload.get("color") or template["color"],
+        created_by_id=user_id,
+    )
+    db.session.add(project)
+    db.session.flush()
+
+    created_tasks = []
+    for template_task in template["tasks"]:
+        task = Task(
+            user_id=user_id,
+            title=template_task["title"],
+            priority=template_task.get("priority", "medium"),
+            project=project.name,
+            project_id=project.id,
+            due_date=start_date + timedelta(days=template_task.get("due_offset", 1)),
+            notes=template_task.get("notes", ""),
+        )
+        db.session.add(task)
+        db.session.flush()
+        created_tasks.append(task)
+        db.session.add(ActivityLog(user_id=user_id, task_id=task.id, action='created', details={'title': task.title, 'source': 'project_template'}))
+
+    for task_index, template_task in enumerate(template["tasks"]):
+        for dependency_index in template_task.get("depends_on", []):
+            db.session.add(TaskDependency(
+                task_id=created_tasks[task_index].id,
+                depends_on_task_id=created_tasks[dependency_index].id,
+            ))
+
+    db.session.commit()
+    socketio.emit("task_action", {
+        "action": "project_template_used",
+        "user": user.username,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "project": project.to_dict(include_tasks=False),
+        "task_ids": [task.id for task in created_tasks],
+    })
+    return jsonify(project.to_dict(include_tasks=True)), 201
 
 @tasks_bp.route('/projects/<int:project_id>', methods=['PUT'])
 @login_required

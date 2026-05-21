@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type { Project, Task } from '@/types'
+import type { Project, ProjectTemplate, Task } from '@/types'
 import { api } from '@/api/client'
 import { useAuth } from '@/store/AuthContext'
 import { useSocket } from '@/store/SocketContext'
@@ -33,6 +33,7 @@ const taskEventActions = new Set([
   'project_updated',
   'project_archived',
   'project_completed',
+  'project_template_used',
 ])
 
 export default function ProjectsPage() {
@@ -43,6 +44,10 @@ export default function ProjectsPage() {
   const [taskToAssignId, setTaskToAssignId] = useState('')
   const [targetProjectId, setTargetProjectId] = useState('')
   const [showNewProject, setShowNewProject] = useState(false)
+  const [templates, setTemplates] = useState<ProjectTemplate[]>([])
+  const [selectedTemplateId, setSelectedTemplateId] = useState('')
+  const [templateProjectName, setTemplateProjectName] = useState('')
+  const [templateStartDate, setTemplateStartDate] = useState('')
   const [newProjectName, setNewProjectName] = useState('')
   const [newProjectDescription, setNewProjectDescription] = useState('')
   const [newProjectColor, setNewProjectColor] = useState('#3b82f6')
@@ -62,9 +67,22 @@ export default function ProjectsPage() {
     }
   }, [addToast])
 
+  const loadTemplates = useCallback(async () => {
+    try {
+      const response = await api.projects.templates()
+      setTemplates(response.templates)
+      if (!selectedTemplateId && response.templates.length > 0) {
+        setSelectedTemplateId(response.templates[0].id)
+      }
+    } catch {
+      setTemplates([])
+    }
+  }, [selectedTemplateId])
+
   useEffect(() => {
     void loadProjects()
-  }, [loadProjects])
+    void loadTemplates()
+  }, [loadProjects, loadTemplates])
 
   useEffect(() => {
     if (!lastTaskEvent || !taskEventActions.has(lastTaskEvent.action)) return
@@ -164,6 +182,26 @@ export default function ProjectsPage() {
       addToast('Zadanie przypisane do projektu', 'success')
     } catch (err: unknown) {
       addToast(err instanceof Error ? err.message : 'Błąd przypisywania zadania', 'error')
+    }
+  }
+
+  const createFromTemplate = async () => {
+    if (!selectedTemplateId) return
+
+    try {
+      const project = await api.projects.useTemplate(
+        selectedTemplateId,
+        templateProjectName.trim() || undefined,
+        templateStartDate || undefined,
+      )
+      await loadProjects()
+      setSelectedProjectId(project.id)
+      setTargetProjectId(String(project.id))
+      setTemplateProjectName('')
+      setTemplateStartDate('')
+      addToast(`Utworzono projekt z szablonu: ${project.name}`, 'success')
+    } catch (err: unknown) {
+      addToast(err instanceof Error ? err.message : 'Błąd użycia szablonu', 'error')
     }
   }
 
@@ -362,6 +400,56 @@ export default function ProjectsPage() {
           </div>
 
           <aside className="rounded-lg border border-border bg-card p-4">
+            {user?.role === 'admin' && (
+              <div className="mb-5 border-b border-border pb-5">
+                <h3 className="mb-1 text-sm font-semibold text-gray-900 dark:text-white">Szablony projektów</h3>
+                <p className="mb-3 text-xs text-muted-foreground">Utwórz projekt z gotowym zestawem zadań i zależności.</p>
+                <div className="space-y-3">
+                  <select
+                    value={selectedTemplateId}
+                    onChange={event => setSelectedTemplateId(event.target.value)}
+                    disabled={templates.length === 0}
+                    className="input"
+                  >
+                    {templates.length === 0 ? (
+                      <option value="">Brak szablonów</option>
+                    ) : (
+                      templates.map(template => (
+                        <option key={template.id} value={template.id}>
+                          {template.name} ({template.task_count})
+                        </option>
+                      ))
+                    )}
+                  </select>
+                  <input
+                    value={templateProjectName}
+                    onChange={event => setTemplateProjectName(event.target.value)}
+                    placeholder="Nazwa projektu (opcjonalnie)"
+                    className="input"
+                  />
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">Data startu</label>
+                    <input
+                      type="date"
+                      value={templateStartDate}
+                      onChange={event => setTemplateStartDate(event.target.value)}
+                      className="input"
+                    />
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Terminy zadań zostaną rozłożone względem tej daty.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => void createFromTemplate()}
+                    disabled={!selectedTemplateId}
+                    className="btn btn-primary btn-sm w-full"
+                  >
+                    Utwórz z szablonu
+                  </button>
+                </div>
+              </div>
+            )}
+
             <h3 className="mb-1 text-sm font-semibold text-gray-900 dark:text-white">Przypisywanie</h3>
             <p className="mb-4 text-xs text-muted-foreground">
               {user?.role === 'admin'

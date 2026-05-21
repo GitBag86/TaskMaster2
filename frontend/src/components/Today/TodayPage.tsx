@@ -14,6 +14,9 @@ const emptyToday: TodayTasksResponse = {
     today: 0,
     upcoming: 0,
     total: 0,
+    blocked: 0,
+    ready: 0,
+    high_priority: 0,
   },
   generated_at: '',
 }
@@ -27,6 +30,8 @@ const refreshActions = new Set([
   'bulk_completed',
   'bulk_deleted',
   'bulk_updated',
+  'dependency_added',
+  'dependency_removed',
 ])
 
 export default function TodayPage() {
@@ -65,6 +70,16 @@ export default function TodayPage() {
     }
   }
 
+  const startTask = async (taskId: number) => {
+    try {
+      await api.tasks.update(taskId, { status: 'in_progress', completed: false })
+      await loadToday()
+      addToast('Zadanie rozpoczęte', 'success')
+    } catch (err: unknown) {
+      addToast(err instanceof Error ? err.message : 'Błąd zmiany statusu', 'error')
+    }
+  }
+
   if (loading) {
     return <TasksPageSkeleton />
   }
@@ -83,6 +98,12 @@ export default function TodayPage() {
         </div>
       </div>
 
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Metric label="Gotowe do pracy" value={data.counts.ready} tone="success" />
+        <Metric label="Zablokowane" value={data.counts.blocked} tone="warning" />
+        <Metric label="Wysoki priorytet" value={data.counts.high_priority} tone="danger" />
+      </div>
+
       <div className="grid gap-4 xl:grid-cols-3">
         <TaskSection
           title="Po terminie"
@@ -90,6 +111,7 @@ export default function TodayPage() {
           empty="Nie ma zaległych zadań."
           tone="danger"
           onComplete={completeTask}
+          onStart={startTask}
         />
         <TaskSection
           title="Na dziś"
@@ -97,6 +119,7 @@ export default function TodayPage() {
           empty="Na dziś nic nie czeka."
           tone="primary"
           onComplete={completeTask}
+          onStart={startTask}
         />
         <TaskSection
           title="Następne 7 dni"
@@ -104,6 +127,7 @@ export default function TodayPage() {
           empty="Brak zadań w najbliższym tygodniu."
           tone="default"
           onComplete={completeTask}
+          onStart={startTask}
         />
       </div>
     </div>
@@ -116,12 +140,14 @@ function TaskSection({
   empty,
   tone,
   onComplete,
+  onStart,
 }: {
   title: string;
   tasks: Task[];
   empty: string;
   tone: 'danger' | 'primary' | 'default';
   onComplete: (taskId: number) => Promise<void>;
+  onStart: (taskId: number) => Promise<void>;
 }) {
   return (
     <section className={`rounded-lg border border-border bg-card p-4 ${sectionAccent(tone)}`}>
@@ -139,7 +165,12 @@ function TaskSection({
       ) : (
         <div className="space-y-3">
           {tasks.map(task => (
-            <TodayTaskRow key={task.id} task={task} onComplete={() => onComplete(task.id)} />
+            <TodayTaskRow
+              key={task.id}
+              task={task}
+              onComplete={() => onComplete(task.id)}
+              onStart={() => onStart(task.id)}
+            />
           ))}
         </div>
       )}
@@ -147,7 +178,7 @@ function TaskSection({
   )
 }
 
-function TodayTaskRow({ task, onComplete }: { task: Task; onComplete: () => void }) {
+function TodayTaskRow({ task, onComplete, onStart }: { task: Task; onComplete: () => void; onStart: () => void }) {
   return (
     <article className="rounded-lg border border-border bg-background p-3 shadow-sm">
       <div className="flex items-start justify-between gap-3">
@@ -155,15 +186,33 @@ function TodayTaskRow({ task, onComplete }: { task: Task; onComplete: () => void
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{task.project}</p>
           <h4 className="mt-1 truncate text-sm font-semibold text-gray-900 dark:text-white">{task.title}</h4>
         </div>
-        <button onClick={onComplete} className="btn btn-ghost btn-sm h-8 px-2" title="Zakończ zadanie">
-          <svg className="h-4 w-4 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-          </svg>
-        </button>
+        <div className="flex gap-1">
+          {task.status === 'todo' && (
+            <button onClick={onStart} className="btn btn-ghost btn-sm h-8 px-2" title="Rozpocznij zadanie">
+              Start
+            </button>
+          )}
+          <button
+            onClick={onComplete}
+            disabled={task.is_blocked}
+            className="btn btn-ghost btn-sm h-8 px-2 disabled:cursor-not-allowed disabled:opacity-50"
+            title={task.is_blocked ? 'Zadanie zablokowane' : 'Zakończ zadanie'}
+          >
+            <svg className="h-4 w-4 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-1.5">
         <span className={`badge ${priorityClass(task.priority)}`}>{priorityLabel(task.priority)}</span>
+        {task.is_blocked && (
+          <span className="badge bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">Zablokowane</span>
+        )}
+        {task.status === 'in_progress' && (
+          <span className="badge bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">W toku</span>
+        )}
         {task.due_date && (
           <span className="badge bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
             {formatDate(task.due_date)}
@@ -177,7 +226,7 @@ function TodayTaskRow({ task, onComplete }: { task: Task; onComplete: () => void
   )
 }
 
-function Metric({ label, value, tone }: { label: string; value: number; tone: 'danger' | 'primary' | 'default' }) {
+function Metric({ label, value, tone }: { label: string; value: number; tone: 'danger' | 'primary' | 'default' | 'success' | 'warning' }) {
   return (
     <div className={`rounded-lg border px-3 py-2 ${metricClass(tone)}`}>
       <p className="text-[11px] font-medium text-muted-foreground">{label}</p>
@@ -192,9 +241,11 @@ function sectionAccent(tone: 'danger' | 'primary' | 'default') {
   return 'border-t-4 border-t-amber-400'
 }
 
-function metricClass(tone: 'danger' | 'primary' | 'default') {
+function metricClass(tone: 'danger' | 'primary' | 'default' | 'success' | 'warning') {
   if (tone === 'danger') return 'border-red-200 bg-red-50 text-red-700 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-300'
   if (tone === 'primary') return 'border-primary/30 bg-primary/10 text-primary'
+  if (tone === 'success') return 'border-green-200 bg-green-50 text-green-700 dark:border-green-900/40 dark:bg-green-900/20 dark:text-green-300'
+  if (tone === 'warning') return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-300'
   return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-300'
 }
 

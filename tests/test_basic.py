@@ -1,7 +1,7 @@
 import sqlite3
 from datetime import date, timedelta
 
-from models import db, User, Task, Project, Tag, TaskDependency
+from models import db, User, Task, Project, Tag, TaskDependency, ActivityLog
 
 def test_health_check(client):
     response = client.get('/health')
@@ -155,6 +155,29 @@ def test_project_complete_endpoint_returns_readiness_checklist(auth_client):
     assert data["archived"] is True
     assert data["completion"]["ready"] is True
 
+def test_admin_can_create_project_from_template(auth_client, app):
+    templates_response = auth_client.get('/project-templates')
+    assert templates_response.status_code == 200
+    template_id = templates_response.get_json()["templates"][0]["id"]
+    start_date = date.today() + timedelta(days=14)
+
+    response = auth_client.post(f'/project-templates/{template_id}/use', json={
+        "name": "Template Launch",
+        "start_date": start_date.isoformat(),
+    })
+
+    assert response.status_code == 201
+    data = response.get_json()
+    assert data["name"] == "Template Launch"
+    assert len(data["tasks"]) > 1
+    assert any(task["dependencies"] for task in data["tasks"])
+    assert data["tasks"][0]["due_date"] == (start_date + timedelta(days=1)).isoformat()
+
+    with app.app_context():
+        project = Project.query.filter_by(name="Template Launch").first()
+        assert project is not None
+        assert len(project.tasks) == len(data["tasks"])
+
 def test_create_task_can_attach_existing_project(auth_client):
     project = auth_client.post('/projects', json={"name": "Existing Project"}).get_json()
 
@@ -207,6 +230,21 @@ def test_get_tasks(auth_client):
     assert data["per_page"] == 50
     assert data["has_prev"] is False
 
+def test_weekly_report_summarizes_created_completed_and_overdue(auth_client):
+    today = date.today()
+    done = auth_client.post('/tasks', json={"title": "Report done"}).get_json()
+    auth_client.post('/tasks', json={"title": "Report overdue", "due_date": (today - timedelta(days=1)).isoformat()})
+    auth_client.put(f'/tasks/{done["id"]}/complete')
+
+    response = auth_client.get('/reports/weekly')
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["summary"]["created"] >= 2
+    assert data["summary"]["completed"] >= 1
+    assert data["summary"]["overdue"] == 1
+    assert "Ogólny" in data["by_project"]
+
 def test_get_tasks_pagination_metadata(auth_client):
     for i in range(13):
         auth_client.post('/tasks', json={"title": f"Task {i}"})
@@ -253,7 +291,35 @@ def test_today_tasks_groups_visible_open_tasks_by_due_date(auth_client):
     assert [task["title"] for task in data["overdue"]] == ["Overdue"]
     assert [task["title"] for task in data["today"]] == ["Today"]
     assert [task["title"] for task in data["upcoming"]] == ["Soon"]
-    assert data["counts"] == {"overdue": 1, "today": 1, "upcoming": 1, "total": 3}
+    assert data["counts"] == {
+        "overdue": 1,
+        "today": 1,
+        "upcoming": 1,
+        "total": 3,
+        "blocked": 0,
+        "ready": 3,
+        "high_priority": 0,
+    }
+
+def test_quick_add_parses_project_assignee_due_date_and_priority(auth_client, app):
+    with app.app_context():
+        user = User(username="quickuser", email="quickuser@example.com", role="user")
+        user.set_password("password")
+        db.session.add(user)
+        db.session.commit()
+
+    response = auth_client.post('/tasks/quick-add', json={
+        "text": "Napisać ofertę #Sprzedaz @quickuser jutro !high"
+    })
+
+    assert response.status_code == 201
+    data = response.get_json()
+    task = data["task"]
+    assert task["title"] == "Napisać ofertę"
+    assert task["project"] == "Sprzedaz"
+    assert task["priority"] == "high"
+    assert task["due_date"] == (date.today() + timedelta(days=1)).isoformat()
+    assert task["assignees"][0]["username"] == "quickuser"
 
 def test_today_tasks_regular_user_only_sees_assigned_tasks(client, app):
     today = date.today()
@@ -318,6 +384,29 @@ def test_blocked_tasks_endpoint_returns_visible_blocked_tasks(auth_client):
     assert data["total"] == 1
     assert [task["id"] for task in data["tasks"]] == [blocked["id"]]
     assert clear["id"] not in [task["id"] for task in data["tasks"]]
+
+def test_dependency_board_groups_blocked_blockers_and_ready_tasks(auth_client):
+    blocked = auth_client.post('/tasks', json={"title": "Blocked board task", "priority": "high"}).get_json()
+    blocker = auth_client.post('/tasks', json={"title": "Board blocker", "priority": "medium"}).get_json()
+    ready = auth_client.post('/tasks', json={"title": "Ready board task", "priority": "low"}).get_json()
+    done = auth_client.post('/tasks', json={"title": "Done board task"}).get_json()
+    auth_client.post(
+        f'/tasks/{blocked["id"]}/dependencies',
+        json={"depends_on_task_id": blocker["id"]},
+    )
+    auth_client.put(f'/tasks/{done["id"]}/complete')
+
+    response = auth_client.get('/tasks/dependency-board')
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["counts"]["blocked"] == 1
+    assert data["counts"]["blockers"] == 1
+    assert data["counts"]["ready"] == 2
+    assert data["blocked"][0]["id"] == blocked["id"]
+    assert data["blockers"][0]["id"] == blocker["id"]
+    assert data["blockers"][0]["blocking_count"] == 1
+    assert {task["id"] for task in data["ready"]} == {blocker["id"], ready["id"]}
 
 def test_dependency_cycle_is_rejected(auth_client):
     first = auth_client.post('/tasks', json={"title": "First"}).get_json()
@@ -525,6 +614,35 @@ def test_regular_user_cannot_comment_unassigned_task(client, app):
     assert response.status_code == 403
     with app.app_context():
         assert db.session.get(Task, task_id).comments == []
+
+def test_comment_mentions_emit_event_and_activity(auth_client, app, monkeypatch):
+    with app.app_context():
+        mentioned = User(username="mentioned_user", email="mentioned@example.com", role="user")
+        mentioned.set_password("password")
+        db.session.add(mentioned)
+        db.session.commit()
+        mentioned_id = mentioned.id
+
+    task = auth_client.post('/tasks', json={"title": "Mention target"}).get_json()
+    emitted = {}
+
+    def fake_emit(event_name, payload):
+        emitted["event_name"] = event_name
+        emitted["payload"] = payload
+
+    monkeypatch.setattr("routes.tasks.socketio.emit", fake_emit)
+
+    response = auth_client.post(f'/tasks/{task["id"]}/comments', json={"text": "@mentioned_user zerknij proszę"})
+
+    assert response.status_code == 201
+    assert emitted["event_name"] == "task_action"
+    assert emitted["payload"]["action"] == "mentioned"
+    assert emitted["payload"]["mentioned_usernames"] == ["mentioned_user"]
+
+    with app.app_context():
+        mention_log = ActivityLog.query.filter_by(user_id=mentioned_id, action="mentioned").first()
+        assert mention_log is not None
+        assert mention_log.details["by"] == "admin"
 
 def test_regular_user_cannot_tag_unassigned_task(client, app):
     with app.app_context():

@@ -473,6 +473,7 @@ function activityLabel(action: string) {
     completed: 'Zakończono zadanie',
     reopened: 'Przywrócono zadanie',
     commented: 'Dodano komentarz',
+    mentioned: 'Dodano wzmiankę',
     subtask_created: 'Dodano podzadanie',
     subtask_toggle: 'Zmieniono podzadanie',
     subtask_deleted: 'Usunięto podzadanie',
