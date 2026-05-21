@@ -3,8 +3,8 @@ from datetime import date, datetime, timedelta, timezone
 from marshmallow import ValidationError
 from extensions import socketio
 from routes import tasks_bp
-from models import db, User, Task, Comment, Subtask, ActivityLog, Tag, Project
-from schemas import TaskSchema, CommentSchema, SubtaskSchema, ProjectSchema
+from models import db, User, Task, Comment, Subtask, ActivityLog, Tag, Project, TaskDependency
+from schemas import TaskSchema, CommentSchema, SubtaskSchema, ProjectSchema, DependencySchema
 from routes.auth import login_required
 from utils.email_sender import send_email, get_task_status_change_body, get_task_assignment_body
 
@@ -39,6 +39,40 @@ def parse_due_date(value):
 
 def user_can_access_task(user, task):
     return user.role == 'admin' or user in task.assignees
+
+def task_is_done(task):
+    return task.completed or task.status == 'done'
+
+def task_open_dependencies(task):
+    return [
+        dependency.depends_on_task
+        for dependency in task.dependencies
+        if dependency.depends_on_task and not task_is_done(dependency.depends_on_task)
+    ]
+
+def blocked_completion_response(task):
+    return jsonify({
+        "error": "Nie można zakończyć zadania, dopóki jego zależności są otwarte.",
+        "blocked_by": [dependency_task.summary_dict() for dependency_task in task_open_dependencies(task)],
+    }), 409
+
+def would_create_dependency_cycle(task_id, depends_on_task_id):
+    pending = [depends_on_task_id]
+    visited = set()
+
+    while pending:
+        current_id = pending.pop()
+        if current_id == task_id:
+            return True
+        if current_id in visited:
+            continue
+        visited.add(current_id)
+        pending.extend(
+            dependency.depends_on_task_id
+            for dependency in TaskDependency.query.filter_by(task_id=current_id).all()
+        )
+
+    return False
 
 def assigned_task_query(user):
     return Task.query.filter(Task.assignees.any(User.id == user.id))
@@ -98,6 +132,35 @@ def visible_projects_for_user(user):
     if not project_ids:
         return []
     return Project.query.filter(Project.id.in_(project_ids)).order_by(Project.name.asc()).all()
+
+def project_completion_status(project):
+    open_tasks = [task for task in project.tasks if not task_is_done(task)]
+    blocked_tasks = [task for task in open_tasks if task_open_dependencies(task)]
+    today = date.today()
+    overdue_tasks = [
+        task
+        for task in open_tasks
+        if task.due_date is not None and task.due_date < today
+    ]
+
+    checks = {
+        "all_tasks_done": len(open_tasks) == 0,
+        "no_blocked_tasks": len(blocked_tasks) == 0,
+        "no_overdue_tasks": len(overdue_tasks) == 0,
+    }
+
+    return {
+        "ready": all(checks.values()),
+        "checks": checks,
+        "open_tasks": [task.summary_dict() for task in open_tasks],
+        "blocked_tasks": [task.summary_dict() for task in blocked_tasks],
+        "overdue_tasks": [task.summary_dict() for task in overdue_tasks],
+    }
+
+def user_can_access_project(user, project):
+    if user.role == 'admin':
+        return True
+    return any(user_can_access_task(user, task) for task in project.tasks)
 
 @tasks_bp.route('/tasks', methods=['GET'])
 @login_required
@@ -162,6 +225,100 @@ def get_today_tasks():
         },
         "generated_at": datetime.now(timezone.utc).isoformat(),
     })
+
+@tasks_bp.route('/tasks/blocked', methods=['GET'])
+@login_required
+def get_blocked_tasks():
+    user_id = session.get('user_id')
+    user = db.session.get(User, user_id)
+    tasks = visible_task_query(user).order_by(Task.created_at.desc()).all()
+    blocked_tasks = [task for task in tasks if not task_is_done(task) and task_open_dependencies(task)]
+
+    return jsonify({
+        "tasks": [task.to_dict() for task in blocked_tasks],
+        "total": len(blocked_tasks),
+    })
+
+@tasks_bp.route('/tasks/<int:task_id>/dependencies', methods=['GET', 'POST'])
+@login_required
+def manage_task_dependencies(task_id):
+    user_id = session.get('user_id')
+    user = db.session.get(User, user_id)
+    task = db.session.get(Task, task_id)
+    if not task:
+        return jsonify({"error": "Task not found"}), 404
+
+    if not user_can_access_task(user, task):
+        return jsonify({"error": "Permission denied"}), 403
+
+    if request.method == 'GET':
+        return jsonify({
+            "dependencies": [dependency.to_dict() for dependency in task.dependencies],
+            "blocked_by": [dependency_task.summary_dict() for dependency_task in task_open_dependencies(task)],
+        })
+
+    if user.role != 'admin':
+        return jsonify({"error": "Tylko administrator może zarządzać zależnościami"}), 403
+
+    schema = DependencySchema()
+    try:
+        validated = schema.load(request.get_json() or {})
+    except ValidationError as err:
+        return jsonify({"error": err.messages}), 400
+
+    depends_on_task_id = validated['depends_on_task_id']
+    depends_on_task = db.session.get(Task, depends_on_task_id)
+    if not depends_on_task:
+        return jsonify({"error": "Dependency task not found"}), 404
+    if depends_on_task.id == task.id:
+        return jsonify({"error": "Zadanie nie może zależeć od samego siebie"}), 400
+    if TaskDependency.query.filter_by(task_id=task.id, depends_on_task_id=depends_on_task.id).first():
+        return jsonify({"error": "Ta zależność już istnieje"}), 409
+    if would_create_dependency_cycle(task.id, depends_on_task.id):
+        return jsonify({"error": "Ta zależność utworzyłaby cykl"}), 409
+
+    dependency = TaskDependency(task_id=task.id, depends_on_task_id=depends_on_task.id)
+    db.session.add(dependency)
+    db.session.add(ActivityLog(
+        user_id=user_id,
+        task_id=task.id,
+        action='dependency_added',
+        details={'depends_on_task_id': depends_on_task.id, 'title': depends_on_task.title},
+    ))
+    db.session.commit()
+    db.session.refresh(task)
+
+    emit_task_event("dependency_added", user, task=task)
+    return jsonify(task.to_dict()), 201
+
+@tasks_bp.route('/dependencies/<int:dep_id>', methods=['DELETE'])
+@login_required
+def delete_dependency(dep_id):
+    user_id = session.get('user_id')
+    user = db.session.get(User, user_id)
+    dependency = db.session.get(TaskDependency, dep_id)
+    if not dependency:
+        return jsonify({"error": "Not found"}), 404
+
+    task = dependency.task
+    if not task or not user_can_access_task(user, task):
+        return jsonify({"error": "Permission denied"}), 403
+    if user.role != 'admin':
+        return jsonify({"error": "Tylko administrator może zarządzać zależnościami"}), 403
+
+    depends_on_title = dependency.depends_on_task.title if dependency.depends_on_task else None
+    db.session.delete(dependency)
+    db.session.add(ActivityLog(
+        user_id=user_id,
+        task_id=task.id,
+        action='dependency_removed',
+        details={'title': depends_on_title},
+    ))
+    db.session.commit()
+    db.session.refresh(task)
+
+    emit_task_event("dependency_removed", user, task=task)
+    return jsonify(task.to_dict())
 
 @tasks_bp.route('/tasks', methods=['POST'])
 @login_required
@@ -239,6 +396,7 @@ def update_task(task_id):
         'assignee_ids': sorted(assignee.id for assignee in task.assignees),
     }
     old_status = task.status
+    was_done = task_is_done(task)
     old_assignee_ids = {assignee.id for assignee in task.assignees}
 
     data = request.get_json()
@@ -258,6 +416,10 @@ def update_task(task_id):
             if key == 'due_date':
                 value = parse_due_date(value)
             setattr(task, key, value)
+
+    if not was_done and task_is_done(task) and task_open_dependencies(task):
+        db.session.rollback()
+        return blocked_completion_response(task)
 
     db.session.commit()
 
@@ -314,6 +476,9 @@ def complete_task(task_id):
 
     if not user_can_access_task(user, task):
         return jsonify({"error": "Can only complete tasks assigned to you"}), 403
+
+    if not task.completed and task_open_dependencies(task):
+        return blocked_completion_response(task)
 
     task.completed = not task.completed
     task.status = 'done' if task.completed else 'todo'
@@ -628,6 +793,52 @@ def update_project(project_id):
     })
     return jsonify(project.to_dict(include_tasks=True))
 
+@tasks_bp.route('/projects/<int:project_id>/completion', methods=['GET'])
+@login_required
+def get_project_completion(project_id):
+    user_id = session.get('user_id')
+    user = db.session.get(User, user_id)
+    project = db.session.get(Project, project_id)
+    if not project:
+        return jsonify({"error": "Project not found"}), 404
+    if not user_can_access_project(user, project):
+        return jsonify({"error": "Permission denied"}), 403
+
+    return jsonify(project_completion_status(project))
+
+@tasks_bp.route('/projects/<int:project_id>/complete', methods=['POST'])
+@login_required
+def complete_project(project_id):
+    user_id = session.get('user_id')
+    user = db.session.get(User, user_id)
+
+    if user.role != 'admin':
+        return jsonify({"error": "Tylko administrator może kończyć projekty"}), 403
+
+    project = db.session.get(Project, project_id)
+    if not project:
+        return jsonify({"error": "Project not found"}), 404
+
+    completion = project_completion_status(project)
+    if not completion["ready"]:
+        return jsonify({
+            "error": "Nie można zakończyć projektu, który nie spełnia checklisty gotowości.",
+            "completion": completion,
+        }), 409
+
+    project.archived = True
+    db.session.commit()
+    socketio.emit("task_action", {
+        "action": "project_completed",
+        "user": user.username,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "project": project.to_dict(include_tasks=False),
+    })
+
+    data = project.to_dict(include_tasks=True)
+    data["completion"] = completion
+    return jsonify(data)
+
 @tasks_bp.route('/projects/<int:project_id>', methods=['DELETE'])
 @login_required
 def archive_project(project_id):
@@ -640,6 +851,13 @@ def archive_project(project_id):
     project = db.session.get(Project, project_id)
     if not project:
         return jsonify({"error": "Project not found"}), 404
+
+    completion = project_completion_status(project)
+    if not completion["ready"]:
+        return jsonify({
+            "error": "Nie można archiwizować projektu, który nie spełnia checklisty gotowości.",
+            "completion": completion,
+        }), 409
 
     project.archived = True
     db.session.commit()
@@ -714,11 +932,17 @@ def bulk_complete_tasks():
     if len(task_ids) > BULK_MAX_TASKS:
         return jsonify({"error": f"Maksymalna liczba zadań w operacji masowej: {BULK_MAX_TASKS}"}), 400
 
-    for task_id in task_ids:
-        task = db.session.get(Task, task_id)
-        if task:
-            task.completed = True
-            task.status = 'done'
+    tasks = [task for task_id in task_ids if (task := db.session.get(Task, task_id))]
+    blocked_tasks = [task for task in tasks if not task_is_done(task) and task_open_dependencies(task)]
+    if blocked_tasks:
+        return jsonify({
+            "error": "Nie można zakończyć zadań, które mają otwarte zależności.",
+            "blocked_tasks": [task.summary_dict() for task in blocked_tasks],
+        }), 409
+
+    for task in tasks:
+        task.completed = True
+        task.status = 'done'
 
     db.session.commit()
     emit_task_event("bulk_completed", user, task_ids=task_ids)
@@ -766,25 +990,32 @@ def bulk_update_tasks():
     if len(task_ids) > BULK_MAX_TASKS:
         return jsonify({"error": f"Maksymalna liczba zadań w operacji masowej: {BULK_MAX_TASKS}"}), 400
 
-    for task_id in task_ids:
-        task = db.session.get(Task, task_id)
-        if task:
-            for key, value in updates.items():
-                if key in ('assignee_ids', 'assignees'):
-                    update_task_assignees(task, value or [])
-                elif key == 'project_id':
-                    project, project_error = resolve_project(value, None, user)
-                    if project_error:
-                        message, status = project_error
-                        return jsonify({"error": message}), status
-                    set_task_project(task, project)
-                elif key == 'project':
-                    project, _ = resolve_project(None, value, user)
-                    set_task_project(task, project)
-                elif key in TASK_ALLOWED_FIELDS and hasattr(task, key):
-                    if key == 'due_date':
-                        value = parse_due_date(value)
-                    setattr(task, key, value)
+    tasks = [task for task_id in task_ids if (task := db.session.get(Task, task_id))]
+    marks_done = updates.get('completed') is True or updates.get('status') == 'done'
+    blocked_tasks = [task for task in tasks if marks_done and not task_is_done(task) and task_open_dependencies(task)]
+    if blocked_tasks:
+        return jsonify({
+            "error": "Nie można zakończyć zadań, które mają otwarte zależności.",
+            "blocked_tasks": [task.summary_dict() for task in blocked_tasks],
+        }), 409
+
+    for task in tasks:
+        for key, value in updates.items():
+            if key in ('assignee_ids', 'assignees'):
+                update_task_assignees(task, value or [])
+            elif key == 'project_id':
+                project, project_error = resolve_project(value, None, user)
+                if project_error:
+                    message, status = project_error
+                    return jsonify({"error": message}), status
+                set_task_project(task, project)
+            elif key == 'project':
+                project, _ = resolve_project(None, value, user)
+                set_task_project(task, project)
+            elif key in TASK_ALLOWED_FIELDS and hasattr(task, key):
+                if key == 'due_date':
+                    value = parse_due_date(value)
+                setattr(task, key, value)
 
     db.session.commit()
     emit_task_event("bulk_updated", user, task_ids=task_ids)

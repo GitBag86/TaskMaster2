@@ -11,6 +11,7 @@ import type {
   PaginationResponse,
   TodayTasksResponse,
   Project,
+  ProjectCompletionChecklist,
 } from '@/types';
 
 const API_BASE = '';
@@ -153,6 +154,7 @@ export const api = {
   tasks: {
     getAll: (page = 1, perPage = 50) =>
       request<PaginationResponse<Task>>(`/tasks?page=${page}&per_page=${perPage}`),
+    blocked: () => request<{ tasks: Task[]; total: number }>('/tasks/blocked'),
     today: () => request<TodayTasksResponse>('/tasks/today'),
     byProject: () => request<Record<string, Task[]>>('/tasks/by-project'),
     create: (data: TaskPayload) =>
@@ -169,6 +171,13 @@ export const api = {
       request<{ message: string }>(`/tasks/${id}`, { method: 'DELETE' }),
     complete: (id: number) =>
       request<Task>(`/tasks/${id}/complete`, { method: 'PUT' }),
+    addDependency: (id: number, dependsOnTaskId: number) =>
+      request<Task>(`/tasks/${id}/dependencies`, {
+        method: 'POST',
+        body: JSON.stringify({ depends_on_task_id: dependsOnTaskId }),
+      }),
+    removeDependency: (dependencyId: number) =>
+      request<Task>(`/dependencies/${dependencyId}`, { method: 'DELETE' }),
     search: (q: string) =>
       request<{ tasks: Task[] }>(`/tasks/search?q=${encodeURIComponent(q)}`),
     filter: (params: Record<string, string>) => {
@@ -204,6 +213,10 @@ export const api = {
         method: 'PUT',
         body: JSON.stringify(data),
       }),
+    completion: (id: number) =>
+      request<ProjectCompletionChecklist>(`/projects/${id}/completion`),
+    complete: (id: number) =>
+      request<Project & { completion: ProjectCompletionChecklist }>(`/projects/${id}/complete`, { method: 'POST' }),
     archive: (id: number) =>
       request<Project>(`/projects/${id}`, { method: 'DELETE' }),
   },

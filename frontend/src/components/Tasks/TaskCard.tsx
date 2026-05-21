@@ -25,6 +25,7 @@ export default function TaskCard({ task, onClick, onComplete, selectable = false
   const priority = priorityConfig[task.priority]
   const status = statusConfig[task.status] || statusConfig.todo
   const completedSubtasks = task.subtasks.filter(subtask => subtask.completed).length
+  const blocked = task.is_blocked && !task.completed
 
   return (
     <div
@@ -59,9 +60,11 @@ export default function TaskCard({ task, onClick, onComplete, selectable = false
             className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border transition-colors ${
               task.completed
                 ? 'border-green-200 bg-green-100 text-green-700 dark:border-green-800 dark:bg-green-900/30 dark:text-green-400'
+                : blocked
+                  ? 'cursor-not-allowed border-amber-200 bg-amber-50 text-amber-500 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-300'
                 : 'border-gray-200 text-gray-400 hover:border-green-300 hover:text-green-600 dark:border-gray-700 dark:text-gray-500'
             }`}
-            title={task.completed ? 'Przywróć zadanie' : 'Zakończ zadanie'}
+            title={task.completed ? 'Przywróć zadanie' : blocked ? 'Zadanie zablokowane przez zależności' : 'Zakończ zadanie'}
           >
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
@@ -72,6 +75,11 @@ export default function TaskCard({ task, onClick, onComplete, selectable = false
         <div className="mb-3 flex flex-wrap gap-1.5">
           <span className={`badge ${priority.className}`}>{priority.label}</span>
           <span className={`badge ${status.className}`}>{status.label}</span>
+          {blocked && (
+            <span className="badge bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+              Zablokowane: {task.blocked_by.length}
+            </span>
+          )}
           {task.due_date && (
             <span className={`badge ${isOverdue(task.due_date, task.completed)
               ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'

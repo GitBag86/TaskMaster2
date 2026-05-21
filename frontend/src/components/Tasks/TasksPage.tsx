@@ -53,6 +53,7 @@ export default function TasksPage() {
   const completedCount = tasks.filter(task => task.completed).length
   const pendingCount = Math.max(0, tasks.length - completedCount)
   const overdueCount = tasks.filter(task => isOverdue(task)).length
+  const blockedCount = tasks.filter(task => task.is_blocked && !task.completed).length
 
   const replaceTask = useCallback((updatedTask: Task) => {
     setTasks(prev => {
@@ -114,7 +115,7 @@ export default function TasksPage() {
       return
     }
 
-    if (lastTaskEvent.task && ['created', 'updated', 'completed', 'reopened', 'commented', 'subtask_created', 'subtask_completed', 'subtask_reopened', 'subtask_deleted'].includes(lastTaskEvent.action)) {
+    if (lastTaskEvent.task && ['created', 'updated', 'completed', 'reopened', 'commented', 'subtask_created', 'subtask_completed', 'subtask_reopened', 'subtask_deleted', 'dependency_added', 'dependency_removed'].includes(lastTaskEvent.action)) {
       replaceTask(lastTaskEvent.task)
       if (lastTaskEvent.action === 'created') {
         setTotal(prev => prev + 1)
@@ -160,6 +161,7 @@ export default function TasksPage() {
     if (filterProject && t.project !== filterProject) return false
     if (filterStatus === 'completed' && !t.completed) return false
     if (filterStatus === 'pending' && t.completed) return false
+    if (filterStatus === 'blocked' && (!t.is_blocked || t.completed)) return false
     return true
   }), [filterPriority, filterProject, filterStatus, tasks])
 
@@ -280,8 +282,9 @@ export default function TasksPage() {
     try {
       const updatedTask = await api.tasks.complete(id)
       replaceTask(updatedTask)
-    } catch {
-      addToast('Błąd zmiany stanu', 'error')
+      await fetchTasks(page)
+    } catch (err: unknown) {
+      addToast(err instanceof Error ? err.message : 'Błąd zmiany stanu', 'error')
     }
   }
 
@@ -322,7 +325,7 @@ export default function TasksPage() {
         )}
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div className="card p-3">
           <p className="text-xs text-muted-foreground">Na tej stronie</p>
           <p className="mt-1 text-xl font-semibold text-gray-900 dark:text-white">{tasks.length}</p>
@@ -334,6 +337,10 @@ export default function TasksPage() {
         <div className="card p-3">
           <p className="text-xs text-muted-foreground">Po terminie</p>
           <p className="mt-1 text-xl font-semibold text-destructive">{overdueCount}</p>
+        </div>
+        <div className="card p-3">
+          <p className="text-xs text-muted-foreground">Zablokowane</p>
+          <p className="mt-1 text-xl font-semibold text-amber-600 dark:text-amber-400">{blockedCount}</p>
         </div>
       </div>
 
@@ -364,6 +371,7 @@ export default function TasksPage() {
         <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="input sm:w-40">
           <option value="">Status</option>
           <option value="pending">Oczekujące</option>
+          <option value="blocked">Zablokowane</option>
           <option value="completed">Zakończone</option>
         </select>
         <button onClick={() => void handleSearch()} className="btn btn-secondary btn-sm">Szukaj</button>

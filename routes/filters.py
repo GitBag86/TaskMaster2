@@ -1,8 +1,8 @@
 from flask import request, jsonify, session
 from marshmallow import ValidationError
 from routes import filters_bp
-from models import db, User, Task, Tag, SavedFilter, TaskTemplate, TaskDependency, CustomField
-from schemas import TagSchema, FilterSchema, TemplateSchema, DependencySchema, CustomFieldSchema
+from models import db, User, Task, Tag, SavedFilter, TaskTemplate, CustomField
+from schemas import TagSchema, FilterSchema, TemplateSchema, CustomFieldSchema
 from routes.auth import login_required
 
 # --- Tags ---
@@ -136,41 +136,6 @@ def use_template(template_id):
     db.session.add(task)
     db.session.commit()
     return jsonify(task.to_dict()), 201
-
-# --- Dependencies ---
-
-@filters_bp.route('/tasks/<int:task_id>/dependencies', methods=['GET', 'POST'])
-@login_required
-def manage_dependencies(task_id):
-    task = db.session.get(Task, task_id)
-    if not task:
-        return jsonify({"error": "Task not found"}), 404
-
-    if request.method == 'GET':
-        deps = TaskDependency.query.filter_by(task_id=task_id).all()
-        return jsonify({'dependencies': [d.to_dict() for d in deps]})
-
-    data = request.get_json()
-    schema = DependencySchema()
-    try:
-        validated = schema.load(data)
-    except ValidationError as err:
-        return jsonify({"error": err.messages}), 400
-
-    dep = TaskDependency(task_id=task_id, depends_on_task_id=validated['depends_on_task_id'])
-    db.session.add(dep)
-    db.session.commit()
-    return jsonify(dep.to_dict()), 201
-
-@filters_bp.route('/dependencies/<int:dep_id>', methods=['DELETE'])
-@login_required
-def delete_dependency(dep_id):
-    dep = db.session.get(TaskDependency, dep_id)
-    if not dep:
-        return jsonify({"error": "Not found"}), 404
-    db.session.delete(dep)
-    db.session.commit()
-    return jsonify({"message": "Deleted"}), 200
 
 # --- Custom Fields ---
 

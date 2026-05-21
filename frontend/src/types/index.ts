@@ -24,7 +24,28 @@ export interface Task {
   status: 'todo' | 'in_progress' | 'done';
   comments: Comment[];
   subtasks: Subtask[];
+  dependencies: TaskDependency[];
+  blocked_by: TaskSummary[];
+  blocking: TaskSummary[];
+  is_blocked: boolean;
   created_at: string;
+}
+
+export interface TaskSummary {
+  id: number;
+  title: string;
+  status: 'todo' | 'in_progress' | 'done';
+  completed: boolean;
+  project: string;
+  due_date: string | null;
+}
+
+export interface TaskDependency {
+  id: number;
+  task_id: number;
+  depends_on_task_id: number;
+  depends_on_task: TaskSummary | null;
+  created_at: string | null;
 }
 
 export interface Comment {
@@ -60,6 +81,18 @@ export interface Project {
   created_by_id: number | null;
   created_at: string | null;
   tasks?: Task[];
+}
+
+export interface ProjectCompletionChecklist {
+  ready: boolean;
+  checks: {
+    all_tasks_done: boolean;
+    no_blocked_tasks: boolean;
+    no_overdue_tasks: boolean;
+  };
+  open_tasks: TaskSummary[];
+  blocked_tasks: TaskSummary[];
+  overdue_tasks: TaskSummary[];
 }
 
 export interface DashboardStats {

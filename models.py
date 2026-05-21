@@ -60,9 +60,52 @@ class Task(db.Model):
     status = db.Column(db.String(20), default='todo')
     comments = db.relationship('Comment', backref='task', lazy=True, cascade='all, delete-orphan')
     subtasks = db.relationship('Subtask', backref='task', lazy=True, cascade='all, delete-orphan')
+    dependencies = db.relationship(
+        'TaskDependency',
+        foreign_keys='TaskDependency.task_id',
+        back_populates='task',
+        lazy=True,
+        cascade='all, delete-orphan',
+    )
+    dependent_links = db.relationship(
+        'TaskDependency',
+        foreign_keys='TaskDependency.depends_on_task_id',
+        back_populates='depends_on_task',
+        lazy=True,
+        cascade='all, delete-orphan',
+    )
     created_at = db.Column(db.DateTime, default=utcnow)
 
+    def summary_dict(self):
+        return {
+            'id': self.id,
+            'title': self.title,
+            'status': self.status,
+            'completed': self.completed,
+            'project': self.project,
+            'due_date': self.due_date.isoformat() if self.due_date else None,
+        }
+
+    def open_dependency_tasks(self):
+        return [
+            dependency.depends_on_task
+            for dependency in self.dependencies
+            if dependency.depends_on_task
+            and not dependency.depends_on_task.completed
+            and dependency.depends_on_task.status != 'done'
+        ]
+
+    def open_dependent_tasks(self):
+        return [
+            dependency.task
+            for dependency in self.dependent_links
+            if dependency.task
+            and not dependency.task.completed
+            and dependency.task.status != 'done'
+        ]
+
     def to_dict(self):
+        blocked_by = [task.summary_dict() for task in self.open_dependency_tasks()]
         return {
             'id': self.id,
             'title': self.title,
@@ -77,6 +120,10 @@ class Task(db.Model):
             'status': self.status,
             'comments': [c.to_dict() for c in self.comments],
             'subtasks': [s.to_dict() for s in self.subtasks],
+            'dependencies': [dependency.to_dict() for dependency in self.dependencies],
+            'blocked_by': blocked_by,
+            'blocking': [task.summary_dict() for task in self.open_dependent_tasks()],
+            'is_blocked': len(blocked_by) > 0,
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
 
@@ -195,12 +242,16 @@ class TaskDependency(db.Model):
     task_id = db.Column(db.Integer, db.ForeignKey('task.id'), nullable=False)
     depends_on_task_id = db.Column(db.Integer, db.ForeignKey('task.id'), nullable=False)
     created_at = db.Column(db.DateTime, default=utcnow)
+    task = db.relationship('Task', foreign_keys=[task_id], back_populates='dependencies')
+    depends_on_task = db.relationship('Task', foreign_keys=[depends_on_task_id], back_populates='dependent_links')
 
     def to_dict(self):
         return {
             'id': self.id,
             'task_id': self.task_id,
-            'depends_on_task_id': self.depends_on_task_id
+            'depends_on_task_id': self.depends_on_task_id,
+            'depends_on_task': self.depends_on_task.summary_dict() if self.depends_on_task else None,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
         }
 
 class CustomField(db.Model):

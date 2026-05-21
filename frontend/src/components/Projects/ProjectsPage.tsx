@@ -12,9 +12,12 @@ type ProjectSummary = Project & {
   tasks: Task[];
   total: number;
   completed: number;
+  open: number;
+  blocked: number;
   overdue: number;
   highPriority: number;
   nextDueDate: string | null;
+  readyToComplete: boolean;
 }
 
 const taskEventActions = new Set([
@@ -29,6 +32,7 @@ const taskEventActions = new Set([
   'project_created',
   'project_updated',
   'project_archived',
+  'project_completed',
 ])
 
 export default function ProjectsPage() {
@@ -163,14 +167,14 @@ export default function ProjectsPage() {
     }
   }
 
-  const archiveProject = async (projectId: number) => {
+  const completeProject = async (projectId: number) => {
     try {
-      const archived = await api.projects.archive(projectId)
+      const completed = await api.projects.complete(projectId)
       await loadProjects()
-      setSelectedProjectId(archived.id)
-      addToast('Projekt zarchiwizowany', 'success')
+      setSelectedProjectId(completed.id)
+      addToast('Projekt zakończony', 'success')
     } catch (err: unknown) {
-      addToast(err instanceof Error ? err.message : 'Błąd archiwizacji projektu', 'error')
+      addToast(err instanceof Error ? err.message : 'Błąd kończenia projektu', 'error')
     }
   }
 
@@ -204,6 +208,12 @@ export default function ProjectsPage() {
   if (loading) {
     return <TasksPageSkeleton />
   }
+
+  const completionChecks = selectedProject ? [
+    { label: 'Wszystkie zadania zakończone', done: selectedProject.open === 0, detail: selectedProject.open === 0 ? 'Gotowe' : `${selectedProject.open} otwarte` },
+    { label: 'Brak zablokowanych zadań', done: selectedProject.blocked === 0, detail: selectedProject.blocked === 0 ? 'Gotowe' : `${selectedProject.blocked} zablokowane` },
+    { label: 'Brak zadań po terminie', done: selectedProject.overdue === 0, detail: selectedProject.overdue === 0 ? 'Gotowe' : `${selectedProject.overdue} po terminie` },
+  ] : []
 
   return (
     <div className="space-y-6 page-enter">
@@ -282,7 +292,7 @@ export default function ProjectsPage() {
                   <div>
                     <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{selectedProject.name}</h3>
                     <p className="text-sm text-muted-foreground">
-                      {selectedProject.archived ? 'Projekt zarchiwizowany' : `Zadania w projekcie: ${selectedProject.total}`}
+                      {selectedProject.archived ? 'Projekt zakończony' : `Zadania w projekcie: ${selectedProject.total}`}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -290,12 +300,43 @@ export default function ProjectsPage() {
                       Postęp: {selectedProject.total > 0 ? Math.round((selectedProject.completed / selectedProject.total) * 100) : 0}%
                     </span>
                     {user?.role === 'admin' && !selectedProject.archived && (
-                      <button onClick={() => void archiveProject(selectedProject.id)} className="btn btn-secondary btn-sm">
-                        Archiwizuj
+                      <button
+                        onClick={() => void completeProject(selectedProject.id)}
+                        disabled={!selectedProject.readyToComplete}
+                        title={!selectedProject.readyToComplete ? 'Najpierw spełnij checklistę gotowości' : undefined}
+                        className="btn btn-primary btn-sm disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        Zakończ projekt
                       </button>
                     )}
                   </div>
                 </div>
+
+                {!selectedProject.archived && (
+                  <div className="mb-4 rounded-lg border border-border p-3">
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Checklist zakończenia</h4>
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                        selectedProject.readyToComplete
+                          ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+                          : 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'
+                      }`}>
+                        {selectedProject.readyToComplete ? 'Gotowy' : 'W toku'}
+                      </span>
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-3">
+                      {completionChecks.map(check => (
+                        <div key={check.label} className="rounded-md border border-border px-2 py-2">
+                          <div className="mb-1 flex items-center gap-2">
+                            <span className={`h-2 w-2 rounded-full ${check.done ? 'bg-green-500' : 'bg-amber-500'}`} />
+                            <p className="truncate text-xs font-medium text-gray-900 dark:text-white">{check.label}</p>
+                          </div>
+                          <p className="text-xs text-muted-foreground">{check.detail}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {selectedProject.tasks.length === 0 ? (
                   <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
@@ -470,9 +511,12 @@ function buildProjectSummary(project: Project): ProjectSummary {
     tasks,
     total: tasks.length,
     completed: tasks.filter(task => task.completed).length,
+    open: openTasks.length,
+    blocked: openTasks.filter(task => task.is_blocked).length,
     overdue: tasks.filter(task => task.due_date && !task.completed && new Date(task.due_date) < today).length,
     highPriority: openTasks.filter(task => task.priority === 'high').length,
     nextDueDate,
+    readyToComplete: openTasks.length === 0,
   }
 }
 

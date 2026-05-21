@@ -53,7 +53,7 @@ export default function KanbanPage() {
   useEffect(() => {
     if (!lastTaskEvent) return
 
-    if (lastTaskEvent.task && ['created', 'updated', 'completed', 'reopened', 'commented', 'subtask_created', 'subtask_completed', 'subtask_reopened', 'subtask_deleted'].includes(lastTaskEvent.action)) {
+    if (lastTaskEvent.task && ['created', 'updated', 'completed', 'reopened', 'commented', 'subtask_created', 'subtask_completed', 'subtask_reopened', 'subtask_deleted', 'dependency_added', 'dependency_removed'].includes(lastTaskEvent.action)) {
       const updatedTask = lastTaskEvent.task
       setTasks(prev => {
         const index = prev.findIndex(task => task.id === lastTaskEvent.task_id)
@@ -91,12 +91,22 @@ export default function KanbanPage() {
       return
     }
 
+    if (status === 'done' && currentTask.is_blocked) {
+      addToast('Najpierw zakończ zadania blokujące', 'warning')
+      setActiveColumn(null)
+      setDraggedTaskId(null)
+      return
+    }
+
     try {
       const updatedTask = await api.tasks.update(taskId, { status, completed: status === 'done' })
       setTasks(prev => prev.map(task => (task.id === taskId ? updatedTask : task)))
+      if (status === 'done') {
+        void fetchTasks()
+      }
       addToast('Status zaktualizowany', 'success')
-    } catch {
-      addToast('Błąd aktualizacji', 'error')
+    } catch (err: unknown) {
+      addToast(err instanceof Error ? err.message : 'Błąd aktualizacji', 'error')
     } finally {
       setActiveColumn(null)
       setDraggedTaskId(null)
@@ -114,6 +124,7 @@ export default function KanbanPage() {
   }
 
   const completedCount = tasks.filter(task => task.completed).length
+  const blockedCount = tasks.filter(task => task.is_blocked && !task.completed).length
 
   if (loading) {
     return <KanbanSkeleton />
@@ -128,6 +139,7 @@ export default function KanbanPage() {
         </div>
         <div className="flex gap-2">
           <StatChip label="Wszystkie" value={tasks.length} />
+          <StatChip label="Zablokowane" value={blockedCount} tone="warning" />
           <StatChip label="Zakończone" value={completedCount} tone="success" />
         </div>
       </div>
@@ -186,6 +198,11 @@ export default function KanbanPage() {
                         <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${priorityClass(task.priority)}`}>
                           {priorityLabel(task.priority)}
                         </span>
+                        {task.is_blocked && !task.completed && (
+                          <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+                            Zablokowane
+                          </span>
+                        )}
                         <span className="text-[11px] text-muted-foreground">
                           {task.assignees.length > 0 ? task.assignees[0].username : 'Nieprzypisane'}
                         </span>
@@ -221,9 +238,15 @@ function isOverdue(date: string, completed: boolean) {
   return new Date(date) < new Date(new Date().toDateString())
 }
 
-function StatChip({ label, value, tone = 'default' }: { label: string; value: number; tone?: 'default' | 'success' }) {
+function StatChip({ label, value, tone = 'default' }: { label: string; value: number; tone?: 'default' | 'success' | 'warning' }) {
+  const toneClass = {
+    default: 'border-border bg-card text-foreground',
+    success: 'border-green-200 bg-green-50 text-green-700 dark:border-green-900/40 dark:bg-green-900/20 dark:text-green-300',
+    warning: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-300',
+  }[tone]
+
   return (
-    <div className={`rounded-lg border px-3 py-2 text-right ${tone === 'success' ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-900/40 dark:bg-green-900/20 dark:text-green-300' : 'border-border bg-card text-foreground'}`}>
+    <div className={`rounded-lg border px-3 py-2 text-right ${toneClass}`}>
       <p className="text-[11px] text-muted-foreground">{label}</p>
       <p className="text-sm font-semibold">{value}</p>
     </div>

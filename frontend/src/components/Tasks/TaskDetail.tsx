@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { ActivityLog, Task, Subtask } from '@/types'
+import type { ActivityLog, Task, Subtask, TaskDependency, TaskSummary } from '@/types'
 import { api } from '@/api/client'
 import { useToast } from '@/store/ToastContext'
 import { useAuth } from '@/store/AuthContext'
@@ -29,13 +29,21 @@ export default function TaskDetail({ task, onDelete, onComplete, onUpdate, onClo
   const [comments, setComments] = useState(task.comments)
   const [isEditing, setIsEditing] = useState(false)
   const [activity, setActivity] = useState<ActivityLog[]>([])
+  const [dependencies, setDependencies] = useState<TaskDependency[]>(task.dependencies)
+  const [blockedBy, setBlockedBy] = useState<TaskSummary[]>(task.blocked_by)
+  const [blocking, setBlocking] = useState<TaskSummary[]>(task.blocking)
+  const [availableTasks, setAvailableTasks] = useState<TaskSummary[]>([])
+  const [selectedDependencyId, setSelectedDependencyId] = useState('')
   const { addToast } = useToast()
   const { user } = useAuth()
 
   useEffect(() => {
     setSubtasks(task.subtasks)
     setComments(task.comments)
-  }, [task.comments, task.subtasks])
+    setDependencies(task.dependencies)
+    setBlockedBy(task.blocked_by)
+    setBlocking(task.blocking)
+  }, [task.blocked_by, task.blocking, task.comments, task.dependencies, task.subtasks])
 
   useEffect(() => {
     const loadActivity = async () => {
@@ -49,6 +57,28 @@ export default function TaskDetail({ task, onDelete, onComplete, onUpdate, onClo
 
     void loadActivity()
   }, [task.id])
+
+  useEffect(() => {
+    if (user?.role !== 'admin') return
+
+    const loadAvailableTasks = async () => {
+      try {
+        const response = await api.tasks.getAll(1, 200)
+        setAvailableTasks(response.tasks.map(taskOption => ({
+          id: taskOption.id,
+          title: taskOption.title,
+          status: taskOption.status,
+          completed: taskOption.completed,
+          project: taskOption.project,
+          due_date: taskOption.due_date,
+        })))
+      } catch {
+        setAvailableTasks([])
+      }
+    }
+
+    void loadAvailableTasks()
+  }, [user?.role])
 
   const completedSubtasks = useMemo(
     () => subtasks.filter(subtask => subtask.completed).length,
@@ -125,6 +155,38 @@ export default function TaskDetail({ task, onDelete, onComplete, onUpdate, onClo
     }
   }
 
+  const handleAddDependency = async () => {
+    const dependsOnTaskId = Number(selectedDependencyId)
+    if (!dependsOnTaskId) return
+
+    try {
+      const updatedTask = await api.tasks.addDependency(task.id, dependsOnTaskId)
+      onUpdate(updatedTask)
+      setSelectedDependencyId('')
+      void reloadActivity(task.id, setActivity)
+      addToast('Zależność dodana', 'success')
+    } catch (err: unknown) {
+      addToast(err instanceof Error ? err.message : 'Błąd dodawania zależności', 'error')
+    }
+  }
+
+  const handleRemoveDependency = async (dependencyId: number) => {
+    try {
+      const updatedTask = await api.tasks.removeDependency(dependencyId)
+      onUpdate(updatedTask)
+      void reloadActivity(task.id, setActivity)
+      addToast('Zależność usunięta', 'success')
+    } catch (err: unknown) {
+      addToast(err instanceof Error ? err.message : 'Błąd usuwania zależności', 'error')
+    }
+  }
+
+  const existingDependencyIds = new Set(dependencies.map(dependency => dependency.depends_on_task_id))
+  const dependencyOptions = availableTasks.filter(taskOption => (
+    taskOption.id !== task.id && !existingDependencyIds.has(taskOption.id)
+  ))
+  const isBlocked = task.is_blocked && !task.completed
+
   if (isEditing) {
     return (
       <TaskForm
@@ -152,6 +214,7 @@ export default function TaskDetail({ task, onDelete, onComplete, onUpdate, onClo
         <div className="mb-3 flex flex-wrap gap-2">
           <Badge>{priorityLabel(task.priority)}</Badge>
           <Badge>{statusLabel(task.status)}</Badge>
+          {isBlocked && <Badge tone="warning">Zablokowane przez {blockedBy.length}</Badge>}
           {task.due_date && <Badge>{task.due_date}</Badge>}
         </div>
 
@@ -168,6 +231,78 @@ export default function TaskDetail({ task, onDelete, onComplete, onUpdate, onClo
             <p className="whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300">{task.notes}</p>
           ) : (
             <p className="text-sm text-muted-foreground">Brak notatek dla tego zadania.</p>
+          )}
+        </section>
+
+        <section className="rounded-lg border border-border p-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Zależności</h4>
+              {isBlocked && (
+                <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                  Zadanie można zakończyć dopiero po zamknięciu blokujących zadań.
+                </p>
+              )}
+            </div>
+            <span className="text-xs text-muted-foreground">{dependencies.length}</span>
+          </div>
+
+          <div className="space-y-2">
+            {dependencies.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Brak zależności.</p>
+            ) : (
+              dependencies.map(dependency => (
+                <div key={dependency.id} className="flex items-center justify-between gap-3 rounded-lg border border-border p-2.5">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-gray-900 dark:text-white">
+                      {dependency.depends_on_task?.title ?? `Zadanie #${dependency.depends_on_task_id}`}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {dependency.depends_on_task ? summaryMeta(dependency.depends_on_task) : 'Szczegóły niedostępne'}
+                    </p>
+                  </div>
+                  {user?.role === 'admin' && (
+                    <button onClick={() => void handleRemoveDependency(dependency.id)} className="text-xs font-medium text-destructive hover:underline">
+                      Usuń
+                    </button>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+
+          {user?.role === 'admin' && (
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+              <select
+                value={selectedDependencyId}
+                onChange={event => setSelectedDependencyId(event.target.value)}
+                className="input flex-1"
+              >
+                <option value="">Dodaj blokujące zadanie</option>
+                {dependencyOptions.map(taskOption => (
+                  <option key={taskOption.id} value={taskOption.id}>
+                    {taskOption.title}
+                  </option>
+                ))}
+              </select>
+              <button onClick={() => void handleAddDependency()} disabled={!selectedDependencyId} className="btn btn-secondary btn-sm">
+                Dodaj
+              </button>
+            </div>
+          )}
+
+          {blocking.length > 0 && (
+            <div className="mt-4 border-t border-border pt-3">
+              <h5 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Blokuje</h5>
+              <div className="space-y-1.5">
+                {blocking.map(blockedTask => (
+                  <div key={blockedTask.id} className="flex items-center justify-between gap-3 text-sm">
+                    <span className="truncate text-gray-700 dark:text-gray-300">{blockedTask.title}</span>
+                    <span className="text-xs text-muted-foreground">{statusText(blockedTask.status)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
         </section>
 
@@ -274,7 +409,12 @@ export default function TaskDetail({ task, onDelete, onComplete, onUpdate, onClo
 
       <div className="border-t border-border bg-card p-4">
         <div className="flex justify-between gap-3">
-          <button onClick={() => onComplete(task.id)} className={`btn btn-sm ${task.completed ? 'btn-secondary' : 'btn-primary'}`}>
+          <button
+            onClick={() => onComplete(task.id)}
+            disabled={isBlocked}
+            title={isBlocked ? 'Najpierw zakończ blokujące zadania' : undefined}
+            className={`btn btn-sm ${task.completed ? 'btn-secondary' : 'btn-primary'} disabled:cursor-not-allowed disabled:opacity-60`}
+          >
             {task.completed ? 'Przywróć zadanie' : 'Oznacz jako zakończone'}
           </button>
           {user?.role === 'admin' && (
@@ -293,15 +433,28 @@ function priorityLabel(priority: string) {
 }
 
 function statusLabel(status: string) {
-  return ({ todo: 'Status: do zrobienia', in_progress: 'Status: w toku', done: 'Status: zakończone' }[status] || status)
+  return `Status: ${statusText(status)}`
+}
+
+function statusText(status: string) {
+  return ({ todo: 'do zrobienia', in_progress: 'w toku', done: 'zakończone' }[status] || status)
+}
+
+function summaryMeta(task: TaskSummary) {
+  const status = statusText(task.status)
+  const dueDate = task.due_date ? `, termin: ${new Date(task.due_date).toLocaleDateString('pl-PL')}` : ''
+  return `${task.project} - ${status}${dueDate}`
 }
 
 function formatDateTime(value: string) {
   return new Date(value).toLocaleString('pl-PL')
 }
 
-function Badge({ children }: { children: React.ReactNode }) {
-  return <span className="badge bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">{children}</span>
+function Badge({ children, tone = 'default' }: { children: React.ReactNode; tone?: 'default' | 'warning' }) {
+  const className = tone === 'warning'
+    ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'
+    : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+  return <span className={`badge ${className}`}>{children}</span>
 }
 
 async function reloadActivity(taskId: number, setActivity: React.Dispatch<React.SetStateAction<ActivityLog[]>>) {
@@ -323,6 +476,8 @@ function activityLabel(action: string) {
     subtask_created: 'Dodano podzadanie',
     subtask_toggle: 'Zmieniono podzadanie',
     subtask_deleted: 'Usunięto podzadanie',
+    dependency_added: 'Dodano zależność',
+    dependency_removed: 'Usunięto zależność',
   }[action] || action)
 }
 

@@ -1,7 +1,7 @@
 import sqlite3
 from datetime import date, timedelta
 
-from models import db, User, Task, Project, Tag
+from models import db, User, Task, Project, Tag, TaskDependency
 
 def test_health_check(client):
     response = client.get('/health')
@@ -109,6 +109,51 @@ def test_admin_can_create_empty_project(auth_client, app):
 
     with app.app_context():
         assert Project.query.filter_by(name="Launch").first() is not None
+
+def test_project_archive_requires_all_tasks_completed(auth_client):
+    project = auth_client.post('/projects', json={"name": "Close gated project"}).get_json()
+    task = auth_client.post('/tasks', json={
+        "title": "Still open",
+        "project_id": project["id"],
+    }).get_json()
+
+    blocked_response = auth_client.delete(f'/projects/{project["id"]}')
+
+    assert blocked_response.status_code == 409
+    blocked_payload = blocked_response.get_json()
+    assert blocked_payload["completion"]["open_tasks"][0]["id"] == task["id"]
+
+    auth_client.put(f'/tasks/{task["id"]}/complete')
+    archived_response = auth_client.delete(f'/projects/{project["id"]}')
+
+    assert archived_response.status_code == 200
+    assert archived_response.get_json()["archived"] is True
+
+def test_project_complete_endpoint_returns_readiness_checklist(auth_client):
+    project = auth_client.post('/projects', json={"name": "Completable project"}).get_json()
+    task = auth_client.post('/tasks', json={
+        "title": "Finish before project",
+        "project_id": project["id"],
+    }).get_json()
+
+    checklist_response = auth_client.get(f'/projects/{project["id"]}/completion')
+    assert checklist_response.status_code == 200
+    checklist = checklist_response.get_json()
+    assert checklist["ready"] is False
+    assert checklist["checks"]["all_tasks_done"] is False
+    assert checklist["open_tasks"][0]["id"] == task["id"]
+
+    blocked_response = auth_client.post(f'/projects/{project["id"]}/complete')
+    assert blocked_response.status_code == 409
+    assert blocked_response.get_json()["completion"]["ready"] is False
+
+    auth_client.put(f'/tasks/{task["id"]}/complete')
+    completed_response = auth_client.post(f'/projects/{project["id"]}/complete')
+
+    assert completed_response.status_code == 200
+    data = completed_response.get_json()
+    assert data["archived"] is True
+    assert data["completion"]["ready"] is True
 
 def test_create_task_can_attach_existing_project(auth_client):
     project = auth_client.post('/projects', json={"name": "Existing Project"}).get_json()
@@ -233,6 +278,80 @@ def test_today_tasks_regular_user_only_sees_assigned_tasks(client, app):
 
     assert response.status_code == 200
     assert [task["title"] for task in response.get_json()["today"]] == ["Assigned today"]
+
+def test_task_dependency_blocks_completion_until_dependency_is_done(auth_client):
+    blocked = auth_client.post('/tasks', json={"title": "Blocked task"}).get_json()
+    blocker = auth_client.post('/tasks', json={"title": "Blocking task"}).get_json()
+
+    dependency_response = auth_client.post(
+        f'/tasks/{blocked["id"]}/dependencies',
+        json={"depends_on_task_id": blocker["id"]},
+    )
+    assert dependency_response.status_code == 201
+    dependency_data = dependency_response.get_json()
+    assert dependency_data["is_blocked"] is True
+    assert dependency_data["blocked_by"][0]["title"] == "Blocking task"
+
+    blocked_completion = auth_client.put(f'/tasks/{blocked["id"]}/complete')
+    assert blocked_completion.status_code == 409
+    assert blocked_completion.get_json()["blocked_by"][0]["id"] == blocker["id"]
+
+    auth_client.put(f'/tasks/{blocker["id"]}/complete')
+    completed_response = auth_client.put(f'/tasks/{blocked["id"]}/complete')
+
+    assert completed_response.status_code == 200
+    assert completed_response.get_json()["completed"] is True
+
+def test_blocked_tasks_endpoint_returns_visible_blocked_tasks(auth_client):
+    blocked = auth_client.post('/tasks', json={"title": "Blocked overview"}).get_json()
+    blocker = auth_client.post('/tasks', json={"title": "Open prerequisite"}).get_json()
+    clear = auth_client.post('/tasks', json={"title": "Clear task"}).get_json()
+    auth_client.post(
+        f'/tasks/{blocked["id"]}/dependencies',
+        json={"depends_on_task_id": blocker["id"]},
+    )
+
+    response = auth_client.get('/tasks/blocked')
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["total"] == 1
+    assert [task["id"] for task in data["tasks"]] == [blocked["id"]]
+    assert clear["id"] not in [task["id"] for task in data["tasks"]]
+
+def test_dependency_cycle_is_rejected(auth_client):
+    first = auth_client.post('/tasks', json={"title": "First"}).get_json()
+    second = auth_client.post('/tasks', json={"title": "Second"}).get_json()
+    auth_client.post(
+        f'/tasks/{first["id"]}/dependencies',
+        json={"depends_on_task_id": second["id"]},
+    )
+
+    response = auth_client.post(
+        f'/tasks/{second["id"]}/dependencies',
+        json={"depends_on_task_id": first["id"]},
+    )
+
+    assert response.status_code == 409
+    assert "cykl" in response.get_json()["error"]
+
+def test_dependency_delete_updates_task(auth_client, app):
+    blocked = auth_client.post('/tasks', json={"title": "Remove dependency"}).get_json()
+    blocker = auth_client.post('/tasks', json={"title": "No longer blocking"}).get_json()
+    auth_client.post(
+        f'/tasks/{blocked["id"]}/dependencies',
+        json={"depends_on_task_id": blocker["id"]},
+    )
+
+    with app.app_context():
+        dependency_id = TaskDependency.query.filter_by(task_id=blocked["id"]).first().id
+
+    response = auth_client.delete(f'/dependencies/{dependency_id}')
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["dependencies"] == []
+    assert data["is_blocked"] is False
 
 def test_create_task_with_assignees(auth_client, app):
     with app.app_context():
