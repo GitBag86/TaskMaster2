@@ -22,9 +22,9 @@ export default function AuthPage() {
     try {
       if (isSignup) {
         await signup({
-          username,
+          username: username.trim(),
           password,
-          email,
+          email: email.trim(),
           accept_terms: acceptTerms,
           accept_privacy: acceptPrivacy,
           accept_marketing: acceptMarketing,
@@ -67,6 +67,7 @@ export default function AuthPage() {
                 onChange={e => setUsername(e.target.value)}
                 className="input"
                 required
+                minLength={3}
                 autoFocus
               />
             </div>
@@ -81,6 +82,7 @@ export default function AuthPage() {
                 onChange={e => setPassword(e.target.value)}
                 className="input"
                 required
+                minLength={isSignup ? 6 : 1}
               />
             </div>
 

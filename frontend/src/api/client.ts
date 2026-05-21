@@ -27,6 +27,50 @@ type TaskUpdatePayload = Partial<TaskPayload> & {
   status?: 'todo' | 'in_progress' | 'done';
 };
 
+type UserCreatePayload = {
+  username: string;
+  password: string;
+  email: string;
+  role: 'admin' | 'user';
+};
+
+const ERROR_FIELD_LABELS: Record<string, string> = {
+  username: 'Nazwa użytkownika',
+  password: 'Hasło',
+  email: 'E-mail',
+  accept_terms: 'Regulamin',
+  accept_privacy: 'Polityka prywatności',
+  accept_marketing: 'Zgoda marketingowa',
+  role: 'Rola',
+  _schema: 'Formularz',
+};
+
+function formatErrorValue(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) {
+    return value.map(formatErrorValue).filter(Boolean).join(', ');
+  }
+  if (value && typeof value === 'object') {
+    return Object.entries(value)
+      .map(([field, fieldError]) => {
+        const label = ERROR_FIELD_LABELS[field] ?? field;
+        const message = formatErrorValue(fieldError);
+        return message ? `${label}: ${message}` : label;
+      })
+      .filter(Boolean)
+      .join('; ');
+  }
+  return '';
+}
+
+function getErrorMessage(errorBody: unknown, status: number): string {
+  if (errorBody && typeof errorBody === 'object') {
+    const body = errorBody as { error?: unknown; message?: unknown };
+    return formatErrorValue(body.error ?? body.message) || `HTTP ${status}`;
+  }
+  return formatErrorValue(errorBody) || `HTTP ${status}`;
+}
+
 async function request<T>(
   url: string,
   options: RequestInit = {}
@@ -42,7 +86,7 @@ async function request<T>(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Request failed' }));
-    throw new Error(error.error || `HTTP ${response.status}`);
+    throw new Error(getErrorMessage(error, response.status));
   }
 
   return response.json();
@@ -74,11 +118,18 @@ export const api = {
 
   users: {
     getAll: () => request<{ users: User[] }>('/users'),
+    create: (data: UserCreatePayload) =>
+      request<{ message: string; user: User }>('/users', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
     updateRole: (userId: number, role: 'admin' | 'user') =>
       request<{ message: string }>(`/users/${userId}/role`, {
         method: 'PUT',
         body: JSON.stringify({ role }),
       }),
+    delete: (userId: number) =>
+      request<{ message: string }>(`/users/${userId}`, { method: 'DELETE' }),
   },
 
   tasks: {

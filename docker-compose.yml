@@ -4,15 +4,12 @@ services:
     ports:
       - "5000:5000"
     volumes:
-      - db-data:/app/instance
+      - ./instance:/app/instance
     env_file:
       - .env
     restart: unless-stopped
     networks:
       - app-network
-
-volumes:
-  db-data:
 
 networks:
   app-network:

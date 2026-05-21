@@ -4,11 +4,12 @@ import os
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
+from sqlalchemy.exc import SQLAlchemyError
 
 from config import Config
 from extensions import mail, migrate, scheduler, socketio
 from jobs.deadline_notifier import check_deadlines
-from models import db
+from models import User, db
 
 load_dotenv()
 
@@ -121,6 +122,29 @@ def _register_scheduler(app):
     scheduler.start()
 
 
+def _ensure_default_admin(app):
+    username = app.config.get("DEFAULT_ADMIN_USERNAME")
+    password = app.config.get("DEFAULT_ADMIN_PASSWORD")
+    email = app.config.get("DEFAULT_ADMIN_EMAIL")
+    if not username or not password or not email:
+        return
+
+    try:
+        user = User.query.filter_by(username=username).first()
+        if user is None:
+            user = User(username=username, email=email, role="admin")
+            db.session.add(user)
+        else:
+            user.role = "admin"
+            user.email = user.email or email
+        user.set_password(password)
+        db.session.commit()
+        logger.info("Default admin account is ready: %s", username)
+    except SQLAlchemyError:
+        db.session.rollback()
+        logger.info("Default admin bootstrap skipped until database schema is ready")
+
+
 def create_app(config_object=Config):
     app = Flask(__name__, static_folder="frontend/dist", static_url_path="/")
     app.config.from_object(config_object)
@@ -139,6 +163,7 @@ def create_app(config_object=Config):
     with app.app_context():
         if app.config.get("ENABLE_SCHEDULER", True):
             _register_scheduler(app)
+        _ensure_default_admin(app)
 
     return app
 

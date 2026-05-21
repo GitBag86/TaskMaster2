@@ -14,6 +14,9 @@ class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-key-change-me")
     CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "http://localhost:5000").split(",")
     ENABLE_SCHEDULER = os.environ.get("ENABLE_SCHEDULER", "true").lower() == "true"
+    DEFAULT_ADMIN_USERNAME = "admin"
+    DEFAULT_ADMIN_PASSWORD = "dakos1admin2"
+    DEFAULT_ADMIN_EMAIL = "admin@taskmaster.local"
 
     # Email configuration (optional)
     MAIL_SERVER = os.environ.get("MAIL_SERVER")

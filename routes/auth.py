@@ -4,8 +4,11 @@ from routes import auth_bp
 from models import db, User
 from schemas import LoginSchema, SignupSchema
 import time
+import logging
 from collections import defaultdict
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 
 rate_limit_store = defaultdict(list)
 RATE_LIMIT_MAX = 60
@@ -67,8 +70,13 @@ def signup():
         consented_at=datetime.now(timezone.utc),
     )
     user.set_password(password)
-    db.session.add(user)
-    db.session.commit()
+    try:
+        db.session.add(user)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        logger.exception("Signup failed while saving user '%s'", username)
+        return jsonify({"error": "Nie udało się zapisać użytkownika w bazie danych"}), 500
 
     session['user_id'] = user.id
     return jsonify({"message": "Rejestracja pomyślna", "user": user.to_dict()}), 201

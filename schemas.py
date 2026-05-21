@@ -41,12 +41,48 @@ class LoginSchema(Schema):
     password = fields.Str(required=True, validate=validate.Length(min=1))
 
 class SignupSchema(Schema):
-    username = fields.Str(required=True, validate=validate.Length(min=3, max=100))
-    password = fields.Str(required=True, validate=validate.Length(min=6))
-    email = fields.Email(required=True) # Now mandatory
-    accept_terms = fields.Bool(required=True, validate=validate.Equal(True))
-    accept_privacy = fields.Bool(required=True, validate=validate.Equal(True))
+    username = fields.Str(
+        required=True,
+        validate=validate.Length(min=3, max=100, error="Nazwa użytkownika musi mieć od 3 do 100 znaków."),
+        error_messages={"required": "Podaj nazwę użytkownika."},
+    )
+    password = fields.Str(
+        required=True,
+        validate=validate.Length(min=6, error="Hasło musi mieć co najmniej 6 znaków."),
+        error_messages={"required": "Podaj hasło."},
+    )
+    email = fields.Email(
+        required=True,
+        error_messages={"required": "Podaj adres e-mail.", "invalid": "Podaj prawidłowy adres e-mail."},
+    ) # Now mandatory
+    accept_terms = fields.Bool(
+        required=True,
+        validate=validate.Equal(True, error="Musisz zaakceptować regulamin."),
+        error_messages={"required": "Musisz zaakceptować regulamin."},
+    )
+    accept_privacy = fields.Bool(
+        required=True,
+        validate=validate.Equal(True, error="Musisz zaakceptować politykę prywatności."),
+        error_messages={"required": "Musisz zaakceptować politykę prywatności."},
+    )
     accept_marketing = fields.Bool(load_default=False)
+
+class AdminUserCreateSchema(Schema):
+    username = fields.Str(
+        required=True,
+        validate=validate.Length(min=3, max=100, error="Nazwa użytkownika musi mieć od 3 do 100 znaków."),
+        error_messages={"required": "Podaj nazwę użytkownika."},
+    )
+    password = fields.Str(
+        required=True,
+        validate=validate.Length(min=6, error="Hasło musi mieć co najmniej 6 znaków."),
+        error_messages={"required": "Podaj hasło."},
+    )
+    email = fields.Email(
+        required=True,
+        error_messages={"required": "Podaj adres e-mail.", "invalid": "Podaj prawidłowy adres e-mail."},
+    )
+    role = fields.Str(load_default="user", validate=validate.OneOf(["user", "admin"]))
 
 class TagSchema(Schema):
     id = fields.Int(dump_only=True)

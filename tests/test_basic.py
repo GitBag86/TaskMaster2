@@ -36,6 +36,20 @@ def test_signup_requires_terms_and_privacy(client):
     assert "accept_terms" in error_payload
     assert "accept_privacy" in error_payload
 
+def test_default_admin_bootstrap(app):
+    from app import _ensure_default_admin
+    from models import db
+
+    with app.app_context():
+        _ensure_default_admin(app)
+        admin = User.query.filter_by(username="admin").first()
+
+        assert admin is not None
+        assert admin.role == "admin"
+        assert admin.email == "admin@taskmaster.local"
+        assert admin.password != "dakos1admin2"
+        assert admin.check_password("dakos1admin2")
+
 def test_login(client, app):
     with app.app_context():
         user = User(username="testlogin", email="testlogin@example.com")
@@ -151,6 +165,61 @@ def test_regular_user_only_sees_assigned_tasks(client, app):
 def test_regular_user_cannot_create_task(user_client):
     response = user_client.post('/tasks', json={"title": "Nope"})
     assert response.status_code == 403
+
+def test_admin_can_create_user(auth_client, app):
+    response = auth_client.post('/users', json={
+        "username": "created_by_admin",
+        "password": "password123",
+        "email": "created_by_admin@example.com",
+        "role": "admin",
+    })
+
+    assert response.status_code == 201
+    data = response.get_json()
+    assert data["user"]["username"] == "created_by_admin"
+    assert data["user"]["role"] == "admin"
+
+    with app.app_context():
+        created = User.query.filter_by(username="created_by_admin").first()
+        assert created is not None
+        assert created.check_password("password123")
+
+def test_regular_user_cannot_manage_users(user_client):
+    create_response = user_client.post('/users', json={
+        "username": "blocked",
+        "password": "password123",
+        "email": "blocked@example.com",
+    })
+    delete_response = user_client.delete('/users/1')
+
+    assert create_response.status_code == 403
+    assert delete_response.status_code == 403
+
+def test_admin_can_delete_user(auth_client, app):
+    with app.app_context():
+        from models import db
+        target = User(username="delete_me", email="delete_me@example.com", role="user")
+        target.set_password("password")
+        db.session.add(target)
+        db.session.commit()
+        target_id = target.id
+
+    response = auth_client.delete(f'/users/{target_id}')
+
+    assert response.status_code == 200
+    with app.app_context():
+        assert db.session.get(User, target_id) is None
+
+def test_admin_cannot_delete_self_or_last_admin(auth_client, app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").first()
+        admin_id = admin.id
+
+    delete_response = auth_client.delete(f'/users/{admin_id}')
+    role_response = auth_client.put(f'/users/{admin_id}/role', json={"role": "user"})
+
+    assert delete_response.status_code == 400
+    assert role_response.status_code == 400
 
 def test_regular_user_cannot_update_or_delete_task(client, app):
     with app.app_context():
