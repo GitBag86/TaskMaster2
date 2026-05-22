@@ -2,6 +2,7 @@ import sqlite3
 from datetime import date, timedelta
 
 from models import db, User, Task, Project, Tag, TaskDependency, ActivityLog, Notification
+from utils.email_sender import get_task_assignment_body, send_email
 
 def test_health_check(client):
     response = client.get('/health')
@@ -17,6 +18,29 @@ def test_readiness_check_reports_database_and_socketio(client):
     assert data["status"] == "ready"
     assert data["checks"] == {"database": True, "socketio": True}
     assert "timestamp" in data
+
+def test_email_templates_include_html_text_and_escape_content(app, monkeypatch):
+    body = get_task_assignment_body("Oferta <script>alert(1)</script>", "anna", "http://localhost/tasks/1")
+
+    assert "text" in body
+    assert "html" in body
+    assert "Masz nowe zadanie" in body["html"]
+    assert "Oferta <script>alert(1)</script>" in body["text"]
+    assert "&lt;script&gt;" in body["html"]
+    assert "<script>" not in body["html"]
+
+    sent = []
+
+    def fake_send(message):
+        sent.append(message)
+
+    monkeypatch.setattr("utils.email_sender.mail.send", fake_send)
+
+    with app.app_context():
+        assert send_email("anna@example.com", "Test", body) is True
+
+    assert sent[0].body == body["text"]
+    assert sent[0].html == body["html"]
 
 def test_signup(client):
     response = client.post('/auth/signup', json={

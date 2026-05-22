@@ -13,6 +13,7 @@ TaskMaster2 to pelna aplikacja do zarzadzania zadaniami i projektami zespolowymi
 - [Projekty i Szablony](#projekty-i-szablony)
 - [Szybkie Dodawanie](#szybkie-dodawanie)
 - [Komentarze i Wzmianki](#komentarze-i-wzmianki)
+- [Powiadomienia E-mail](#powiadomienia-e-mail)
 - [Raporty i Dashboard](#raporty-i-dashboard)
 - [API](#api)
 - [Development](#development)
@@ -45,6 +46,7 @@ TaskMaster2 zawiera:
 - panel blokad,
 - raport tygodniowy,
 - aktywnosc i historia zmian,
+- powiadomienia e-mail z szablonami HTML,
 - szybkie dodawanie zadan z Command Palette,
 - ciemny motyw,
 - PWA assets,
@@ -427,6 +429,21 @@ Jesli istnieje uzytkownik `anna`, aplikacja:
 - utworzy aktywnosc `mentioned`,
 - wysle event Socket.IO,
 - pokaze toast wspomnianemu uzytkownikowi.
+
+## Powiadomienia E-mail
+
+Aplikacja wysyla powiadomienia e-mail jako HTML z tekstowym fallbackiem. Wszystkie szablony sa generowane w `utils/email_sender.py` i maja wspolny styl TaskMaster: naglowek, kontekst zdarzenia, sekcje szczegolow i przycisk przejscia do zadania albo projektu.
+
+Obslugiwane przypadki:
+
+- przypisanie uzytkownika do zadania,
+- zmiana statusu zadania,
+- zakonczenie albo przywrocenie zadania,
+- aktywnosc w projekcie, np. nowe zadanie, komentarz, podzadanie albo zmiana ustawien,
+- zakonczenie lub archiwizacja projektu,
+- ostrzezenie o zblizajacym sie terminie zadania.
+
+Szablony automatycznie escapuja dane uzytkownika, np. tytuly zadan, zanim trafia do HTML-a maila.
 
 ## Raporty i Dashboard
 
