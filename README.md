@@ -27,10 +27,11 @@ TaskMaster2 zawiera:
 - rejestracje i logowanie uzytkownikow,
 - role `admin` i `user`,
 - tworzenie i edycje zadan,
-- przypisywanie wielu uzytkownikow do zadania,
+- przypisywanie wielu uzytkownikow do projektu,
+- przypisywanie jednego wykonawcy do zadania,
 - priorytety: niski, sredni, wysoki,
 - statusy: do zrobienia, w toku, zakonczone,
-- projekty z opisem, kolorem, postepem i lista zadan,
+- projekty z opisem, kolorem, czlonkami, postepem i lista zadan,
 - szablony projektow z gotowymi zadaniami i zaleznosciami,
 - podzadania,
 - komentarze,
@@ -59,8 +60,9 @@ Admin moze:
 - tworzyc zadania,
 - edytowac zadania,
 - usuwac zadania,
-- przypisywac zadania uzytkownikom,
+- przypisywac jednego wykonawce do zadania,
 - tworzyc projekty,
+- przypisywac czlonkow projektu,
 - konczyc projekty,
 - tworzyc projekty z szablonow,
 - zarzadzac uzytkownikami,
@@ -75,7 +77,7 @@ Zwykly uzytkownik moze:
 - konczyc swoje zadania, jesli nie sa zablokowane,
 - dodawac komentarze,
 - dodawac i zmieniac podzadania w przypisanych zadaniach,
-- widziec projekty, w ktorych ma przypisane zadania,
+- widziec projekty, w ktorych jest czlonkiem albo ma przypisane zadania,
 - korzystac z widokow Dzis, Kanban, Dashboard, Aktywnosc w zakresie swoich zadan.
 
 ## Jak Uruchomic
@@ -148,18 +150,20 @@ http://localhost:5000
 3. Pierwszy uzytkownik moze zostac administratorem, zaleznie od konfiguracji i bootstrapu aplikacji.
 4. Admin moze dodac kolejnych uzytkownikow w widoku `Uzytkownicy`.
 5. Utworz projekt albo skorzystaj z szablonu projektu.
-6. Dodaj zadania i przypisz je uzytkownikom.
+6. Przypisz czlonkow projektu.
+7. Dodaj zadania i przypisz po jednym wykonawcy do kazdego zadania.
 
 ### Typowy Przeplyw Pracy
 
 1. Admin tworzy projekt.
-2. Admin tworzy zadania albo generuje je z szablonu.
-3. Admin przypisuje zadania uzytkownikom.
-4. Uzytkownicy pracuja w widoku `Dzis`, `Zadania` albo `Kanban`.
-5. Komentarze i wzmianki pomagaja koordynowac prace.
-6. Zaleznosci blokuja zadania, ktorych nie mozna jeszcze domknac.
-7. Dashboard pokazuje postep, blokady i raport tygodniowy.
-8. Gdy wszystkie warunki sa spelnione, admin konczy projekt.
+2. Admin przypisuje kilku czlonkow projektu.
+3. Admin tworzy zadania albo generuje je z szablonu.
+4. Admin przypisuje do kazdego zadania maksymalnie jednego wykonawce.
+5. Uzytkownicy pracuja w widoku `Dzis`, `Zadania` albo `Kanban`.
+6. Komentarze i wzmianki pomagaja koordynowac prace.
+7. Zaleznosci i otwarte podzadania blokuja zadania, ktorych nie mozna jeszcze domknac.
+8. Dashboard pokazuje postep, blokady i raport tygodniowy.
+9. Gdy wszystkie warunki sa spelnione, admin konczy projekt.
 
 ## Widoki Aplikacji
 
@@ -179,6 +183,7 @@ Funkcje:
 - zaznaczanie zadan,
 - operacje masowe dla admina,
 - tworzenie zadan,
+- przypisywanie jednego wykonawcy,
 - otwieranie szczegolow zadania.
 
 W szczegolach zadania mozna:
@@ -224,15 +229,25 @@ Akcje:
 
 Widok `Projekty` pokazuje projekty oraz zadania przypisane do wybranego projektu.
 
+Widocznosc projektow:
+
+- admin widzi wszystkie projekty i wszystkie zadania,
+- zwykly uzytkownik widzi projekt, jesli jest czlonkiem projektu albo ma w nim przypisane zadanie,
+- zwykly uzytkownik w projekcie widzi tylko zadania przypisane do siebie.
+
 Funkcje:
 
 - tworzenie pustego projektu,
+- przypisywanie wielu czlonkow projektu,
 - przeglad projektow,
 - postep projektu,
 - lista zadan projektu,
+- dodawanie zadania bezposrednio do projektu,
 - przypisywanie istniejacego zadania do projektu,
 - tworzenie projektu z szablonu,
 - zakonczanie projektu.
+
+Przy dodawaniu zadania z poziomu projektu wykonawce wybiera sie z czlonkow tego projektu. Zadanie moze miec tylko jednego wykonawce; mozna tez zostawic je bez przypisania.
 
 Projektu nie da sie zakonczyc, dopoki nie spelni checklisty:
 
@@ -306,10 +321,12 @@ Aplikacja pilnuje tego po stronie backendu:
 
 - nie da sie zakonczyc zablokowanego zadania,
 - nie da sie masowo zakonczyc zablokowanych zadan,
-- nie da sie ustawic statusu `done`, jesli zadanie ma otwarte zaleznosci,
+- nie da sie ustawic statusu `done`, jesli zadanie ma otwarte zaleznosci albo otwarte podzadania,
 - nie da sie utworzyc cyklu zaleznosci,
 - nie da sie dodac zaleznosci zadania od samego siebie,
 - nie da sie dodac duplikatu zaleznosci.
+
+Kazde zadanie moze miec najwyzej jednego przypisanego wykonawce. Backend odrzuca probe zapisania kilku wykonawcow dla jednego zadania.
 
 Panel `Blokady` na dashboardzie pokazuje:
 
@@ -325,7 +342,16 @@ Admin moze utworzyc projekt recznie, podajac:
 
 - nazwe,
 - opis,
-- kolor.
+- kolor,
+- czlonkow projektu.
+
+### Czlonkowie Projektu
+
+Projekt moze miec wielu czlonkow. Czlonkostwo daje zwyklemu uzytkownikowi dostep do samego projektu, nawet jesli nie ma jeszcze przypisanego zadania w tym projekcie.
+
+Zadania w projekcie sa nadal widoczne dla zwyklych uzytkownikow tylko wtedy, gdy sa do nich przypisani. To pozwala pokazac kontekst projektu bez ujawniania calej listy zadan kazdemu czlonkowi.
+
+Admin moze zmieniac czlonkow projektu w widoku `Projekty`, w panelu bocznym `Czlonkowie projektu`.
 
 ### Tworzenie z Szablonu
 
@@ -376,7 +402,7 @@ Przyklad:
 Parser rozpoznaje:
 
 - `#Projekt` jako projekt,
-- `@username` jako przypisanego uzytkownika,
+- `@username` jako jednego przypisanego wykonawce,
 - `dzis`, `dziś`, `today` jako dzisiejszy termin,
 - `jutro`, `tomorrow` jako termin na jutro,
 - date `YYYY-MM-DD`,
@@ -384,6 +410,8 @@ Parser rozpoznaje:
 - polskie aliasy priorytetow, np. `!wysoki`, `!sredni`, `!średni`, `!niski`.
 
 Wszystko, co nie jest tokenem sterujacym, trafia do tytulu zadania.
+
+Jesli w szybkim dodawaniu pojawi sie kilka wzmianek `@username`, zadanie zostanie przypisane tylko do pierwszego rozpoznanego uzytkownika.
 
 ## Komentarze i Wzmianki
 
@@ -458,6 +486,18 @@ Najwazniejsze endpointy:
 - `DELETE /tasks/bulk/delete` - masowe usuniecie,
 - `PUT /tasks/bulk/update` - masowa aktualizacja.
 
+Payload zadania moze zawierac `assignee_ids`, ale lista moze miec maksymalnie jeden identyfikator:
+
+```json
+{
+  "title": "Przygotowac oferte",
+  "project_id": 1,
+  "assignee_ids": [3]
+}
+```
+
+Pusta lista oznacza zadanie bez przypisanego wykonawcy.
+
 ### Dependencies
 
 - `GET /tasks/<id>/dependencies` - zaleznosci zadania,
@@ -480,6 +520,17 @@ Najwazniejsze endpointy:
 - `DELETE /projects/<id>` - archiwizacja/zakonczenie z walidacja,
 - `GET /projects/<id>/completion` - checklista gotowosci projektu,
 - `POST /projects/<id>/complete` - zakonczenie projektu.
+
+Payload projektu moze zawierac `member_ids`, czyli liste czlonkow projektu:
+
+```json
+{
+  "name": "Wdrozenie klienta",
+  "description": "Proces startu wspolpracy",
+  "color": "#14b8a6",
+  "member_ids": [2, 3, 4]
+}
+```
 
 ### Project Templates
 
@@ -588,6 +639,8 @@ ENABLE_SCHEDULER=true
 SOCKETIO_ASYNC_MODE=threading
 MAIL_SERVER=...
 MAIL_PORT=587
+MAIL_USE_TLS=true
+MAIL_USE_SSL=false
 MAIL_USERNAME=...
 MAIL_PASSWORD=...
 MAIL_DEFAULT_SENDER=...
@@ -605,6 +658,14 @@ Migracje:
 flask db migrate -m "opis zmiany"
 flask db upgrade
 ```
+
+Po aktualizacji do wersji z czlonkami projektow trzeba wykonac:
+
+```bash
+flask db upgrade
+```
+
+Migracja dodaje tabele `project_members`, ktora laczy projekty z wieloma uzytkownikami.
 
 ## Troubleshooting
 
@@ -638,7 +699,15 @@ Sprawdz:
 
 ### Nie moge zakonczyc zadania
 
-Najczestsza przyczyna: zadanie jest zablokowane przez zaleznosc. Otworz szczegoly zadania albo panel `Blokady`, aby zobaczyc, co je blokuje.
+Najczestsza przyczyna: zadanie jest zablokowane przez zaleznosc albo ma otwarte podzadania. Otworz szczegoly zadania albo panel `Blokady`, aby zobaczyc, co je blokuje.
+
+### Uzytkownik widzi projekt, ale nie widzi wszystkich zadan
+
+To oczekiwane zachowanie. Czlonkostwo w projekcie daje dostep do projektu, ale zwykly uzytkownik widzi tylko zadania przypisane do siebie. Admin widzi pelna liste zadan projektu.
+
+### Nie moge przypisac kilku osob do zadania
+
+To oczekiwane zachowanie. Kilku uzytkownikow przypisuje sie do projektu jako czlonkow, a pojedyncze zadanie ma tylko jednego wykonawce.
 
 ### Nie moge zakonczyc projektu
 
@@ -662,8 +731,9 @@ Upewnij sie, ze:
 - Backend waliduje dane przez Marshmallow.
 - SQLAlchemy obsluguje modele i relacje.
 - Flask-Migrate/Alembic obsluguje migracje.
+- Projekty maja relacje wiele-do-wielu z uzytkownikami przez `project_members`.
+- Zadania nadal przechowuja wykonawcow w `task_assignees`, ale warstwa API ogranicza zapis do jednego wykonawcy.
 - Socket.IO wysyla event `task_action` po zmianach stanu.
 - Frontend uzywa React Context API zamiast Redux.
 - Dark mode opiera sie o Tailwind `darkMode: 'class'`.
 - Zadania i projekty sa synchronizowane po mutacjach przez eventy Socket.IO.
-

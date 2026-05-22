@@ -7,6 +7,8 @@ services:
       - ./instance:/app/instance
     env_file:
       - .env
+      - path: .env.local
+        required: false
     restart: unless-stopped
     networks:
       - app-network

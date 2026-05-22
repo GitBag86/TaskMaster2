@@ -13,6 +13,11 @@ task_assignees = db.Table('task_assignees',
     db.Column('user_id', db.Integer, db.ForeignKey('user.id'), primary_key=True)
 )
 
+project_members = db.Table('project_members',
+    db.Column('project_id', db.Integer, db.ForeignKey('project.id'), primary_key=True),
+    db.Column('user_id', db.Integer, db.ForeignKey('user.id'), primary_key=True)
+)
+
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(100), unique=True, nullable=False)
@@ -303,6 +308,8 @@ class Project(db.Model):
     archived = db.Column(db.Boolean, nullable=False, default=False)
     created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     created_at = db.Column(db.DateTime, default=utcnow)
+    members = db.relationship('User', secondary=project_members, lazy='subquery',
+                              backref=db.backref('member_projects', lazy=True))
     tasks = db.relationship('Task', backref='project_record', lazy=True)
 
     def to_dict(self, include_tasks=True):
@@ -314,6 +321,7 @@ class Project(db.Model):
             'archived': self.archived,
             'created_by_id': self.created_by_id,
             'created_at': self.created_at.isoformat() if self.created_at else None,
+            'members': [member.to_dict() for member in self.members],
         }
         if include_tasks:
             data['tasks'] = [task.to_dict() for task in self.tasks]

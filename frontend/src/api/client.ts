@@ -48,6 +48,7 @@ type ProjectPayload = {
   description?: string;
   color?: string;
   archived?: boolean;
+  member_ids?: number[];
 };
 
 type UserCreatePayload = {

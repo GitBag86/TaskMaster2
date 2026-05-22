@@ -90,6 +90,7 @@ export interface Project {
   description: string;
   color: string;
   archived: boolean;
+  members: User[];
   created_by_id: number | null;
   created_at: string | null;
   tasks?: Task[];

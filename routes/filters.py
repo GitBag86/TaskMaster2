@@ -132,7 +132,7 @@ def use_template(template_id):
     )
     assignee_ids = data.get('assignee_ids', [])
     if assignee_ids:
-        task.assignees = User.query.filter(User.id.in_(assignee_ids)).all()
+        task.assignees = User.query.filter(User.id.in_(assignee_ids[:1])).all()
     db.session.add(task)
     db.session.commit()
     return jsonify(task.to_dict()), 201

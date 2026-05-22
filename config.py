@@ -22,9 +22,11 @@ class Config:
     MAIL_SERVER = os.environ.get("MAIL_SERVER")
     MAIL_PORT = int(os.environ.get("MAIL_PORT", 587))
     MAIL_USE_TLS = os.environ.get("MAIL_USE_TLS", "True").lower() == "true"
+    MAIL_USE_SSL = os.environ.get("MAIL_USE_SSL", "False").lower() == "true"
     MAIL_USERNAME = os.environ.get("MAIL_USERNAME")
     MAIL_PASSWORD = os.environ.get("MAIL_PASSWORD")
     MAIL_DEFAULT_SENDER = os.environ.get("MAIL_DEFAULT_SENDER")
+    MAIL_SUPPRESS_SEND = os.environ.get("MAIL_SUPPRESS_SEND", "False").lower() == "true"
 
 
 class TestingConfig(Config):
@@ -32,3 +34,4 @@ class TestingConfig(Config):
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     SECRET_KEY = "test-secret-key"
     ENABLE_SCHEDULER = False
+    MAIL_SUPPRESS_SEND = True

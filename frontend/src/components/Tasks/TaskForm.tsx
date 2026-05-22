@@ -1,11 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '@/api/client'
 import { useToast } from '@/store/ToastContext'
-
-interface User {
-  id: number;
-  username: string;
-}
+import type { User } from '@/types'
 
 interface TaskFormData {
   title: string;
@@ -24,21 +20,30 @@ interface Props {
   submitLabel?: string;
   heading?: string;
   lockedProjectName?: string;
+  availableAssignees?: User[];
 }
 
-export default function TaskForm({ onSubmit, onCancel, initialData, submitLabel = 'Utwórz zadanie', heading, lockedProjectName }: Props) {
+export default function TaskForm({ onSubmit, onCancel, initialData, submitLabel = 'Utwórz zadanie', heading, lockedProjectName, availableAssignees }: Props) {
   const dueDateInputRef = useRef<HTMLInputElement | null>(null)
   const [title, setTitle] = useState(initialData?.title || '');
-  const [assignedUserIds, setAssignedUserIds] = useState<number[]>(initialData?.assignee_ids || []);
+  const [assignedUserId, setAssignedUserId] = useState(initialData?.assignee_ids?.[0] ? String(initialData.assignee_ids[0]) : '');
   const [priority, setPriority] = useState(initialData?.priority || 'medium');
   const [project, setProject] = useState(initialData?.project || '');
   const [projectId] = useState<number | null | undefined>(initialData?.project_id);
   const [dueDate, setDueDate] = useState(initialData?.due_date || '');
   const [notes, setNotes] = useState(initialData?.notes || '');
-  const [users, setUsers] = useState<User[]>([]); // State to store fetched users
+  const [users, setUsers] = useState<User[]>(availableAssignees ?? []); // State to store fetched users
   const { addToast } = useToast();
 
   useEffect(() => {
+    if (availableAssignees) {
+      setUsers(availableAssignees);
+      if (assignedUserId && !availableAssignees.some(user => String(user.id) === assignedUserId)) {
+        setAssignedUserId('');
+      }
+      return;
+    }
+
     const fetchUsers = async () => {
       try {
         const response = await api.users.getAll();
@@ -48,13 +53,13 @@ export default function TaskForm({ onSubmit, onCancel, initialData, submitLabel 
       }
     };
     fetchUsers();
-  }, [addToast]);
+  }, [addToast, availableAssignees, assignedUserId]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onSubmit({
       title,
-      assignee_ids: assignedUserIds,
+      assignee_ids: assignedUserId ? [Number(assignedUserId)] : [],
       priority,
       project: lockedProjectName ?? project,
       project_id: lockedProjectName ? projectId : undefined,
@@ -110,15 +115,11 @@ export default function TaskForm({ onSubmit, onCancel, initialData, submitLabel 
           <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300" htmlFor="assigned-to-select">Przypisane do</label>
           <select
             id="assigned-to-select"
-            multiple
-            value={assignedUserIds.map(String)}
-            onChange={e =>
-              setAssignedUserIds(
-                Array.from(e.target.selectedOptions, option => Number(option.value)).filter(id => Number.isFinite(id) && id > 0)
-              )
-            }
-            className="input h-auto min-h-[40px]"
+            value={assignedUserId}
+            onChange={e => setAssignedUserId(e.target.value)}
+            className="input"
           >
+            <option value="">Nieprzypisane</option>
             {users.map(user => (
               <option key={user.id} value={user.id}>
                 {user.username}
@@ -126,7 +127,7 @@ export default function TaskForm({ onSubmit, onCancel, initialData, submitLabel 
             ))}
           </select>
           <p className="mt-1 text-xs text-muted-foreground">
-            Wybierz jednego lub wielu użytkowników. Aby zostawić bez przypisania, nie zaznaczaj nikogo.
+            Zadanie może mieć tylko jednego wykonawcę.
           </p>
         </div>
 

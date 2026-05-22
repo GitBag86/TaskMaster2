@@ -155,6 +155,102 @@ def test_project_complete_endpoint_returns_readiness_checklist(auth_client):
     assert data["archived"] is True
     assert data["completion"]["ready"] is True
 
+def test_project_changes_email_project_participants(auth_client, app, monkeypatch):
+    sent = []
+
+    def fake_send_email(to_email, subject, body):
+        sent.append({"to": to_email, "subject": subject, "body": body})
+        return True
+
+    monkeypatch.setattr("routes.tasks.send_email", fake_send_email)
+
+    with app.app_context():
+        assignee = User(username="project_mail_user", email="project_mail_user@example.com", role="user")
+        assignee.set_password("password")
+        db.session.add(assignee)
+        db.session.commit()
+        assignee_id = assignee.id
+
+    project = auth_client.post('/projects', json={"name": "Mail project"}).get_json()
+    task = auth_client.post('/tasks', json={
+        "title": "Mail task",
+        "project_id": project["id"],
+        "assignee_ids": [assignee_id],
+    }).get_json()
+    sent.clear()
+
+    completed_task_response = auth_client.put(f'/tasks/{task["id"]}/complete')
+    completed_project_response = auth_client.post(f'/projects/{project["id"]}/complete')
+
+    assert completed_task_response.status_code == 200
+    assert completed_project_response.status_code == 200
+    assert any(email["to"] == "project_mail_user@example.com" and "Zadanie zakończone" in email["subject"] for email in sent)
+    assert any(email["to"] == "project_mail_user@example.com" and "Projekt zakończony" in email["subject"] for email in sent)
+
+def test_project_members_can_see_project_without_unassigned_tasks(auth_client, app):
+    with app.app_context():
+        member = User(username="project_member", email="project_member@example.com", role="user")
+        member.set_password("password")
+        other_user = User(username="other_project_user", email="other_project_user@example.com", role="user")
+        other_user.set_password("password")
+        db.session.add_all([member, other_user])
+        db.session.commit()
+        member_id = member.id
+        other_user_id = other_user.id
+
+    project_response = auth_client.post('/projects', json={
+        "name": "Member project",
+        "member_ids": [member_id],
+    })
+    assert project_response.status_code == 201
+    project = project_response.get_json()
+    assert [member["id"] for member in project["members"]] == [member_id]
+
+    task_response = auth_client.post('/tasks', json={
+        "title": "Other user task",
+        "project_id": project["id"],
+        "assignee_ids": [other_user_id],
+    })
+    assert task_response.status_code == 201
+
+    with auth_client.session_transaction() as sess:
+        sess['user_id'] = member_id
+
+    projects_response = auth_client.get('/projects')
+    assert projects_response.status_code == 200
+    projects = projects_response.get_json()["projects"]
+    visible_project = next((item for item in projects if item["id"] == project["id"]), None)
+    assert visible_project is not None
+    assert visible_project["tasks"] == []
+
+def test_task_accepts_only_one_assignee(auth_client, app):
+    with app.app_context():
+        first_user = User(username="single_assignee_one", email="single1@example.com", role="user")
+        first_user.set_password("password")
+        second_user = User(username="single_assignee_two", email="single2@example.com", role="user")
+        second_user.set_password("password")
+        db.session.add_all([first_user, second_user])
+        db.session.commit()
+        first_user_id = first_user.id
+        second_user_id = second_user.id
+
+    rejected_create = auth_client.post('/tasks', json={
+        "title": "Too many assignees",
+        "assignee_ids": [first_user_id, second_user_id],
+    })
+    assert rejected_create.status_code == 400
+
+    task = auth_client.post('/tasks', json={
+        "title": "Single assignee",
+        "assignee_ids": [first_user_id],
+    }).get_json()
+    assert [assignee["id"] for assignee in task["assignees"]] == [first_user_id]
+
+    rejected_update = auth_client.put(f'/tasks/{task["id"]}', json={
+        "assignee_ids": [first_user_id, second_user_id],
+    })
+    assert rejected_update.status_code == 400
+
 def test_admin_can_create_project_from_template(auth_client, app):
     templates_response = auth_client.get('/project-templates')
     assert templates_response.status_code == 200

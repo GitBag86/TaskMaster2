@@ -1,6 +1,6 @@
 import re
 
-from flask import request, jsonify, session, url_for, current_app
+from flask import request, jsonify, session, url_for
 from datetime import date, datetime, timedelta, timezone
 from marshmallow import ValidationError
 from extensions import socketio
@@ -8,7 +8,14 @@ from routes import tasks_bp
 from models import db, User, Task, Comment, Subtask, ActivityLog, Tag, Project, TaskDependency
 from schemas import TaskSchema, CommentSchema, SubtaskSchema, ProjectSchema, DependencySchema
 from routes.auth import login_required
-from utils.email_sender import send_email, get_task_status_change_body, get_task_assignment_body
+from utils.email_sender import (
+    send_email,
+    get_project_activity_body,
+    get_project_completed_body,
+    get_task_status_change_body,
+    get_task_assignment_body,
+    get_task_completion_body,
+)
 from utils.notifications import create_notification, emit_notifications
 
 TASK_ALLOWED_FIELDS = {'title', 'priority', 'project', 'project_id', 'due_date', 'notes', 'completed', 'status'}
@@ -70,6 +77,82 @@ def emit_task_event(action, user, task=None, task_ids=None, task_id=None, task_p
     if extra:
         payload.update(extra)
     socketio.emit("task_action", payload)
+
+def app_url(path=''):
+    return url_for('index', _external=True) + path.lstrip('/')
+
+def task_url(task):
+    return app_url(f'tasks/{task.id}')
+
+def project_url(project):
+    return app_url('projects')
+
+def unique_email_users(users, actor=None, exclude_user_ids=None):
+    excluded = set(exclude_user_ids or [])
+    if actor:
+        excluded.add(actor.id)
+
+    recipients = {}
+    for candidate in users:
+        if not candidate or not candidate.email or candidate.id in excluded:
+            continue
+        recipients[candidate.id] = candidate
+    return list(recipients.values())
+
+def task_email_users(task, actor=None, exclude_user_ids=None):
+    return unique_email_users([task.owner, *task.assignees], actor=actor, exclude_user_ids=exclude_user_ids)
+
+def project_email_users(project, actor=None, exclude_user_ids=None):
+    users = []
+    if project.created_by_id:
+        users.append(db.session.get(User, project.created_by_id))
+    users.extend(project.members)
+    for task in project.tasks:
+        users.append(task.owner)
+        users.extend(task.assignees)
+    return unique_email_users(users, actor=actor, exclude_user_ids=exclude_user_ids)
+
+def send_task_completion_emails(task, actor):
+    link = task_url(task)
+    action_label = "zakończone" if task.completed else "przywrócone"
+    for recipient in task_email_users(task, actor=actor):
+        send_email(
+            recipient.email,
+            f"Zadanie {action_label}: {task.title}",
+            get_task_completion_body(task.title, recipient.username, actor.username, task.completed, link),
+        )
+
+def send_project_activity_emails(project, actor, activity, task=None, exclude_user_ids=None, extra_users=None):
+    if not project:
+        return
+
+    link = project_url(project)
+    recipients = [
+        *project_email_users(project),
+        *(extra_users or []),
+    ]
+    for recipient in unique_email_users(recipients, actor=actor, exclude_user_ids=exclude_user_ids):
+        send_email(
+            recipient.email,
+            f"Zmiana w projekcie: {project.name}",
+            get_project_activity_body(
+                project.name,
+                recipient.username,
+                actor.username,
+                activity,
+                link,
+                task.title if task else None,
+            ),
+        )
+
+def send_project_completed_emails(project, actor):
+    link = project_url(project)
+    for recipient in project_email_users(project, actor=actor):
+        send_email(
+            recipient.email,
+            f"Projekt zakończony: {project.name}",
+            get_project_completed_body(project.name, recipient.username, actor.username, link),
+        )
 
 def parse_due_date(value):
     if not value:
@@ -139,8 +222,14 @@ def assignee_names(task):
     return ', '.join(user.username for user in task.assignees)
 
 def update_task_assignees(task, assignee_ids):
+    assignee_ids = (assignee_ids or [])[:1]
     users = User.query.filter(User.id.in_(assignee_ids)).all() if assignee_ids else []
     task.assignees = users
+    return users
+
+def update_project_members(project, member_ids):
+    users = User.query.filter(User.id.in_(member_ids or [])).all() if member_ids else []
+    project.members = users
     return users
 
 def normalize_project_name(name):
@@ -182,6 +271,11 @@ def visible_projects_for_user(user):
         for task in assigned_task_query(user).all()
         if task.project_id is not None
     }
+    member_project_ids = {
+        project.id
+        for project in Project.query.filter(Project.members.any(User.id == user.id)).all()
+    }
+    project_ids.update(member_project_ids)
     if not project_ids:
         return []
     return Project.query.filter(Project.id.in_(project_ids)).order_by(Project.name.asc()).all()
@@ -212,6 +306,8 @@ def project_completion_status(project):
 
 def user_can_access_project(user, project):
     if user.role == 'admin':
+        return True
+    if user in project.members:
         return True
     return any(user_can_access_task(user, task) for task in project.tasks)
 
@@ -557,6 +653,13 @@ def quick_add_task():
     db.session.add(ActivityLog(user_id=user_id, task_id=task.id, action='created', details={'title': task.title, 'source': 'quick_add'}))
     db.session.commit()
 
+    send_project_activity_emails(
+        task.project_record,
+        user,
+        "Dodano zadanie",
+        task=task,
+        exclude_user_ids=[assignee.id for assignee in assignees],
+    )
     emit_task_event("created", user, task=task)
     emit_notifications(notifications)
     return jsonify({
@@ -618,6 +721,13 @@ def create_task():
     notifications = create_assignment_notifications(task, user, assignees)
     db.session.commit()
 
+    send_project_activity_emails(
+        task.project_record,
+        user,
+        "Dodano zadanie",
+        task=task,
+        exclude_user_ids=[assignee.id for assignee in assignees],
+    )
     emit_task_event("created", user, task=task)
     emit_notifications(notifications)
 
@@ -653,6 +763,8 @@ def update_task(task_id):
     data = request.get_json()
     for key, value in data.items():
         if key in ('assignee_ids', 'assignees'):
+            if len(value or []) > 1:
+                return jsonify({"error": "Zadanie może mieć tylko jednego przypisanego użytkownika."}), 400
             update_task_assignees(task, value or [])
         elif key == 'project_id':
             project, project_error = resolve_project(value, None, user)
@@ -717,6 +829,14 @@ def update_task(task_id):
     log = ActivityLog(user_id=user_id, task_id=task_id, action='updated', details={'title': task.title, 'changes': changes})
     db.session.add(log)
     db.session.commit()
+    if changes:
+        send_project_activity_emails(
+            task.project_record,
+            user,
+            "Zaktualizowano zadanie",
+            task=task,
+            exclude_user_ids=[assignee.id for assignee in task.assignees if assignee.id not in old_assignee_ids],
+        )
     emit_notifications(assignment_notifications)
 
     return jsonify(task.to_dict())
@@ -745,6 +865,14 @@ def complete_task(task_id):
     db.session.add(log)
     db.session.commit()
 
+    send_task_completion_emails(task, user)
+    send_project_activity_emails(
+        task.project_record,
+        user,
+        "Zakończono zadanie" if task.completed else "Przywrócono zadanie",
+        task=task,
+        exclude_user_ids=[recipient.id for recipient in task_email_users(task)],
+    )
     emit_task_event("completed" if task.completed else "reopened", user, task=task)
     emit_notifications(notifications)
 
@@ -762,10 +890,13 @@ def delete_task(task_id):
     if user.role != 'admin':
         return jsonify({"error": "Only admins can delete tasks"}), 403
 
+    project = task.project_record
+    task_recipients = task_email_users(task)
     task_snapshot = task.to_dict()
     db.session.delete(task)
     db.session.commit()
 
+    send_project_activity_emails(project, user, "Usunięto zadanie", extra_users=task_recipients)
     emit_task_event("deleted", user, task_ids=[task_id], task_id=task_id, task_payload=task_snapshot)
     return jsonify({"message": "Zadanie usunięte"}), 200
 
@@ -823,6 +954,7 @@ def add_comment(task_id):
     db.session.commit()
     db.session.refresh(task)
 
+    send_project_activity_emails(task.project_record, user, "Dodano komentarz", task=task)
     emit_task_event(
         "mentioned" if mentioned_names else "commented",
         user,
@@ -888,6 +1020,7 @@ def add_subtask(task_id):
     db.session.commit()
     db.session.refresh(task)
 
+    send_project_activity_emails(task.project_record, user, "Dodano podzadanie", task=task)
     emit_task_event("subtask_created", user, task=task)
     return jsonify(subtask.to_dict()), 201
 
@@ -912,6 +1045,12 @@ def complete_subtask(subtask_id):
     db.session.commit()
     db.session.refresh(task)
 
+    send_project_activity_emails(
+        task.project_record,
+        user,
+        "Zakończono podzadanie" if subtask.completed else "Przywrócono podzadanie",
+        task=task,
+    )
     emit_task_event("subtask_completed" if subtask.completed else "subtask_reopened", user, task=task)
     return jsonify(subtask.to_dict())
 
@@ -932,6 +1071,7 @@ def delete_subtask(subtask_id):
     db.session.delete(subtask)
     db.session.commit()
     db.session.refresh(task)
+    send_project_activity_emails(task.project_record, user, "Usunięto podzadanie", task=task)
     emit_task_event("subtask_deleted", user, task=task)
     return jsonify({"message": "Subtask deleted"}), 200
 
@@ -1025,6 +1165,7 @@ def create_project():
         archived=validated.get('archived', False),
         created_by_id=user_id,
     )
+    update_project_members(project, validated.get('member_ids', []))
     db.session.add(project)
     db.session.commit()
     socketio.emit("task_action", {
@@ -1144,12 +1285,15 @@ def update_project(project_id):
         project.color = validated.get('color') or '#3b82f6'
     if 'archived' in validated:
         project.archived = validated.get('archived', False)
+    if 'member_ids' in validated:
+        update_project_members(project, validated.get('member_ids', []))
 
     if project.name != old_name:
         for task in project.tasks:
             task.project = project.name
 
     db.session.commit()
+    send_project_activity_emails(project, user, "Zaktualizowano ustawienia projektu")
     socketio.emit("task_action", {
         "action": "project_updated",
         "user": user.username,
@@ -1193,6 +1337,7 @@ def complete_project(project_id):
 
     project.archived = True
     db.session.commit()
+    send_project_completed_emails(project, user)
     socketio.emit("task_action", {
         "action": "project_completed",
         "user": user.username,
@@ -1226,6 +1371,7 @@ def archive_project(project_id):
 
     project.archived = True
     db.session.commit()
+    send_project_completed_emails(project, user)
     socketio.emit("task_action", {
         "action": "project_archived",
         "user": user.username,
@@ -1354,6 +1500,9 @@ def bulk_update_tasks():
 
     if len(task_ids) > BULK_MAX_TASKS:
         return jsonify({"error": f"Maksymalna liczba zadań w operacji masowej: {BULK_MAX_TASKS}"}), 400
+    for assignee_key in ('assignee_ids', 'assignees'):
+        if assignee_key in updates and len(updates.get(assignee_key) or []) > 1:
+            return jsonify({"error": "Zadanie może mieć tylko jednego przypisanego użytkownika."}), 400
 
     tasks = [task for task_id in task_ids if (task := db.session.get(Task, task_id))]
     marks_done = updates.get('completed') is True or updates.get('status') == 'done'

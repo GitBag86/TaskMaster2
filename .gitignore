@@ -13,6 +13,7 @@ pyvenv.cfg
 htmlcov/
 instance/tasks.db
 .env
+.env.local
 
 # Node
 node_modules/

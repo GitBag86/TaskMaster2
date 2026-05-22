@@ -8,12 +8,13 @@ from flask_cors import CORS
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
+load_dotenv()
+load_dotenv(".env.local", override=True)
+
 from config import Config
 from extensions import mail, migrate, scheduler, socketio
 from jobs.deadline_notifier import check_deadlines
 from models import User, db
-
-load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

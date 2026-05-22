@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type { Project, ProjectTemplate, Task } from '@/types'
+import type { Project, ProjectTemplate, Task, User } from '@/types'
 import { api } from '@/api/client'
 import { useAuth } from '@/store/AuthContext'
 import { useSocket } from '@/store/SocketContext'
@@ -63,6 +63,9 @@ export default function ProjectsPage() {
   const [newProjectName, setNewProjectName] = useState('')
   const [newProjectDescription, setNewProjectDescription] = useState('')
   const [newProjectColor, setNewProjectColor] = useState('#3b82f6')
+  const [newProjectMemberIds, setNewProjectMemberIds] = useState<string[]>([])
+  const [selectedProjectMemberIds, setSelectedProjectMemberIds] = useState<string[]>([])
+  const [allUsers, setAllUsers] = useState<User[]>([])
 
   const { user } = useAuth()
   const { lastTaskEvent } = useSocket()
@@ -91,10 +94,25 @@ export default function ProjectsPage() {
     }
   }, [selectedTemplateId])
 
+  const loadUsers = useCallback(async () => {
+    if (user?.role !== 'admin') {
+      setAllUsers([])
+      return
+    }
+
+    try {
+      const response = await api.users.getAll()
+      setAllUsers(response.users)
+    } catch {
+      setAllUsers([])
+    }
+  }, [user?.role])
+
   useEffect(() => {
     void loadProjects()
     void loadTemplates()
-  }, [loadProjects, loadTemplates])
+    void loadUsers()
+  }, [loadProjects, loadTemplates, loadUsers])
 
   useEffect(() => {
     if (!lastTaskEvent || !taskEventActions.has(lastTaskEvent.action)) return
@@ -147,6 +165,10 @@ export default function ProjectsPage() {
   }, [assignableTasks, taskToAssignId])
 
   useEffect(() => {
+    setSelectedProjectMemberIds((selectedProject?.members ?? []).map(member => String(member.id)))
+  }, [selectedProject])
+
+  useEffect(() => {
     if (!selectedTask) return
     const syncedTask = allTasks.find(task => task.id === selectedTask.id)
     if (!syncedTask) {
@@ -168,6 +190,7 @@ export default function ProjectsPage() {
         name,
         description: newProjectDescription.trim(),
         color: newProjectColor,
+        member_ids: newProjectMemberIds.map(Number),
       })
       await loadProjects()
       setSelectedProjectId(project.id)
@@ -176,6 +199,7 @@ export default function ProjectsPage() {
       setNewProjectName('')
       setNewProjectDescription('')
       setNewProjectColor('#3b82f6')
+      setNewProjectMemberIds([])
       addToast(`Projekt ${project.name} utworzony`, 'success')
     } catch (err: unknown) {
       addToast(err instanceof Error ? err.message : 'Błąd tworzenia projektu', 'error')
@@ -213,6 +237,21 @@ export default function ProjectsPage() {
       addToast('Zadanie przypisane do projektu', 'success')
     } catch (err: unknown) {
       addToast(err instanceof Error ? err.message : 'Błąd przypisywania zadania', 'error')
+    }
+  }
+
+  const updateProjectMembers = async () => {
+    if (!selectedProject) return
+
+    try {
+      const updatedProject = await api.projects.update(selectedProject.id, {
+        member_ids: selectedProjectMemberIds.map(Number),
+      })
+      await loadProjects()
+      setSelectedProjectId(updatedProject.id)
+      addToast('Członkowie projektu zaktualizowani', 'success')
+    } catch (err: unknown) {
+      addToast(err instanceof Error ? err.message : 'Błąd aktualizacji członków projektu', 'error')
     }
   }
 
@@ -506,6 +545,39 @@ export default function ProjectsPage() {
 
             {user?.role === 'admin' ? (
               <div className="space-y-3">
+                {selectedProject && (
+                  <div className="rounded-lg border border-border p-3">
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Członkowie projektu</h3>
+                      <span className="text-xs text-muted-foreground">{selectedProject.members.length}</span>
+                    </div>
+                    {allUsers.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">Brak użytkowników do przypisania.</p>
+                    ) : (
+                      <div className="max-h-36 space-y-1 overflow-y-auto pr-1">
+                        {allUsers.map(member => (
+                          <label key={member.id} className="flex items-center gap-2 rounded-md px-2 py-1 text-sm text-gray-700 hover:bg-muted dark:text-gray-200">
+                            <input
+                              type="checkbox"
+                              checked={selectedProjectMemberIds.includes(String(member.id))}
+                              onChange={() => setSelectedProjectMemberIds(ids => toggleStringId(ids, String(member.id)))}
+                              className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
+                            />
+                            <span className="truncate">{member.username}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                    <button
+                      onClick={() => void updateProjectMembers()}
+                      disabled={!selectedProject || selectedProject.archived}
+                      className="btn btn-secondary btn-sm mt-3 w-full disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Zapisz członków
+                    </button>
+                  </div>
+                )}
+
                 <div>
                   <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">Projekt docelowy</label>
                   <select
@@ -588,6 +660,7 @@ export default function ProjectsPage() {
             heading={`Nowe zadanie w projekcie: ${selectedProject.name}`}
             submitLabel="Dodaj zadanie"
             lockedProjectName={selectedProject.name}
+            availableAssignees={selectedProject.members}
             onSubmit={data => void createTaskInSelectedProject(data)}
             onCancel={() => setShowNewProjectTask(false)}
           />
@@ -640,6 +713,27 @@ export default function ProjectsPage() {
                   />
                 </div>
               </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Członkowie projektu</label>
+                {allUsers.length === 0 ? (
+                  <p className="rounded-md border border-dashed border-border p-3 text-sm text-muted-foreground">Brak użytkowników do przypisania.</p>
+                ) : (
+                  <div className="max-h-40 space-y-1 overflow-y-auto rounded-md border border-border p-2">
+                    {allUsers.map(member => (
+                      <label key={member.id} className="flex items-center gap-2 rounded-md px-2 py-1 text-sm text-gray-700 hover:bg-muted dark:text-gray-200">
+                        <input
+                          type="checkbox"
+                          checked={newProjectMemberIds.includes(String(member.id))}
+                          onChange={() => setNewProjectMemberIds(ids => toggleStringId(ids, String(member.id)))}
+                          className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
+                        />
+                        <span className="truncate">{member.username}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="mt-6 flex justify-end gap-3">
@@ -681,6 +775,10 @@ function compareProjectTasks(a: Task, b: Task) {
   const priorityRank = { high: 0, medium: 1, low: 2 }
   if (priorityRank[a.priority] !== priorityRank[b.priority]) return priorityRank[a.priority] - priorityRank[b.priority]
   return (a.due_date ?? '9999-12-31').localeCompare(b.due_date ?? '9999-12-31')
+}
+
+function toggleStringId(values: string[], value: string) {
+  return values.includes(value) ? values.filter(item => item !== value) : [...values, value]
 }
 
 function ProjectTaskRow({ task, onOpen, onComplete }: { task: Task; onOpen: () => void; onComplete: () => void }) {

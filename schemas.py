@@ -15,7 +15,12 @@ class UserSchema(Schema):
 class TaskSchema(Schema):
     id = fields.Int(dump_only=True)
     title = fields.Str(required=True, validate=validate.Length(min=1, max=200))
-    assignees = fields.List(fields.Int(), load_default=[], data_key='assignee_ids') # New: multiple assignees
+    assignees = fields.List(
+        fields.Int(),
+        load_default=[],
+        data_key='assignee_ids',
+        validate=validate.Length(max=1, error="Zadanie może mieć tylko jednego przypisanego użytkownika."),
+    )
     priority = fields.Str(load_default='medium', validate=validate.OneOf(['low', 'medium', 'high']))
     project = fields.Str(load_default='Ogólny', validate=validate.Length(max=100))
     project_id = fields.Int(load_default=None, allow_none=True)
@@ -31,6 +36,7 @@ class ProjectSchema(Schema):
     description = fields.Str(load_default='', allow_none=True, validate=validate.Length(max=500))
     color = fields.Str(load_default='#3b82f6', validate=validate.Regexp(r'^#[0-9a-fA-F]{6}$'))
     archived = fields.Bool(load_default=False)
+    member_ids = fields.List(fields.Int(), load_default=[])
     created_at = fields.DateTime(dump_only=True)
 
 class CommentSchema(Schema):
