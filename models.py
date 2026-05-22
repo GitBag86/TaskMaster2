@@ -270,6 +270,31 @@ class CustomField(db.Model):
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
 
+class Notification(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    task_id = db.Column(db.Integer, db.ForeignKey('task.id'), nullable=True)
+    actor = db.Column(db.String(100), nullable=True)
+    type = db.Column(db.String(50), nullable=False)
+    message = db.Column(db.String(300), nullable=False)
+    read = db.Column(db.Boolean, nullable=False, default=False)
+    created_at = db.Column(db.DateTime, default=utcnow)
+    user = db.relationship('User', backref=db.backref('notifications', lazy=True, cascade='all, delete-orphan'))
+    task = db.relationship('Task', backref=db.backref('notifications', lazy=True))
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'task_id': self.task_id,
+            'actor': self.actor,
+            'type': self.type,
+            'message': self.message,
+            'read': self.read,
+            'task': self.task.summary_dict() if self.task else None,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
 class Project(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), unique=True, nullable=False)

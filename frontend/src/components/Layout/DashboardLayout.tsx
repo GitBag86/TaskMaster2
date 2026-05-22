@@ -2,7 +2,10 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/store/AuthContext'
 import { useTheme } from '@/store/ThemeContext'
 import { useSocket } from '@/store/SocketContext'
-import { useState } from 'react'
+import { api } from '@/api/client'
+import type { NotificationItem } from '@/types'
+import type { CSSProperties } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 const navItems = [
   { label: 'Zadania', path: '/', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' },
@@ -17,14 +20,96 @@ const navItems = [
 export default function DashboardLayout() {
   const { user, logout } = useAuth();
   const { dark, toggle } = useTheme();
-  const { connected } = useSocket();
+  const { connected, lastNotification } = useSocket();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false)
+  const [notifications, setNotifications] = useState<NotificationItem[]>([])
+  const [unreadCount, setUnreadCount] = useState(0)
+  const notificationButtonRef = useRef<HTMLButtonElement | null>(null)
+  const [notificationPanelStyle, setNotificationPanelStyle] = useState<CSSProperties>({
+    left: 16,
+    top: 64,
+    width: 360,
+  })
 
   const handleLogout = async () => {
     await logout();
     navigate('/auth');
   };
+
+  const loadNotifications = useCallback(async () => {
+    try {
+      const response = await api.notifications.getAll(20)
+      setNotifications(response.notifications)
+      setUnreadCount(response.unread_count)
+    } catch {
+      setNotifications([])
+      setUnreadCount(0)
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadNotifications()
+  }, [loadNotifications])
+
+  useEffect(() => {
+    if (!lastNotification || lastNotification.user_id !== user?.id) return
+    setNotifications(prev => [lastNotification, ...prev.filter(item => item.id !== lastNotification.id)].slice(0, 20))
+    setUnreadCount(prev => prev + (lastNotification.read ? 0 : 1))
+  }, [lastNotification, user?.id])
+
+  const updateNotificationPanelPosition = useCallback(() => {
+    const button = notificationButtonRef.current
+    if (!button || typeof window === 'undefined') return
+
+    const viewportPadding = 16
+    const panelWidth = Math.min(360, window.innerWidth - viewportPadding * 2)
+    const rect = button.getBoundingClientRect()
+    const centeredLeft = rect.left + rect.width / 2 - panelWidth / 2
+    const maxLeft = window.innerWidth - panelWidth - viewportPadding
+    const left = Math.min(Math.max(viewportPadding, centeredLeft), maxLeft)
+
+    setNotificationPanelStyle({
+      left,
+      top: rect.bottom + 8,
+      width: panelWidth,
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!notificationsOpen) return
+
+    updateNotificationPanelPosition()
+    window.addEventListener('resize', updateNotificationPanelPosition)
+    window.addEventListener('scroll', updateNotificationPanelPosition, true)
+
+    return () => {
+      window.removeEventListener('resize', updateNotificationPanelPosition)
+      window.removeEventListener('scroll', updateNotificationPanelPosition, true)
+    }
+  }, [notificationsOpen, updateNotificationPanelPosition])
+
+  const markNotificationRead = async (notification: NotificationItem) => {
+    if (notification.read) return
+    try {
+      const updated = await api.notifications.markRead(notification.id)
+      setNotifications(prev => prev.map(item => (item.id === updated.id ? updated : item)))
+      setUnreadCount(prev => Math.max(0, prev - 1))
+    } catch {
+      // Keep the dropdown quiet; the next refresh will reconcile the state.
+    }
+  }
+
+  const markAllNotificationsRead = async () => {
+    try {
+      await api.notifications.markAllRead()
+      setNotifications(prev => prev.map(item => ({ ...item, read: true })))
+      setUnreadCount(0)
+    } catch {
+      // Keep the dropdown quiet; the next refresh will reconcile the state.
+    }
+  }
 
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-950">
@@ -120,6 +205,74 @@ export default function DashboardLayout() {
             {/* Connection indicator */}
             <div className={`h-2 w-2 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`} title={connected ? 'Połączono' : 'Rozłączono'} />
 
+            <div className="relative">
+              <button
+                ref={notificationButtonRef}
+                onClick={() => {
+                  updateNotificationPanelPosition()
+                  setNotificationsOpen(prev => !prev)
+                  if (!notificationsOpen) void loadNotifications()
+                }}
+                className="btn btn-ghost btn-sm relative"
+                title="Powiadomienia"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2a2 2 0 01-.6 1.4L4 17h5m6 0a3 3 0 01-6 0" />
+                </svg>
+                {unreadCount > 0 && (
+                  <span className="absolute -right-1 -top-1 min-w-[18px] rounded-full bg-destructive px-1.5 text-[10px] font-semibold leading-[18px] text-white">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {notificationsOpen && (
+                <div className="fixed z-[80] rounded-lg border border-border bg-card shadow-xl" style={notificationPanelStyle}>
+                  <div className="flex items-center justify-between gap-3 border-b border-border p-3">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900 dark:text-white">Powiadomienia</p>
+                      <p className="text-xs text-muted-foreground">{unreadCount} nieprzeczytane</p>
+                    </div>
+                    <button
+                      onClick={() => void markAllNotificationsRead()}
+                      disabled={unreadCount === 0}
+                      className="text-xs font-medium text-primary disabled:text-muted-foreground"
+                    >
+                      Oznacz wszystkie
+                    </button>
+                  </div>
+
+                  <div className="max-h-96 overflow-y-auto p-2">
+                    {notifications.length === 0 ? (
+                      <div className="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+                        Brak powiadomień.
+                      </div>
+                    ) : (
+                      notifications.map(notification => (
+                        <button
+                          key={notification.id}
+                          onClick={() => void markNotificationRead(notification)}
+                          className={`mb-2 w-full rounded-md border p-3 text-left transition-colors hover:bg-muted/50 ${
+                            notification.read ? 'border-border bg-background' : 'border-primary/30 bg-primary/5'
+                          }`}
+                        >
+                          <div className="mb-1 flex items-start justify-between gap-3">
+                            <p className="text-sm font-medium text-gray-900 dark:text-white">{notificationTitle(notification.type)}</p>
+                            {!notification.read && <span className="mt-1 h-2 w-2 rounded-full bg-primary" />}
+                          </div>
+                          <p className="text-sm text-gray-700 dark:text-gray-300">{notification.message}</p>
+                          <div className="mt-2 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                            <span className="truncate">{notification.task?.title ?? notification.actor ?? 'System'}</span>
+                            <span>{notification.created_at ? formatNotificationTime(notification.created_at) : ''}</span>
+                          </div>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Theme toggle */}
             <button onClick={toggle} className="btn btn-ghost btn-sm" title="Przełącz motyw">
               {dark ? (
@@ -149,4 +302,21 @@ export default function DashboardLayout() {
       </div>
     </div>
   );
+}
+
+function notificationTitle(type: string) {
+  return ({
+    assignment: 'Przypisanie',
+    mention: 'Wzmianka',
+    unblocked: 'Odblokowano',
+  }[type] || 'Powiadomienie')
+}
+
+function formatNotificationTime(value: string) {
+  return new Date(value).toLocaleString('pl-PL', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }

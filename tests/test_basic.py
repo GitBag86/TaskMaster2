@@ -1,7 +1,7 @@
 import sqlite3
 from datetime import date, timedelta
 
-from models import db, User, Task, Project, Tag, TaskDependency, ActivityLog
+from models import db, User, Task, Project, Tag, TaskDependency, ActivityLog, Notification
 
 def test_health_check(client):
     response = client.get('/health')
@@ -460,6 +460,64 @@ def test_create_task_with_assignees(auth_client, app):
     data = response.get_json()
     assert data["assignees"][0]["id"] == user_id
 
+    with app.app_context():
+        notification = Notification.query.filter_by(user_id=user_id, type="assignment").first()
+        assert notification is not None
+        assert notification.task_id == data["id"]
+
+def test_notifications_can_be_listed_and_marked_read(auth_client, app):
+    with app.app_context():
+        user = User(username="notify_user", email="notify@example.com", role="user")
+        user.set_password("password")
+        db.session.add(user)
+        db.session.commit()
+        user_id = user.id
+
+    auth_client.post('/tasks', json={"title": "Notify task", "assignee_ids": [user_id]})
+
+    with auth_client.session_transaction() as sess:
+        sess['user_id'] = user_id
+
+    list_response = auth_client.get('/notifications')
+    assert list_response.status_code == 200
+    payload = list_response.get_json()
+    assert payload["unread_count"] == 1
+    notification_id = payload["notifications"][0]["id"]
+    assert payload["notifications"][0]["read"] is False
+
+    read_response = auth_client.post(f'/notifications/{notification_id}/read')
+    assert read_response.status_code == 200
+    assert read_response.get_json()["read"] is True
+
+    list_after_read = auth_client.get('/notifications')
+    assert list_after_read.get_json()["unread_count"] == 0
+
+def test_completion_creates_unblocked_notification_for_assignee(client, app):
+    with app.app_context():
+        admin = User(username="unblock_admin", email="unblock_admin@example.com", role="admin")
+        admin.set_password("password")
+        regular = User(username="unblock_user", email="unblock_user@example.com", role="user")
+        regular.set_password("password")
+        db.session.add_all([admin, regular])
+        db.session.commit()
+        admin_id = admin.id
+        regular_id = regular.id
+
+    with client.session_transaction() as sess:
+        sess['user_id'] = admin_id
+
+    blocked = client.post('/tasks', json={"title": "Blocked for notify", "assignee_ids": [regular_id]}).get_json()
+    blocker = client.post('/tasks', json={"title": "Blocker for notify"}).get_json()
+    client.post(f'/tasks/{blocked["id"]}/dependencies', json={"depends_on_task_id": blocker["id"]})
+
+    response = client.put(f'/tasks/{blocker["id"]}/complete')
+    assert response.status_code == 200
+
+    with app.app_context():
+        notification = Notification.query.filter_by(user_id=regular_id, type="unblocked").first()
+        assert notification is not None
+        assert notification.task_id == blocked["id"]
+
 def test_regular_user_only_sees_assigned_tasks(client, app):
     with app.app_context():
         from models import db
@@ -624,25 +682,29 @@ def test_comment_mentions_emit_event_and_activity(auth_client, app, monkeypatch)
         mentioned_id = mentioned.id
 
     task = auth_client.post('/tasks', json={"title": "Mention target"}).get_json()
-    emitted = {}
+    emitted = []
 
     def fake_emit(event_name, payload):
-        emitted["event_name"] = event_name
-        emitted["payload"] = payload
+        emitted.append({"event_name": event_name, "payload": payload})
 
     monkeypatch.setattr("routes.tasks.socketio.emit", fake_emit)
 
     response = auth_client.post(f'/tasks/{task["id"]}/comments', json={"text": "@mentioned_user zerknij proszę"})
 
     assert response.status_code == 201
-    assert emitted["event_name"] == "task_action"
-    assert emitted["payload"]["action"] == "mentioned"
-    assert emitted["payload"]["mentioned_usernames"] == ["mentioned_user"]
+    task_event = next(event for event in emitted if event["event_name"] == "task_action")
+    notification_event = next(event for event in emitted if event["event_name"] == "notification")
+    assert task_event["payload"]["action"] == "mentioned"
+    assert task_event["payload"]["mentioned_usernames"] == ["mentioned_user"]
+    assert notification_event["payload"]["type"] == "mention"
 
     with app.app_context():
         mention_log = ActivityLog.query.filter_by(user_id=mentioned_id, action="mentioned").first()
         assert mention_log is not None
         assert mention_log.details["by"] == "admin"
+        notification = Notification.query.filter_by(user_id=mentioned_id, type="mention").first()
+        assert notification is not None
+        assert notification.task_id == task["id"]
 
 def test_regular_user_cannot_tag_unassigned_task(client, app):
     with app.app_context():
@@ -827,6 +889,7 @@ def test_migration_upgrade_smoke_fresh_sqlite(tmp_path, monkeypatch):
     assert "task" in tables
     assert "task_assignees" in tables
     assert "project" in tables
+    assert "notification" in tables
     assert "status" in task_columns
     assert "project_id" in task_columns
     assert "terms_accepted" in user_columns

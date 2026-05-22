@@ -8,6 +8,7 @@ import { useAuth } from '@/store/AuthContext'
 import { CalendarSkeleton } from '@/components/common/Skeletons'
 import TaskDetail from '@/components/Tasks/TaskDetail'
 import TaskForm from '@/components/Tasks/TaskForm'
+import { getPolishCalendarInfo } from '@/data/polishCalendar'
 
 const days = ['Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'So', 'Nd']
 const months = ['Styczeń', 'Luty', 'Marzec', 'Kwiecień', 'Maj', 'Czerwiec', 'Lipiec', 'Sierpień', 'Wrzesień', 'Październik', 'Listopad', 'Grudzień']
@@ -175,10 +176,23 @@ export default function CalendarPage() {
     })
   }, [getDayTasks, selectedDay])
 
+  const selectedCalendarInfo = useMemo(() => {
+    if (selectedDay === null) return null
+    return getPolishCalendarInfo(new Date(year, month, selectedDay))
+  }, [month, selectedDay, year])
+
   const monthTasksCount = useMemo(() => {
     const prefix = `${year}-${String(month + 1).padStart(2, '0')}-`
     return filteredTasks.filter(task => task.due_date?.startsWith(prefix)).length
   }, [filteredTasks, month, year])
+
+  const monthHolidayCount = useMemo(() => {
+    let total = 0
+    for (let day = 1; day <= daysInMonth; day += 1) {
+      total += getPolishCalendarInfo(new Date(year, month, day)).holidays.length
+    }
+    return total
+  }, [daysInMonth, month, year])
 
   const overdueCount = useMemo(
     () => filteredTasks.filter(task => task.due_date && !task.completed && new Date(task.due_date) < new Date(new Date().toDateString())).length,
@@ -265,7 +279,10 @@ export default function CalendarPage() {
         <Legend label="Średni" className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" />
         <Legend label="Niski" className="bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300" />
         <Legend label="Zakończone" className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" />
+        <Legend label="Święto" className="bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300" />
+        <Legend label="Imieniny" className="bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300" />
         <Legend label={`Terminów w miesiącu: ${monthTasksCount}`} className="bg-primary/10 text-primary" />
+        <Legend label={`Świąt w miesiącu: ${monthHolidayCount}`} className="bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300" />
         <Legend label={`Po terminie: ${overdueCount}`} className="bg-destructive/10 text-destructive" />
       </div>
 
@@ -351,6 +368,7 @@ export default function CalendarPage() {
                   const dayTasks = getDayTasks(calendarDay.day)
                   const isToday = calendarDay.day === today.getDate() && month === today.getMonth() && year === today.getFullYear()
                   const isSelected = selectedDay === calendarDay.day
+                  const calendarInfo = getPolishCalendarInfo(new Date(year, month, calendarDay.day))
 
                   return (
                     <div
@@ -366,9 +384,29 @@ export default function CalendarPage() {
                       tabIndex={0}
                       className={`min-h-[92px] border-b border-r border-border p-1.5 text-left transition-colors ${dayCellClass(calendarDay.weekday, isToday, isSelected)}`}
                     >
-                      <span className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold ${dayNumberClass(calendarDay.weekday, isToday)}`}>
-                        {calendarDay.day}
-                      </span>
+                      <div className="flex items-start justify-between gap-1">
+                        <span className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${dayNumberClass(calendarDay.weekday, isToday)}`}>
+                          {calendarDay.day}
+                        </span>
+                        <div className="flex min-w-0 flex-col items-end gap-1">
+                          {calendarInfo.holidays.length > 0 && (
+                            <span
+                              className="max-w-full truncate rounded-full bg-rose-100 px-1.5 py-0.5 text-[9px] font-semibold text-rose-700 dark:bg-rose-900/30 dark:text-rose-300"
+                              title={calendarInfo.holidays.join(', ')}
+                            >
+                              Święto
+                            </span>
+                          )}
+                          {calendarInfo.nameDays.length > 0 && (
+                            <span
+                              className="max-w-[5.5rem] truncate rounded-full bg-sky-100 px-1.5 py-0.5 text-[9px] font-medium text-sky-700 dark:bg-sky-900/30 dark:text-sky-300"
+                              title={`Imieniny: ${calendarInfo.nameDays.join(', ')}`}
+                            >
+                              {calendarInfo.nameDays.slice(0, 2).join(', ')}
+                            </span>
+                          )}
+                        </div>
+                      </div>
 
                       <div className="mt-1 space-y-1">
                         {dayTasks.slice(0, 2).map(task => (
@@ -410,6 +448,25 @@ export default function CalendarPage() {
               <button onClick={() => setShowCreate(true)} className="btn btn-secondary btn-sm">Dodaj</button>
             )}
           </div>
+
+          {selectedCalendarInfo && (
+            <div className="mb-3 space-y-2">
+              {selectedCalendarInfo.holidays.length > 0 && (
+                <CalendarInfoBox
+                  label="Święta"
+                  value={selectedCalendarInfo.holidays.join(', ')}
+                  className="border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-200"
+                />
+              )}
+              {selectedCalendarInfo.nameDays.length > 0 && (
+                <CalendarInfoBox
+                  label="Imieniny"
+                  value={selectedCalendarInfo.nameDays.join(', ')}
+                  className="border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-900/50 dark:bg-sky-950/30 dark:text-sky-200"
+                />
+              )}
+            </div>
+          )}
 
           <div className="space-y-2">
             {selectedDay === null || selectedTasks.length === 0 ? (
@@ -525,6 +582,15 @@ function dayNumberClass(weekday: number, isToday: boolean) {
 
 function Legend({ label, className }: { label: string; className: string }) {
   return <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${className}`}>{label}</span>
+}
+
+function CalendarInfoBox({ label, value, className }: { label: string; value: string; className: string }) {
+  return (
+    <div className={`rounded-lg border px-3 py-2 ${className}`}>
+      <p className="text-[11px] font-semibold uppercase tracking-wide opacity-80">{label}</p>
+      <p className="mt-0.5 text-sm font-medium">{value}</p>
+    </div>
+  )
 }
 
 function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {

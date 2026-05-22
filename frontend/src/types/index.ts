@@ -72,6 +72,18 @@ export interface ActivityLog {
   created_at: string;
 }
 
+export interface NotificationItem {
+  id: number;
+  user_id: number;
+  task_id: number | null;
+  actor: string | null;
+  type: 'assignment' | 'mention' | 'unblocked' | string;
+  message: string;
+  read: boolean;
+  task: TaskSummary | null;
+  created_at: string | null;
+}
+
 export interface Project {
   id: number;
   name: string;

@@ -15,6 +15,7 @@ import type {
   DependencyBoardResponse,
   WeeklyReport,
   ProjectTemplate,
+  NotificationItem,
 } from '@/types';
 
 const API_BASE = '';
@@ -266,6 +267,17 @@ export const api = {
       request<{ activity: ActivityLog[] }>(`/activity?limit=${limit}`),
     getForTask: (taskId: number) =>
       request<{ activity: ActivityLog[] }>(`/tasks/${taskId}/activity`),
+  },
+
+  notifications: {
+    getAll: (limit = 20, unreadOnly = false) =>
+      request<{ notifications: NotificationItem[]; unread_count: number }>(
+        `/notifications?limit=${limit}&unread_only=${unreadOnly ? 'true' : 'false'}`,
+      ),
+    markRead: (id: number) =>
+      request<NotificationItem>(`/notifications/${id}/read`, { method: 'POST' }),
+    markAllRead: () =>
+      request<{ message: string; unread_count: number }>('/notifications/read-all', { method: 'POST' }),
   },
 
   tags: {

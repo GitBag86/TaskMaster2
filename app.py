@@ -35,13 +35,14 @@ def _configure_app(app):
 
 
 def _register_blueprints(app):
-    from routes import auth_bp, filters_bp, stats_bp, tasks_bp, users_bp
+    from routes import auth_bp, filters_bp, notifications_bp, stats_bp, tasks_bp, users_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(users_bp)
     app.register_blueprint(tasks_bp)
     app.register_blueprint(stats_bp)
     app.register_blueprint(filters_bp)
+    app.register_blueprint(notifications_bp)
 
 
 def _register_routes(app):
@@ -105,6 +106,7 @@ def _register_routes(app):
             "templates",
             "dependencies",
             "subtasks",
+            "notifications",
             "socket.io",
         )
         if path.startswith(api_prefixes):

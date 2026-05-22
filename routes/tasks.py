@@ -9,6 +9,7 @@ from models import db, User, Task, Comment, Subtask, ActivityLog, Tag, Project, 
 from schemas import TaskSchema, CommentSchema, SubtaskSchema, ProjectSchema, DependencySchema
 from routes.auth import login_required
 from utils.email_sender import send_email, get_task_status_change_body, get_task_assignment_body
+from utils.notifications import create_notification, emit_notifications
 
 TASK_ALLOWED_FIELDS = {'title', 'priority', 'project', 'project_id', 'due_date', 'notes', 'completed', 'status'}
 BULK_MAX_TASKS = 100
@@ -271,6 +272,37 @@ def create_task_record(user, title, priority='medium', project_name='Ogólny', d
     db.session.flush()
     return task, assignees
 
+def create_assignment_notifications(task, actor, assignees):
+    notifications = []
+    for assignee in assignees:
+        if assignee.id == actor.id:
+            continue
+        notifications.append(create_notification(
+            user_id=assignee.id,
+            notification_type='assignment',
+            message=f"Przypisano Cię do zadania: {task.title}",
+            task=task,
+            actor=actor,
+        ))
+    return notifications
+
+def create_unblocked_notifications(blocker_task, actor):
+    notifications = []
+    for dependent_task in blocker_task.open_dependent_tasks():
+        if task_open_dependencies(dependent_task):
+            continue
+        for assignee in dependent_task.assignees:
+            if assignee.id == actor.id:
+                continue
+            notifications.append(create_notification(
+                user_id=assignee.id,
+                notification_type='unblocked',
+                message=f"Odblokowano zadanie: {dependent_task.title}",
+                task=dependent_task,
+                actor=actor,
+            ))
+    return notifications
+
 @tasks_bp.route('/tasks', methods=['GET'])
 @login_required
 def get_tasks():
@@ -512,10 +544,12 @@ def quick_add_task():
         message, status = result
         return jsonify({"error": message}), status
 
+    notifications = create_assignment_notifications(task, user, assignees)
     db.session.add(ActivityLog(user_id=user_id, task_id=task.id, action='created', details={'title': task.title, 'source': 'quick_add'}))
     db.session.commit()
 
     emit_task_event("created", user, task=task)
+    emit_notifications(notifications)
     return jsonify({
         "task": task.to_dict(),
         "parsed": {
@@ -572,9 +606,11 @@ def create_task():
 
     log = ActivityLog(user_id=user_id, task_id=task.id, action='created', details={'title': task.title})
     db.session.add(log)
+    notifications = create_assignment_notifications(task, user, assignees)
     db.session.commit()
 
     emit_task_event("created", user, task=task)
+    emit_notifications(notifications)
 
     return jsonify(task.to_dict()), 201
 
@@ -639,9 +675,13 @@ def update_task(task_id):
             send_email(task.owner.email, subject, body)
 
     # Send email for new assignments
+    assignment_notifications = []
     if 'assignee_ids' in data or 'assignees' in data:
         for assignee_user in task.assignees:
-            if assignee_user.id in old_assignee_ids or not assignee_user.email:
+            if assignee_user.id in old_assignee_ids:
+                continue
+            assignment_notifications.extend(create_assignment_notifications(task, user, [assignee_user]))
+            if not assignee_user.email:
                 continue
             subject = f"Zostałeś przypisany do zadania: {task.title}"
             body = get_task_assignment_body(task.title, assignee_user.username, task_link)
@@ -668,6 +708,7 @@ def update_task(task_id):
     log = ActivityLog(user_id=user_id, task_id=task_id, action='updated', details={'title': task.title, 'changes': changes})
     db.session.add(log)
     db.session.commit()
+    emit_notifications(assignment_notifications)
 
     return jsonify(task.to_dict())
 
@@ -686,14 +727,17 @@ def complete_task(task_id):
     if not task.completed and task_open_dependencies(task):
         return blocked_completion_response(task)
 
+    will_complete = not task.completed
     task.completed = not task.completed
     task.status = 'done' if task.completed else 'todo'
+    notifications = create_unblocked_notifications(task, user) if will_complete else []
 
     log = ActivityLog(user_id=user_id, task_id=task_id, action='completed' if task.completed else 'reopened')
     db.session.add(log)
     db.session.commit()
 
     emit_task_event("completed" if task.completed else "reopened", user, task=task)
+    emit_notifications(notifications)
 
     return jsonify(task.to_dict())
 
@@ -752,7 +796,15 @@ def add_comment(task_id):
         details={'text': comment.text, 'mentions': mentioned_names},
     )
     db.session.add(log)
+    mention_notifications = []
     for mentioned in mentioned_users:
+        mention_notifications.append(create_notification(
+            user_id=mentioned.id,
+            notification_type='mention',
+            message=f"{user.username} wspomniał(a) Cię w zadaniu: {task.title}",
+            task=task,
+            actor=user,
+        ))
         db.session.add(ActivityLog(
             user_id=mentioned.id,
             task_id=task_id,
@@ -768,6 +820,7 @@ def add_comment(task_id):
         task=task,
         extra={"mentioned_usernames": mentioned_names} if mentioned_names else None,
     )
+    emit_notifications(mention_notifications)
     return jsonify(comment.to_dict()), 201
 
 @tasks_bp.route('/tasks/<int:task_id>/activity', methods=['GET'])

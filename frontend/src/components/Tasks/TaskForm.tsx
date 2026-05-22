@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from '@/api/client'
 import { useToast } from '@/store/ToastContext'
 
@@ -25,6 +25,7 @@ interface Props {
 }
 
 export default function TaskForm({ onSubmit, onCancel, initialData, submitLabel = 'Utwórz zadanie', heading }: Props) {
+  const dueDateInputRef = useRef<HTMLInputElement | null>(null)
   const [title, setTitle] = useState(initialData?.title || '');
   const [assignedUserIds, setAssignedUserIds] = useState<number[]>(initialData?.assignee_ids || []);
   const [priority, setPriority] = useState(initialData?.priority || 'medium');
@@ -50,6 +51,16 @@ export default function TaskForm({ onSubmit, onCancel, initialData, submitLabel 
     e.preventDefault();
     onSubmit({ title, assignee_ids: assignedUserIds, priority, project, due_date: dueDate, notes });
   };
+
+  const openDueDatePicker = () => {
+    const input = dueDateInputRef.current
+    if (!input) return
+
+    input.focus()
+    if (typeof input.showPicker === 'function') {
+      input.showPicker()
+    }
+  }
 
   return (
     <form onSubmit={handleSubmit} className="p-6">
@@ -104,7 +115,26 @@ export default function TaskForm({ onSubmit, onCancel, initialData, submitLabel 
 
         <div>
           <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Termin</label>
-          <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className="input" />
+          <div className="relative">
+            <input ref={dueDateInputRef} type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className="date-input input pr-10" />
+            <button
+              type="button"
+              onClick={openDueDatePicker}
+              className="absolute right-1 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-muted dark:text-cyan-100 dark:hover:bg-white/10"
+              aria-label="Wybierz termin"
+            >
+              <svg
+                className="h-4 w-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={1.8}
+                aria-hidden="true"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         <div>

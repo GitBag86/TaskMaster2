@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { io, type Socket } from 'socket.io-client'
 import { useToast } from './ToastContext'
 import { useAuth } from './AuthContext'
-import type { Task } from '@/types'
+import type { NotificationItem, Task } from '@/types'
 
 interface TaskEvent {
   action: string;
@@ -18,14 +18,16 @@ interface SocketContextType {
   socket: Socket | null;
   connected: boolean;
   lastTaskEvent: TaskEvent | null;
+  lastNotification: NotificationItem | null;
 }
 
-const SocketContext = createContext<SocketContextType>({ socket: null, connected: false, lastTaskEvent: null });
+const SocketContext = createContext<SocketContextType>({ socket: null, connected: false, lastTaskEvent: null, lastNotification: null });
 
 export function SocketProvider({ children }: { children: React.ReactNode }) {
   const socketRef = useRef<Socket | null>(null);
   const [connected, setConnected] = useState(false);
   const [lastTaskEvent, setLastTaskEvent] = useState<TaskEvent | null>(null);
+  const [lastNotification, setLastNotification] = useState<NotificationItem | null>(null);
   const { addToast } = useToast();
   const { user } = useAuth();
 
@@ -59,13 +61,19 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       }
     });
 
+    socket.on('notification', (notification: NotificationItem) => {
+      if (notification.user_id !== user.id) return;
+      setLastNotification(notification);
+      addToast(notification.message, 'info');
+    });
+
     return () => {
       socket.disconnect();
     };
   }, [addToast, user]);
 
   return (
-    <SocketContext.Provider value={{ socket: socketRef.current, connected, lastTaskEvent }}>
+    <SocketContext.Provider value={{ socket: socketRef.current, connected, lastTaskEvent, lastNotification }}>
       {children}
     </SocketContext.Provider>
   );
