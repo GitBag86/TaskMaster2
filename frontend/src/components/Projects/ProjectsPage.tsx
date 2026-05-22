@@ -7,6 +7,7 @@ import { useSocket } from '@/store/SocketContext'
 import { useToast } from '@/store/ToastContext'
 import { TasksPageSkeleton } from '@/components/common/Skeletons'
 import TaskDetail from '@/components/Tasks/TaskDetail'
+import TaskForm from '@/components/Tasks/TaskForm'
 
 type ProjectSummary = Project & {
   tasks: Task[];
@@ -18,6 +19,16 @@ type ProjectSummary = Project & {
   highPriority: number;
   nextDueDate: string | null;
   readyToComplete: boolean;
+}
+
+type ProjectTaskFormData = {
+  title: string;
+  assignee_ids?: number[];
+  priority?: Task['priority'];
+  project?: string;
+  project_id?: number | null;
+  due_date?: string;
+  notes?: string;
 }
 
 const taskEventActions = new Set([
@@ -44,6 +55,7 @@ export default function ProjectsPage() {
   const [taskToAssignId, setTaskToAssignId] = useState('')
   const [targetProjectId, setTargetProjectId] = useState('')
   const [showNewProject, setShowNewProject] = useState(false)
+  const [showNewProjectTask, setShowNewProjectTask] = useState(false)
   const [templates, setTemplates] = useState<ProjectTemplate[]>([])
   const [selectedTemplateId, setSelectedTemplateId] = useState('')
   const [templateProjectName, setTemplateProjectName] = useState('')
@@ -167,6 +179,25 @@ export default function ProjectsPage() {
       addToast(`Projekt ${project.name} utworzony`, 'success')
     } catch (err: unknown) {
       addToast(err instanceof Error ? err.message : 'Błąd tworzenia projektu', 'error')
+    }
+  }
+
+  const createTaskInSelectedProject = async (data: ProjectTaskFormData) => {
+    if (!selectedProject || selectedProject.archived) return
+
+    try {
+      const createdTask = await api.tasks.create({
+        ...data,
+        project: selectedProject.name,
+        project_id: selectedProject.id,
+      })
+      await loadProjects()
+      setSelectedProjectId(selectedProject.id)
+      setSelectedTask(createdTask)
+      setShowNewProjectTask(false)
+      addToast(`Dodano zadanie do projektu: ${selectedProject.name}`, 'success')
+    } catch (err: unknown) {
+      addToast(err instanceof Error ? err.message : 'Błąd tworzenia zadania', 'error')
     }
   }
 
@@ -338,14 +369,25 @@ export default function ProjectsPage() {
                       Postęp: {selectedProject.total > 0 ? Math.round((selectedProject.completed / selectedProject.total) * 100) : 0}%
                     </span>
                     {user?.role === 'admin' && !selectedProject.archived && (
-                      <button
-                        onClick={() => void completeProject(selectedProject.id)}
-                        disabled={!selectedProject.readyToComplete}
-                        title={!selectedProject.readyToComplete ? 'Najpierw spełnij checklistę gotowości' : undefined}
-                        className="btn btn-primary btn-sm disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        Zakończ projekt
-                      </button>
+                      <>
+                        <button
+                          onClick={() => setShowNewProjectTask(true)}
+                          className="btn btn-secondary btn-sm"
+                        >
+                          <svg className="mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                          </svg>
+                          Dodaj zadanie
+                        </button>
+                        <button
+                          onClick={() => void completeProject(selectedProject.id)}
+                          disabled={!selectedProject.readyToComplete}
+                          title={!selectedProject.readyToComplete ? 'Najpierw spełnij checklistę gotowości' : undefined}
+                          className="btn btn-primary btn-sm disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          Zakończ projekt
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -378,7 +420,12 @@ export default function ProjectsPage() {
 
                 {selectedProject.tasks.length === 0 ? (
                   <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-                    Ten projekt nie ma jeszcze zadań.
+                    <p>Ten projekt nie ma jeszcze zadań.</p>
+                    {user?.role === 'admin' && !selectedProject.archived && (
+                      <button onClick={() => setShowNewProjectTask(true)} className="btn btn-primary btn-sm mt-3">
+                        Dodaj pierwsze zadanie
+                      </button>
+                    )}
                   </div>
                 ) : (
                   <div className="space-y-2">
@@ -526,6 +573,27 @@ export default function ProjectsPage() {
         </Modal>
       )}
 
+      {showNewProjectTask && selectedProject && (
+        <Modal onClose={() => setShowNewProjectTask(false)}>
+          <TaskForm
+            initialData={{
+              title: '',
+              priority: 'medium',
+              project: selectedProject.name,
+              project_id: selectedProject.id,
+              due_date: '',
+              notes: '',
+              assignee_ids: [],
+            }}
+            heading={`Nowe zadanie w projekcie: ${selectedProject.name}`}
+            submitLabel="Dodaj zadanie"
+            lockedProjectName={selectedProject.name}
+            onSubmit={data => void createTaskInSelectedProject(data)}
+            onCancel={() => setShowNewProjectTask(false)}
+          />
+        </Modal>
+      )}
+
       {showNewProject && (
         <Modal onClose={() => setShowNewProject(false)}>
           <form onSubmit={event => void createProject(event)} className="p-6">
@@ -616,6 +684,17 @@ function compareProjectTasks(a: Task, b: Task) {
 }
 
 function ProjectTaskRow({ task, onOpen, onComplete }: { task: Task; onOpen: () => void; onComplete: () => void }) {
+  const completedSubtasks = task.subtasks.filter(subtask => subtask.completed).length
+  const openSubtasks = task.subtasks.length - completedSubtasks
+  const completionBlocked = !task.completed && (task.is_blocked || openSubtasks > 0)
+  const completionTitle = task.completed
+    ? 'Przywróć'
+    : task.is_blocked
+      ? 'Najpierw zakończ blokujące zadania'
+      : openSubtasks > 0
+        ? `Najpierw zakończ podzadania: ${openSubtasks}`
+        : 'Zakończ'
+
   return (
     <div className="rounded-lg border border-border p-3 transition-colors hover:bg-muted/30">
       <div className="flex items-start justify-between gap-3">
@@ -633,9 +712,15 @@ function ProjectTaskRow({ task, onOpen, onComplete }: { task: Task; onOpen: () =
       <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         {task.due_date && <span>{formatShortDate(task.due_date)}</span>}
         <span>{task.assignees.length > 0 ? task.assignees.map(assignee => assignee.username).join(', ') : 'Nieprzypisane'}</span>
+        {completionBlocked && <span className="font-medium text-amber-700 dark:text-amber-300">Zablokowane</span>}
       </div>
 
-      <button onClick={onComplete} className={`btn btn-sm mt-3 w-full ${task.completed ? 'btn-secondary' : 'btn-primary'}`}>
+      <button
+        onClick={onComplete}
+        disabled={completionBlocked}
+        title={completionTitle}
+        className={`btn btn-sm mt-3 w-full ${task.completed ? 'btn-secondary' : 'btn-primary'} disabled:cursor-not-allowed disabled:opacity-60`}
+      >
         {task.completed ? 'Przywróć' : 'Zakończ'}
       </button>
     </div>

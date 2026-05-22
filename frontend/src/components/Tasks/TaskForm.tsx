@@ -12,6 +12,7 @@ interface TaskFormData {
   assignee_ids?: number[]; // Changed to array of numbers
   priority?: 'low' | 'medium' | 'high';
   project?: string;
+  project_id?: number | null;
   due_date?: string;
   notes?: string;
 }
@@ -22,14 +23,16 @@ interface Props {
   initialData?: TaskFormData;
   submitLabel?: string;
   heading?: string;
+  lockedProjectName?: string;
 }
 
-export default function TaskForm({ onSubmit, onCancel, initialData, submitLabel = 'Utwórz zadanie', heading }: Props) {
+export default function TaskForm({ onSubmit, onCancel, initialData, submitLabel = 'Utwórz zadanie', heading, lockedProjectName }: Props) {
   const dueDateInputRef = useRef<HTMLInputElement | null>(null)
   const [title, setTitle] = useState(initialData?.title || '');
   const [assignedUserIds, setAssignedUserIds] = useState<number[]>(initialData?.assignee_ids || []);
   const [priority, setPriority] = useState(initialData?.priority || 'medium');
   const [project, setProject] = useState(initialData?.project || '');
+  const [projectId] = useState<number | null | undefined>(initialData?.project_id);
   const [dueDate, setDueDate] = useState(initialData?.due_date || '');
   const [notes, setNotes] = useState(initialData?.notes || '');
   const [users, setUsers] = useState<User[]>([]); // State to store fetched users
@@ -49,7 +52,15 @@ export default function TaskForm({ onSubmit, onCancel, initialData, submitLabel 
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSubmit({ title, assignee_ids: assignedUserIds, priority, project, due_date: dueDate, notes });
+    onSubmit({
+      title,
+      assignee_ids: assignedUserIds,
+      priority,
+      project: lockedProjectName ?? project,
+      project_id: lockedProjectName ? projectId : undefined,
+      due_date: dueDate,
+      notes,
+    });
   };
 
   const openDueDatePicker = () => {
@@ -85,7 +96,13 @@ export default function TaskForm({ onSubmit, onCancel, initialData, submitLabel 
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Projekt</label>
-            <input type="text" value={project} onChange={e => setProject(e.target.value)} className="input" placeholder="Ogólny" />
+            {lockedProjectName ? (
+              <div className="flex h-10 items-center rounded-md border border-border bg-muted/40 px-3 text-sm font-medium text-gray-700 dark:text-gray-200">
+                {lockedProjectName}
+              </div>
+            ) : (
+              <input type="text" value={project} onChange={e => setProject(e.target.value)} className="input" placeholder="Ogólny" />
+            )}
           </div>
         </div>
 

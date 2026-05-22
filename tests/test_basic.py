@@ -368,6 +368,36 @@ def test_task_dependency_blocks_completion_until_dependency_is_done(auth_client)
     assert completed_response.status_code == 200
     assert completed_response.get_json()["completed"] is True
 
+def test_task_completion_requires_completed_subtasks(auth_client):
+    task = auth_client.post('/tasks', json={"title": "Parent task"}).get_json()
+    subtask_response = auth_client.post(f'/tasks/{task["id"]}/subtasks', json={"title": "Open checklist item"})
+    subtask = subtask_response.get_json()
+
+    blocked_completion = auth_client.put(f'/tasks/{task["id"]}/complete')
+
+    assert blocked_completion.status_code == 409
+    blocked_payload = blocked_completion.get_json()
+    assert blocked_payload["open_subtasks"][0]["id"] == subtask["id"]
+    assert "podzadania" in blocked_payload["error"]
+
+    auth_client.put(f'/subtasks/{subtask["id"]}/complete')
+    completed_response = auth_client.put(f'/tasks/{task["id"]}/complete')
+
+    assert completed_response.status_code == 200
+    assert completed_response.get_json()["completed"] is True
+
+def test_bulk_completion_requires_completed_subtasks(auth_client):
+    task = auth_client.post('/tasks', json={"title": "Bulk parent task"}).get_json()
+    auth_client.post(f'/tasks/{task["id"]}/subtasks', json={"title": "Still open"})
+
+    response = auth_client.put('/tasks/bulk/complete', json={"task_ids": [task["id"]]})
+
+    assert response.status_code == 409
+    assert response.get_json()["blocked_tasks"][0]["id"] == task["id"]
+
+    with auth_client.application.app_context():
+        assert db.session.get(Task, task["id"]).completed is False
+
 def test_blocked_tasks_endpoint_returns_visible_blocked_tasks(auth_client):
     blocked = auth_client.post('/tasks', json={"title": "Blocked overview"}).get_json()
     blocker = auth_client.post('/tasks', json={"title": "Open prerequisite"}).get_json()

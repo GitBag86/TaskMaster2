@@ -94,11 +94,20 @@ def task_open_dependencies(task):
         if dependency.depends_on_task and not task_is_done(dependency.depends_on_task)
     ]
 
+def task_open_subtasks(task):
+    return [subtask for subtask in task.subtasks if not subtask.completed]
+
 def blocked_completion_response(task):
+    open_dependencies = task_open_dependencies(task)
+    open_subtasks = task_open_subtasks(task)
     return jsonify({
-        "error": "Nie można zakończyć zadania, dopóki jego zależności są otwarte.",
-        "blocked_by": [dependency_task.summary_dict() for dependency_task in task_open_dependencies(task)],
+        "error": "Nie można zakończyć zadania, dopóki ma otwarte zależności lub podzadania.",
+        "blocked_by": [dependency_task.summary_dict() for dependency_task in open_dependencies],
+        "open_subtasks": [subtask.to_dict() for subtask in open_subtasks],
     }), 409
+
+def task_blocks_completion(task):
+    return bool(task_open_dependencies(task) or task_open_subtasks(task))
 
 def would_create_dependency_cycle(task_id, depends_on_task_id):
     pending = [depends_on_task_id]
@@ -659,7 +668,7 @@ def update_task(task_id):
                 value = parse_due_date(value)
             setattr(task, key, value)
 
-    if not was_done and task_is_done(task) and task_open_dependencies(task):
+    if not was_done and task_is_done(task) and task_blocks_completion(task):
         db.session.rollback()
         return blocked_completion_response(task)
 
@@ -724,7 +733,7 @@ def complete_task(task_id):
     if not user_can_access_task(user, task):
         return jsonify({"error": "Can only complete tasks assigned to you"}), 403
 
-    if not task.completed and task_open_dependencies(task):
+    if not task.completed and task_blocks_completion(task):
         return blocked_completion_response(task)
 
     will_complete = not task.completed
@@ -1289,10 +1298,10 @@ def bulk_complete_tasks():
         return jsonify({"error": f"Maksymalna liczba zadań w operacji masowej: {BULK_MAX_TASKS}"}), 400
 
     tasks = [task for task_id in task_ids if (task := db.session.get(Task, task_id))]
-    blocked_tasks = [task for task in tasks if not task_is_done(task) and task_open_dependencies(task)]
+    blocked_tasks = [task for task in tasks if not task_is_done(task) and task_blocks_completion(task)]
     if blocked_tasks:
         return jsonify({
-            "error": "Nie można zakończyć zadań, które mają otwarte zależności.",
+            "error": "Nie można zakończyć zadań, które mają otwarte zależności lub podzadania.",
             "blocked_tasks": [task.summary_dict() for task in blocked_tasks],
         }), 409
 
@@ -1348,10 +1357,10 @@ def bulk_update_tasks():
 
     tasks = [task for task_id in task_ids if (task := db.session.get(Task, task_id))]
     marks_done = updates.get('completed') is True or updates.get('status') == 'done'
-    blocked_tasks = [task for task in tasks if marks_done and not task_is_done(task) and task_open_dependencies(task)]
+    blocked_tasks = [task for task in tasks if marks_done and not task_is_done(task) and task_blocks_completion(task)]
     if blocked_tasks:
         return jsonify({
-            "error": "Nie można zakończyć zadań, które mają otwarte zależności.",
+            "error": "Nie można zakończyć zadań, które mają otwarte zależności lub podzadania.",
             "blocked_tasks": [task.summary_dict() for task in blocked_tasks],
         }), 409
 

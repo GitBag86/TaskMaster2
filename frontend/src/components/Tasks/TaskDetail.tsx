@@ -186,6 +186,14 @@ export default function TaskDetail({ task, onDelete, onComplete, onUpdate, onClo
     taskOption.id !== task.id && !existingDependencyIds.has(taskOption.id)
   ))
   const isBlocked = task.is_blocked && !task.completed
+  const openSubtasks = subtasks.length - completedSubtasks
+  const hasOpenSubtasks = !task.completed && openSubtasks > 0
+  const completionBlocked = isBlocked || hasOpenSubtasks
+  const completionBlockedTitle = isBlocked
+    ? 'Najpierw zakończ blokujące zadania'
+    : hasOpenSubtasks
+      ? `Najpierw zakończ podzadania: ${openSubtasks}`
+      : undefined
 
   if (isEditing) {
     return (
@@ -215,6 +223,7 @@ export default function TaskDetail({ task, onDelete, onComplete, onUpdate, onClo
           <Badge>{priorityLabel(task.priority)}</Badge>
           <Badge>{statusLabel(task.status)}</Badge>
           {isBlocked && <Badge tone="warning">Zablokowane przez {blockedBy.length}</Badge>}
+          {hasOpenSubtasks && <Badge tone="warning">Otwarte podzadania: {openSubtasks}</Badge>}
           {task.due_date && <Badge>{task.due_date}</Badge>}
         </div>
 
@@ -411,8 +420,8 @@ export default function TaskDetail({ task, onDelete, onComplete, onUpdate, onClo
         <div className="flex justify-between gap-3">
           <button
             onClick={() => onComplete(task.id)}
-            disabled={isBlocked}
-            title={isBlocked ? 'Najpierw zakończ blokujące zadania' : undefined}
+            disabled={completionBlocked}
+            title={completionBlockedTitle}
             className={`btn btn-sm ${task.completed ? 'btn-secondary' : 'btn-primary'} disabled:cursor-not-allowed disabled:opacity-60`}
           >
             {task.completed ? 'Przywróć zadanie' : 'Oznacz jako zakończone'}
