@@ -1,0 +1,81 @@
+version: '3.8'
+
+services:
+  # Nginx reverse proxy + SSL termination
+  nginx:
+    image: nginx:alpine
+    container_name: taskmaster-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./nginx/certbot/conf:/etc/letsencrypt:ro
+      - ./nginx/certbot/www:/var/www/certbot:ro
+    depends_on:
+      - web
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Flask backend
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: taskmaster-web
+    expose:
+      - "5000"
+    volumes:
+      - ./instance:/app/instance
+      - ./logs:/app/logs
+    env_file:
+      - .env
+      - path: .env.local
+        required: false
+    environment:
+      - FLASK_ENV=production
+      - SOCKETIO_ASYNC_MODE=gthread
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # PostgreSQL (opcjonalnie - dla produkcji)
+  # postgres:
+  #   image: postgres:15-alpine
+  #   container_name: taskmaster-db
+  #   environment:
+  #     POSTGRES_DB: taskmaster
+  #     POSTGRES_USER: taskmaster
+  #     POSTGRES_PASSWORD: ${DB_PASSWORD:-change-me}
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   networks:
+  #     - app-network
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U taskmaster"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  # postgres_data:

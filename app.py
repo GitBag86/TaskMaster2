@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
+from flask_proxyfix import ProxyFix
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
