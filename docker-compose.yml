@@ -15,12 +15,17 @@ services:
     networks:
       - app-network
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      test: ["CMD-SHELL", "wget --no-check-certificate -qO- https://127.0.0.1/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
+      start_period: 15s
 
   # Flask backend (Gunicorn + gthread)
   web:
@@ -32,6 +37,7 @@ services:
       - "5000"
     volumes:
       - ./instance:/app/instance
+      - ./logs/app:/app/logs
     env_file:
       - .env
       - path: .env.local
@@ -39,9 +45,15 @@ services:
     environment:
       - FLASK_ENV=production
       - SOCKETIO_ASYNC_MODE=gthread
+      - LOG_DIR=/app/logs
     networks:
       - app-network
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health')"]
       interval: 30s
