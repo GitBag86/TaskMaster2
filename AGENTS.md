@@ -2,11 +2,12 @@
 
 **TaskMaster2**: A full-stack task management application with a Flask REST API backend and React/TypeScript SPA frontend. Features role-based access control, subtasks, comments, real-time updates via Socket.IO, dark mode, and PWA support.
 
+Deployment target: **self-hosted Docker on a Linux server (Ubuntu) behind Nginx + FortiGate**. SQLite is the only supported database.
+
 ---
 
-## � Quick Navigation
+## 📍 Quick Navigation
 
-**For AI Agents:**
 - 🎯 **[Quick Decision Tree](#quick-decision-tree)** ← Start here to pick your task type
 - 🔧 **[Critical Rules](#critical-rules--do-not-skip)** ← Non-negotiable patterns (Socket.IO, Marshmallow, etc.)
 - 📂 **[Key Files & Patterns](#key-files--exemplary-patterns)** ← See best practices in real code
@@ -22,107 +23,59 @@
 | Task Type | First Steps | See Also |
 |-----------|------------|----------|
 | **New REST endpoint** | 1. Create route in `routes/` <br> 2. Add Marshmallow schema <br> 3. If POST/PATCH/DELETE: emit `task_action` <br> 4. Add pytest tests | [Socket.IO Patterns](#socket-io-real-time-sync), [Exemplary: routes/tasks.py](#key-files--exemplary-patterns) |
-| **Database schema change** | 1. Update `models.py` <br> 2. `flask db migrate -m "desc"` <br> 3. `flask db upgrade` <br> 4. Add tests | [Resolved Issues: Migrations](#resolved-issues-for-agent-awareness) |
+| **Database schema change** | 1. Update `models.py` <br> 2. `flask db migrate -m "desc"` <br> 3. `flask db upgrade` <br> 4. Add tests | [Common Pitfalls](#common-pitfalls) |
 | **New frontend page/component** | 1. Create in `frontend/src/components/` <br> 2. Lazy-load in `App.tsx` <br> 3. Use `useAuth()`, `useSocket()`, `useTheme()` hooks <br> 4. Style with Tailwind | [Frontend Guidelines](#related-instruction-files), [Exemplary: DashboardLayout.tsx](#key-files--exemplary-patterns) |
 | **Real-time sync issue** | 1. Check: Backend emits `socketio.emit()` after DB commit <br> 2. Verify: Frontend listens in `SocketContext.tsx` <br> 3. Check browser console for Socket.IO events | [Socket.IO Patterns](#socket-io-real-time-sync), [Pitfall: Missing Socket.IO Emit](#common-pitfalls) |
-| **Bug or performance issue** | 1. Review [Common Pitfalls](#common-pitfalls) <br> 2. Check [Resolved Issues](#resolved-issues-for-agent-awareness) <br> 3. Check instruction files for domain-specific rules | [Pitfalls Table](#common-pitfalls) |
+| **Bug or performance issue** | 1. Review [Common Pitfalls](#common-pitfalls) <br> 2. Check instruction files for domain-specific rules | [Pitfalls Table](#common-pitfalls) |
 
 ---
 
-## �🚀 Quick Start
+## 🚀 Quick Start
 
-### Option 1: Docker (Recommended)
+### Docker (Recommended)
 ```bash
 docker-compose up --build
 ```
-Runs on `http://localhost:5000`. Database is persisted in `instance/`.
+Aplikacja jest dostępna na `https://localhost` (przez Nginx z portami 80/443). Baza SQLite zapisuje się w `instance/tasks.db`.
 
-### Option 2: Local Development (Full-Stack)
+### Lokalny development (bez Dockera)
 
 **Backend:**
 ```bash
-# Set up Python environment
 python3 -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+source .venv/bin/activate           # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-
-# Apply database migrations
 flask db upgrade
-
-# Run Flask dev server (port 5000)
-python app.py
+python app.py                       # Flask dev server na :5000
 ```
 
-**Frontend (separate terminal):**
+**Frontend (osobny terminal):**
 ```bash
 cd frontend
-npm install                 # First time only
-npm run dev                 # Runs Vite dev server on port 3000
+npm install
+npm run dev                         # Vite na :3000, proxy do Flask :5000
 ```
-
-The frontend dev server proxies API calls (`/auth`, `/tasks`, etc.) to the Flask backend on `localhost:5000`.
 
 ### Database & Testing
 ```bash
-# Apply migrations after schema changes
 flask db migrate -m "description"
 flask db upgrade
-
-# Run tests
 pytest
 ```
 
-**Database:** SQLite (`instance/tasks.db`) - managed via Flask-Migrate.
-
 ---
 
-## 🚀 Deployment
+## 🚀 Deployment (Self-hosted)
 
-### Google Cloud Run + Cloud SQL (Postgres)
+Aplikacja jest projektowana do uruchamiania na własnym serwerze Linux (Ubuntu) za Nginx + FortiGate. Pełna instrukcja: [DEPLOYMENT.md](DEPLOYMENT.md).
 
-TaskMaster2 is optimized for Google Cloud Run with managed Postgres via Cloud SQL.
+Skrót:
+1. `./scripts/setup-ssl.sh taskmaster.local admin@taskmaster.local`
+2. `cp .env.example .env` i uzupełnij wartości
+3. `docker-compose up -d --build`
+4. Otwórz porty 80/443 w UFW i FortiGate
 
-**Quick Deploy (Recommended):**
-```bash
-# 1. Run automated deployment script
-chmod +x deploy-cloud-run.sh
-./deploy-cloud-run.sh your-project-id us-central1 taskmaster
-
-# The script will:
-# - Build and push Docker image
-# - Deploy to Cloud Run
-# - Set up database connection
-# - Run migrations
-```
-
-**Manual Deploy:**
-See [CLOUD_RUN_SETUP.md](CLOUD_RUN_SETUP.md) for detailed step-by-step instructions including:
-- Cloud SQL instance setup
-- Docker image configuration
-- Environment variables
-- Complete deployment workflow
-
-**Troubleshooting Database Issues:**
-If deployment fails with database errors, see [CLOUD_RUN_TROUBLESHOOTING.md](CLOUD_RUN_TROUBLESHOOTING.md) for:
-- Socket connection errors
-- User/database not found
-- Migration failures
-- IAM permission issues
-- Connection timeouts
-- Debugging checklist
-
-**Local Postgres Testing:**
-Before deploying to Cloud Run, test locally with Postgres. See [POSTGRES_MIGRATION.md](POSTGRES_MIGRATION.md) for:
-- Starting Postgres with Docker
-- Running migrations
-- Testing the app with Postgres
-- Migrating data from SQLite (if needed)
-
-**Why Cloud Run?**
-- Scales to zero (pay only when serving requests)
-- Automatic HTTPS, load balancing
-- Managed Postgres (Cloud SQL) - no infrastructure to maintain
-- Integrates with Google Cloud ecosystem
+Dla konfiguracji FortiGate zobacz [FORTIGATE_SETUP.md](FORTIGATE_SETUP.md).
 
 ---
 
@@ -134,7 +87,8 @@ Before deploying to Cloud Run, test locally with Postgres. See [POSTGRES_MIGRATI
 - **Database**: SQLite with Flask-Migrate (Alembic)
 - **Real-Time**: Socket.IO for cross-client synchronization
 - **Auth**: Session-based (user_id in Flask session)
-- **Deployment**: Docker + Gunicorn (gthread worker class)
+- **Reverse Proxy**: Nginx (SSL termination, rate limiting, security headers)
+- **Runtime**: Gunicorn (gthread worker class) inside Docker
 
 ### Backend Architecture
 
@@ -143,7 +97,7 @@ Before deploying to Cloud Run, test locally with Postgres. See [POSTGRES_MIGRATI
 - **Task** - Main entity with title, priority, project, due_date, notes, owner
   - Many-to-many: assignees, tags, dependencies
   - One-to-many: comments, subtasks, custom_fields, activity logs
-- **Supporting**: Subtask, Comment, Tag, SavedFilter, ActivityLog, RecurringTask, TaskTemplate, TaskDependency, CustomField
+- **Supporting**: Subtask, Comment, Tag, SavedFilter, ActivityLog, RecurringTask, TaskTemplate, TaskDependency, CustomField, Notification, Project
 
 **Modules** (`routes/`)
 - `auth.py` - Login, signup, user management (rate-limited)
@@ -151,6 +105,7 @@ Before deploying to Cloud Run, test locally with Postgres. See [POSTGRES_MIGRATI
 - `filters.py` - Saved filters and custom views
 - `stats.py` - Dashboard statistics
 - `users.py` - User management and admin operations
+- `notifications.py` - User notifications
 
 **API Patterns**
 - All endpoints return JSON
@@ -158,7 +113,7 @@ Before deploying to Cloud Run, test locally with Postgres. See [POSTGRES_MIGRATI
 - Errors: `{"error": "message"}` with HTTP 401/403/404/429
 - Request validation via Marshmallow schemas (`schemas.py`)
 - Session-based auth: `@login_required` decorator
-- Rate limiting: 60 requests/min per IP on auth endpoints
+- Rate limiting: enforced by Nginx (Auth: 5/min, API: 30/s)
 
 **Real-Time Synchronization** (Socket.IO)
 - Backend: `socketio.emit('task_action', {'action': 'create', 'task_id': id})` after mutations
@@ -178,7 +133,7 @@ components/
   ├─ Kanban/KanbanPage.tsx
   ├─ Layout/DashboardLayout.tsx
   ├─ Tasks/{TasksPage,TaskCard,TaskDetail,TaskForm}.tsx
-  └─ common/{Skeletons,Toaster}.tsx
+  └─ common/{Skeletons,Toaster,CommandPalette}.tsx
 store/
   ├─ AuthContext.tsx    - User auth state & session
   ├─ SocketContext.tsx  - WebSocket connection management
@@ -221,31 +176,17 @@ Use **Flask-Migrate** (Alembic):
 - Roll back if needed: `flask db downgrade`
 
 ### Task Dependencies
-Tasks can depend on other tasks via the `TaskDependency` model. When implementing dependency-related features:
+Tasks can depend on other tasks via the `TaskDependency` model. Tasks with open dependencies cannot be marked done. Tasks with cascade-delete behaviour: deleting a task automatically deletes its dependency records, subtasks, comments, and activity logs.
 
 ```python
 # Get all tasks this task depends on
 dependencies = TaskDependency.query.filter_by(task_id=1).all()
 
-# Check if a task can be deleted (has dependents)
-dependents = TaskDependency.query.filter_by(depends_on_id=1).all()
-if dependents:
-    return {"error": "Cannot delete task with dependent tasks"}, 409
-
-# Add a dependency
-dep = TaskDependency(task_id=1, depends_on_id=2)
-db.session.add(dep)
-db.session.commit()
+# Cycle prevention: enforced in routes/tasks.py via would_create_dependency_cycle()
 
 # Emit dependency change via Socket.IO
-socketio.emit('task_action', {
-    'action': 'dependency_added',
-    'task_id': 1,
-    'depends_on_id': 2
-}, broadcast=True)
+socketio.emit('task_action', {'action': 'dependency_added', 'task_id': 1})
 ```
-
-**Important**: Tasks with dependencies use CASCADE delete. Deleting a task automatically deletes its dependency records. Test carefully when implementing delete endpoints.
 
 ### Database & Permissions
 
@@ -257,34 +198,30 @@ socketio.emit('task_action', {
 
 | File | Pattern | Why It Matters |
 |------|---------|---|
-| [app.py](app.py) | Flask app + models + routes (800+ lines) | Entry point; contains main route handlers and Socket.IO setup |
-| [models.py](models.py) | SQLAlchemy models with relationships | Schema definition; shows cascade deletes, many-to-many tables |
-| [schemas.py](schemas.py) | Marshmallow v3.x validation | Request validation; shows `load_default` (not `default`) pattern |
-| [routes/auth.py](routes/auth.py) | Auth + rate limiting + session | Shows input validation, error handling, custom decorators |
-| [routes/tasks.py](routes/tasks.py) | Task CRUD + Socket.IO emission + pagination | Demonstrates real-time sync pattern: emit after mutations |
-| [frontend/src/App.tsx](frontend/src/App.tsx) | Route protection + Suspense + Context | Shows auth guard, lazy loading, provider nesting |
+| [app.py](app.py) | Flask app factory + Socket.IO init | Entry point; SPA fallback routing, health/ready endpoints |
+| [models.py](models.py) | SQLAlchemy models with relationships | Schema definition; cascade deletes, many-to-many tables |
+| [schemas.py](schemas.py) | Marshmallow v3.x validation | Request validation; uses `load_default` (not `default`) |
+| [routes/auth.py](routes/auth.py) | Auth + session | Input validation, error handling, custom decorators |
+| [routes/tasks.py](routes/tasks.py) | Task CRUD + Socket.IO emission + pagination | Real-time sync pattern: emit after mutations |
+| [frontend/src/App.tsx](frontend/src/App.tsx) | Route protection + Suspense + Context | Auth guard, lazy loading, provider nesting |
 | [frontend/src/store/AuthContext.tsx](frontend/src/store/AuthContext.tsx) | Context API + custom hook | Centralized auth state; clean hook interface |
 | [frontend/src/api/client.ts](frontend/src/api/client.ts) | Typed fetch wrapper | DRY API calls; centralized error handling; type safety |
-| [frontend/src/components/Dashboard/DashboardLayout.tsx](frontend/src/components/Dashboard/DashboardLayout.tsx) | Dark mode toggle + layout | Shows Tailwind dark mode class-based strategy |
+| [frontend/src/components/Layout/DashboardLayout.tsx](frontend/src/components/Layout/DashboardLayout.tsx) | Dark mode toggle + layout | Tailwind dark mode class-based strategy |
 | [frontend/src/index.css](frontend/src/index.css) | Tailwind + custom theme | Dark mode colors (turquoise-purple); CSS variables |
-| [Dockerfile](Dockerfile) + [docker-compose.yml](docker-compose.yml) | Multi-stage build + volumes | Production setup; shows proper Flask + Node.js staging |
+| [Dockerfile](Dockerfile) + [docker-compose.yml](docker-compose.yml) | Multi-stage build + Nginx + Flask | Production setup with reverse proxy |
+| [nginx/conf.d/taskmaster.conf](nginx/conf.d/taskmaster.conf) | Reverse proxy + WebSocket | SSL, rate limiting, Socket.IO upgrade |
 
 ## Frontend Setup & Build
 
-**Initial Setup:**
 ```bash
 cd frontend
-npm install
+npm install                # First time only
+npm run dev                # Vite dev server on :3000 (proxies to Flask :5000)
+npm run build              # Build SPA to frontend/dist/
+npm run preview            # Preview production build
 ```
 
-**Development:**
-```bash
-npm run dev        # Vite dev server on port 3000 (proxies to Flask :5000)
-npm run build      # Build React SPA to frontend/dist/
-npm run preview    # Preview production build locally
-```
-
-**Important**: Flask serves the built frontend from `frontend/dist/`. After frontend changes, run `npm run build` before testing with Python.
+**Important**: Flask serves the built frontend from `frontend/dist/`. After frontend changes, run `npm run build` before testing with Python directly. Docker builds the frontend automatically as part of the multi-stage Dockerfile.
 
 ## API & Error Handling Patterns
 
@@ -303,10 +240,7 @@ npm run preview    # Preview production build locally
 
 **Error Responses**
 ```json
-{
-  "error": "Task not found",
-  "status": 404
-}
+{ "error": "Task not found", "status": 404 }
 ```
 
 **HTTP Status Codes**
@@ -316,135 +250,79 @@ npm run preview    # Preview production build locally
 - `401` - Unauthorized (not logged in)
 - `403` - Forbidden (permission denied)
 - `404` - Not found
-- `429` - Rate limit exceeded (auth endpoints)
-
-**Validation**: Marshmallow schemas in `schemas.py` automatically validate incoming JSON.
+- `409` - Conflict (e.g. blocked task completion, dependency cycle)
+- `429` - Rate limit exceeded
 
 ## Environment Variables
 
-Key `.env` variables (optional; defaults provided):
+Key `.env` variables (see [.env.example](.env.example) for full list):
 ```
-FLASK_ENV=development              # development or production
-SECRET_KEY=your-secret             # Session encryption (auto-generated in dev)
-DATABASE_URL=...                   # Override SQLite location (optional)
-CORS_ORIGINS=http://localhost:5000 # Allow cross-origin in dev
-LOG_LEVEL=INFO                     # Logging verbosity
-SOCKETIO_ASYNC_MODE=threading      # threading (dev) or gthread (Docker)
-SOCKETIO_MESSAGE_QUEUE=...         # Redis URL for multi-worker deployments (optional)
+SECRET_KEY=...                     # WYMAGANE - random 32-byte hex
+CORS_ORIGINS=...                   # https://twoja-domena.com
+FLASK_ENV=production
+SOCKETIO_ASYNC_MODE=gthread        # gthread for Gunicorn, threading for dev
+ENABLE_SCHEDULER=true
+LOG_LEVEL=INFO
+DEFAULT_ADMIN_USERNAME=admin
+DEFAULT_ADMIN_PASSWORD=...         # Change before first deploy
+DEFAULT_ADMIN_EMAIL=...
 ```
 
 **Socket.IO Async Mode:**
-- `threading` — Local development (default, Flask debug server)
-- `gthread` — Docker/Gunicorn production (worker-class: gthread)
+- `threading` — Local Flask dev server
+- `gthread` — Docker / Gunicorn (default in `docker-compose.yml`)
 - ❌ **Avoid `eventlet`** — Deprecated, known compatibility issues
-
-In Docker, these are set in `docker-compose.yml`.
-
-## Resolved Issues (for Agent Awareness)
-- **Incorrect Static Folder**: Flask `static_folder` was pointing to `.` instead of `frontend/dist`. Fixed in `app.py`.
-- **Missing Frontend Build**: The React frontend needed to be built (`cd frontend && npm run build`).
-- **Broken .gitignore**: Initial `.gitignore` ignored all files (`*`). Corrected to properly ignore virtual environments, `node_modules`, `instance/tasks.db`, and build artifacts.
-- **Git Rebase Conflicts**: Resolved conflicts related to binary files during rebase operations.
-- **Dark Mode Not Working**: Tailwind CSS `darkMode: 'class'` was not enabled, and color variables were not properly configured for a distinct dark mode theme. Fixed in `tailwind.config.ts` and `frontend/src/index.css` with a turquoise-purple scheme.
 
 ## Common Pitfalls
 
 - **Marshmallow v3.x compatibility** - Use `load_default` instead of `default` for field defaults in schemas.
 - **Decorator stacking** - `@app.route()` must come BEFORE `@login_required` in the decorator stack.
-- **WebSocket workers** - When running with Gunicorn in Docker, use the `gthread` worker class. For local development, `threading` is now the preferred `async_mode` for SocketIO to avoid `eventlet` deprecation issues.
-- **Port Conflicts**: Port 5000 is the default. If busy, check for ghost processes or browser tabs.
-- **Frontend not built**: Flask serves `frontend/dist/`. If you update frontend code but don't run `npm run build`, changes won't appear. Always rebuild after frontend edits.
-- **Rate Limiting**: Auth endpoints (signup/login) are rate-limited to 60 requests/min per IP. In rapid testing, use different IPs or wait for rate limit to reset.
-- **Socket.IO Emission**: Any POST/PATCH/DELETE that modifies task state MUST be followed by `socketio.emit('task_action', ...)`. Without it, other clients won't see updates.
+- **WebSocket workers** - With Gunicorn use `gthread`. For local development, `threading` is preferred (avoid `eventlet`).
+- **Port Conflicts**: Port 5000 (Flask) and 80/443 (Nginx) - check with `lsof -i :5000` / `netstat -ano | findstr :5000`.
+- **Frontend not built**: Flask serves `frontend/dist/`. After frontend edits run `npm run build` (or rebuild Docker image).
+- **Socket.IO Emission**: Any POST/PATCH/DELETE that modifies task state MUST emit `socketio.emit('task_action', ...)`. Without it, other clients won't see updates.
 - **Session Timeout**: Session-based auth means users are logged in as long as the session exists. Test logout thoroughly.
-- **Large Files**: `app.py` and `frontend/index.html` are 800+ lines. When editing, use specific `replace_string_in_file` calls with 3+ lines of context to avoid ambiguous matches.
+- **Large Files**: `app.py` and `routes/tasks.py` are sizeable. When editing, use `str_replace` with 3+ lines of context to avoid ambiguous matches.
 - **Cascade Deletes**: Models use `cascade='all, delete-orphan'`. Deleting a parent (e.g., Task) automatically deletes children (e.g., Subtasks, Comments). Be careful with migrations affecting parent-child relationships.
+- **SQLite concurrency**: SQLite is single-writer. For >20 concurrent users consider PostgreSQL. Current setup is sized for self-hosted internal use.
 
-## Cloud Run + Postgres Troubleshooting
+## Local Troubleshooting
 
-### Connection Issues
-
-**Error: "Cannot connect to Postgres"**
+**Port 5000 already in use:**
 ```bash
-# 1. Verify Cloud SQL instance is running
-gcloud sql instances describe taskmaster
-
-# 2. Check Cloud Run service account has Cloud SQL Client role
-gcloud projects get-iam-policy YOUR_PROJECT \
-  --flatten="bindings[].members" \
-  --filter="bindings.role:cloudsql.client"
-
-# 3. View Cloud Run logs
-gcloud run logs read taskmaster2 --region us-central1 --limit 50
+# Linux / macOS
+lsof -i :5000
+kill -9 <PID>
+# Windows
+netstat -ano | findstr :5000
+taskkill /PID <PID> /F
 ```
 
-**Error: "host /cloudsql/... does not exist"**
-- Cloud SQL Auth Proxy not running or misconfigured
-- Verify `INSTANCE_UNIX_SOCKET` env var matches actual connection name
-- Check: `gcloud sql instances describe taskmaster --format='value(connectionName)'`
+**Flask dev server not reloading:**
+- Set `FLASK_ENV=development`
+- Make sure files aren't in `.venv/` or `node_modules/`
 
-**Error: "authentication failed for user 'appuser'"**
+**Socket.IO connection timeout:**
+1. Verify Flask is running: `lsof -i :5000`
+2. Check `CORS_ORIGINS` matches frontend URL
+3. Browser DevTools → Network → check socket URL
+
+**npm install issues:**
 ```bash
-# Verify password is correct (regenerate if needed)
-gcloud sql users set-password appuser \
-  --instance=taskmaster \
-  --password=NEW_PASSWORD
-
-# Update Cloud Run env var
-gcloud run services update taskmaster2 \
-  --set-env-vars DB_PASSWORD=NEW_PASSWORD
+cd frontend
+rm -rf node_modules package-lock.json
+npm cache clean --force
+npm install
 ```
 
-### Migration Issues
+## Health Checks
 
-**Error: "relation 'user' does not exist"**
-- Migrations didn't run after first deployment
-- Run migration job:
-```bash
-gcloud beta run jobs execute taskmaster2-migrate --region us-central1
-```
+Aplikacja udostępnia dwa endpointy do monitorowania:
 
-**Error: "permission denied for schema public"**
-- Database user doesn't have proper permissions
-- Grant permissions (requires psql access):
-```bash
-psql postgresql://appuser:password@cloud-sql-host/taskmaster_db
-# In psql:
-GRANT ALL PRIVILEGES ON SCHEMA public TO appuser;
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO appuser;
-GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO appuser;
-```
+- `GET /health` - prosty health check (zwraca 200 jeśli proces żyje)
+- `GET /ready` - readiness (sprawdza DB + Socket.IO)
 
-### Performance Issues
-
-**Slow queries from Cloud Run**
-- Enable connection pooling: Consider PgBouncer
-- Check Cloud SQL instance size (might need higher tier)
-- View metrics: `gcloud sql instances describe taskmaster --format=pretty`
-
-**Cold starts (first request takes 30+ seconds)**
-- Normal on Cloud Run (container startup + DB connection)
-- Mitigation: Set `--min-instances 1` to keep container warm
-```bash
-gcloud run services update taskmaster2 --min-instances 1 --region us-central1
-```
-
-### Scaling Issues
-
-**Error: "too many connections"**
-- Cloud SQL instance has connection limit (default: 100)
-- Reduce Cloud Run `--concurrency` or increase Cloud SQL connections:
-```bash
-# Check current connections
-gcloud sql instances describe taskmaster --format='value(settings.ipConfiguration.maxConnections)'
-
-# Increase limit (requires instance stop on some versions)
-gcloud sql instances patch taskmaster --database-flags max_connections=200
-```
-
-**Error: "Disk quota exceeded"**
-- Cloud SQL instance ran out of storage
-- Resize: `gcloud sql instances patch taskmaster --storage-size=20GB`
+Docker `healthcheck` jest skonfigurowany dla `web` i `nginx` w `docker-compose.yml`.
 
 ## Related Instruction Files
 
@@ -459,154 +337,15 @@ When modifying this codebase, agents should follow these domain-specific guideli
 | [Python Conventions Skill](.github/skills/python-conventions/SKILL.md) | Code style and pragmatic conventions | `**/*.py` |
 
 ## Available Agent Skills
-- [Socket.IO Patterns](.vscode/prompts/socketio-patterns.prompt.md) - Real-time sync implementation guide for Flask + Socket.IO.
+
+- [Socket.IO Patterns](.vscode/prompts/socketio-patterns.prompt.md) - Real-time sync implementation guide.
 - [Frontend Responsive Check](.vscode/prompts/frontend-responsive-check.prompt.md) - Validates responsive design and prevents UI overflow.
 - [Post-Migration Check](.vscode/prompts/post-migration-check.prompt.md) - Ensures schema integrity after `flask db upgrade`.
 - [Backend Test Generator](.vscode/prompts/backend-test-generator.prompt.md) - Scaffolds pytest suites for new endpoints.
 
-## Deployment Guides
-
-- [Cloud Run Quickstart](CLOUD_RUN_QUICKSTART.md) - **Copy-paste commands for step-by-step deployment** ← Start here!
-- [Cloud Run Setup Guide](CLOUD_RUN_SETUP.md) - Complete Google Cloud Run + Cloud SQL deployment
-- [Cloud Run Troubleshooting](CLOUD_RUN_TROUBLESHOOTING.md) - **Fixes for common database errors** ← Start here if deployment fails
-- [Postgres Migration Guide](POSTGRES_MIGRATION.md) - SQLite → Postgres migration for testing locally
-- [Deploy Script](deploy-cloud-run.sh) - Automated Cloud Run deployment (run with `./deploy-cloud-run.sh PROJECT_ID REGION`)
-
-## Testing & Debugging
-
-- App runs with `debug=True` on port 5000 by default
-- Use `pytest` for automated testing (backend).
-- Check logs via `logger.info()` statements.
-
-## Docker Optimization Guide for AI Agents
-
-When working with Docker containers for this application, AI agents should be aware of:
-
-1. **Worker Class Compatibility**: The current Dockerfile uses `eventlet` worker class which has known compatibility issues. For production, use `gthread` workers.
-
-2. **Image Size Optimization**: 
-   - Use multi-stage builds to reduce final image size
-   - Clean up package caches in Dockerfile
-   - Use slim base images
-
-3. **Health Checks**: Add health check endpoints to ensure container reliability
-## Health Checks (For Production Readiness)
-
-Add health check endpoints for monitoring and load balancers:
-
-```python
-# app.py
-@app.route('/health', methods=['GET'])
-def health_check():
-    """Simple health check endpoint."""
-    try:
-        # Verify database connection
-        db.session.execute('SELECT 1')
-        return jsonify({'status': 'healthy', 'timestamp': datetime.utcnow().isoformat()}), 200
-    except Exception as e:
-        return jsonify({'status': 'unhealthy', 'error': str(e)}), 503
-
-@app.route('/ready', methods=['GET'])
-def readiness_check():
-    """Readiness check for Kubernetes/Cloud Run."""
-    try:
-        # Check: Database connected
-        db.session.execute('SELECT COUNT(*) FROM user')
-        # Check: Socket.IO initialized
-        assert socketio is not None
-        return jsonify({'status': 'ready'}), 200
-    except Exception as e:
-        return jsonify({'status': 'not_ready', 'error': str(e)}), 503
-```
-
-**Cloud Run Configuration:**
-```yaml
-# In container health checks
-livenessProbe:
-  httpGet:
-    path: /health
-    port: 8080
-  initialDelaySeconds: 10
-  periodSeconds: 10
-readinessProbe:
-  httpGet:
-    path: /ready
-    port: 8080
-  initialDelaySeconds: 5
-  periodSeconds: 5
-```
-
-### Development Troubleshooting
-
-**Port 5000 already in use:**
-```bash
-# Find process using port 5000
-lsof -i :5000          # macOS/Linux
-netstat -ano | findstr :5000  # Windows
-
-# Kill process
-kill -9 <PID>          # macOS/Linux
-taskkill /PID <PID> /F # Windows
-
-# Or use different port
-FLASK_RUN_PORT=5001 python app.py
-```
-
-**Flask dev server not reloading:**
-```bash
-# Ensure FLASK_ENV is set
-export FLASK_ENV=development
-
-# Files must be in watched directories (not ignored by .gitignore)
-# Common issue: editing files in venv/ or node_modules/
-```
-
-**Socket.IO connection timeout:**
-```bash
-# 1. Verify Flask is running
-lsof -i :5000
-
-# 2. Check CORS is configured in app.py
-print(app.config.get('CORS_ORIGINS'))
-
-# 3. Frontend console (F12): check socket URL
-console.log(socket.io.uri)  # Should be http://localhost:5000
-
-# 4. Restart both frontend and backend
-```
-
-**npm install cache issues:**
-```bash
-cd frontend
-rm -rf node_modules package-lock.json
-npm cache clean --force
-npm install
-```
-
-**Python venv not activated:**
-```bash
-# Check if activated (should show (venv) in prompt)
-source .venv/bin/activate        # macOS/Linux
-.venv\Scripts\activate.bat       # Windows (cmd)
-.venv\Scripts\Activate.ps1       # Windows (PowerShell)
-```
-
-
-4. **Environment Configuration**: Properly manage environment variables and secrets
-
-5. **Build Context**: Be mindful of what gets copied into the build context
-
-## Agent Workflow Recommendations
-
-1. **Container Build**: When building Docker images, prefer `gthread` worker class for production
-2. **Image Size**: Use `.dockerignore` to exclude unnecessary files
-3. **Build Context**: Limit files copied during build to improve speed
-4. **Environment Variables**: Manage configuration properly with `.env` files
-5. **Health Monitoring**: Implement health check endpoints for production readiness
-
 ## Refactoring & Code Quality
 
-- **Large Files**: `app.py` and `index.html` are significantly large. When modifying, use specific `replace_string_in_file` calls with sufficient context to avoid ambiguous matches.
-- **Modularity**: New features should consider being broken out into separate modules (e.g., `routes/`, `models/`, `static/js/components/`) if they grow beyond a few functions.
-- **Real-time consistency**: Any state-changing operation (Create/Update/Delete) MUST be followed by a `socketio.emit('task_action', ...)` to keep all clients in sync.
+- **Large Files**: `app.py` and `routes/tasks.py` are large. When modifying, use `str_replace` with sufficient context.
+- **Modularity**: New features should be broken out into separate modules in `routes/`, `models/`, or `utils/`.
+- **Real-time consistency**: Any state-changing operation (Create/Update/Delete) MUST be followed by a `socketio.emit('task_action', ...)`.
 - **Frontend State**: The frontend reloads the entire task list (`loadTasks()`) on any remote change. For performance with many tasks, consider partial state updates in the future.

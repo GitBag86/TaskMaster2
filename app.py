@@ -7,6 +7,7 @@ from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 load_dotenv()
 load_dotenv(".env.local", override=True)
@@ -15,9 +16,14 @@ from config import Config
 from extensions import mail, migrate, scheduler, socketio
 from jobs.deadline_notifier import check_deadlines
 from models import User, db
+from utils.logging_config import register_request_logging, setup_logging
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Wersja aplikacji - moze byc nadpisana przez build (ARG/ENV w Dockerfile)
+APP_VERSION = os.environ.get("APP_VERSION", "dev")
+APP_GIT_SHA = os.environ.get("APP_GIT_SHA", "unknown")
+APP_BUILD_TIME = os.environ.get("APP_BUILD_TIME", "unknown")
 
 
 def _configure_app(app):
@@ -31,6 +37,13 @@ def _configure_app(app):
     os.makedirs(app.instance_path, exist_ok=True)
     if not app.config.get("SQLALCHEMY_DATABASE_URI"):
         app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + os.path.join(app.instance_path, "tasks.db")
+
+    # Bezpieczne cookies sesji. Secure=True wymaga HTTPS (Nginx termuje TLS).
+    # W lokalnym devie bez Nginx ustaw SESSION_COOKIE_SECURE=False w .env.local.
+    secure_cookies = os.environ.get("SESSION_COOKIE_SECURE", "true").lower() == "true"
+    app.config.setdefault("SESSION_COOKIE_HTTPONLY", True)
+    app.config.setdefault("SESSION_COOKIE_SAMESITE", "Lax")
+    app.config.setdefault("SESSION_COOKIE_SECURE", secure_cookies)
 
     CORS(app, supports_credentials=True, origins=app.config["CORS_ORIGINS"])
 
@@ -76,6 +89,15 @@ def _register_routes(app):
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }), 200
 
+    @app.route("/version")
+    def version():
+        return jsonify({
+            "version": APP_VERSION,
+            "git_sha": APP_GIT_SHA,
+            "build_time": APP_BUILD_TIME,
+            "python": os.environ.get("PYTHON_VERSION", "3.11"),
+        }), 200
+
     @app.route("/ready")
     def ready():
         checks = {"database": False, "socketio": socketio is not None}
@@ -109,6 +131,7 @@ def _register_routes(app):
             "subtasks",
             "notifications",
             "socket.io",
+            "version",
         )
         if path.startswith(api_prefixes):
             return jsonify({"error": "Not found"}), 404
@@ -120,15 +143,6 @@ def _register_routes(app):
     @app.errorhandler(404)
     def not_found(_):
         return jsonify({"error": "Not found"}), 404
-
-    @app.errorhandler(500)
-    def server_error(error):
-        logger.error("Server error: %s", error)
-        return jsonify({"error": "Internal server error"}), 500
-
-    @app.before_request
-    def log_request():
-        logger.info("Request: %s %s", request.method, request.path)
 
 
 def _register_scheduler(app):
@@ -167,6 +181,11 @@ def create_app(config_object=Config):
     app = Flask(__name__, static_folder="frontend/dist", static_url_path="/")
     app.config.from_object(config_object)
     _configure_app(app)
+    setup_logging(app)
+
+    # Trust X-Forwarded-* headers from one reverse proxy (Nginx).
+    # Pozwala Flaskowi poprawnie wykrywac HTTPS i prawdziwe IP klienta.
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
     db.init_app(app)
     mail.init_app(app)
@@ -177,6 +196,7 @@ def create_app(config_object=Config):
 
     _register_blueprints(app)
     _register_routes(app)
+    register_request_logging(app)
 
     with app.app_context():
         if app.config.get("ENABLE_SCHEDULER", True):

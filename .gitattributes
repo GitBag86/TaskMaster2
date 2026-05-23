@@ -1,0 +1,27 @@
+# Wymuszaj LF na wszystkich shellach i plikach uruchamianych w kontenerze.
+# Bez tego Windows Git/edytor mogą zapisać CRLF, przez co Linux nie odpali shebanga.
+
+* text=auto eol=lf
+
+*.sh   text eol=lf
+*.bash text eol=lf
+*.py   text eol=lf
+Dockerfile text eol=lf
+*.dockerfile text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.conf text eol=lf
+
+# Binarki - nie tykać
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.pdf  binary
+*.db   binary
+*.sqlite binary
+*.sqlite3 binary
+*.tar  binary
+*.gz   binary
+*.zip  binary

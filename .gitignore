@@ -31,3 +31,8 @@ var/
 debug-59c6ac.log
 assets/
 taskmaster2.tar
+
+# Logs (rotating files)
+logs/
+nginx/ssl/
+docker-compose.override.yml
