@@ -95,8 +95,10 @@ docker-compose up --build
 Aplikacja bedzie dostepna pod adresem:
 
 ```text
-http://localhost:5000
+https://localhost
 ```
+
+Konfiguracja Docker Compose zawiera Nginx jako reverse proxy z self-signed SSL. Jesli wolisz uruchomic bez SSL/HTTPS, edytuj `nginx/conf.d/taskmaster.conf` lub uruchom Flask bezposrednio (Opcja 2).
 
 Zatrzymanie:
 
@@ -108,8 +110,11 @@ Reset bazy danych Docker/SQLite:
 
 ```bash
 docker-compose down -v
+rm -rf instance/tasks.db
 docker-compose up --build
 ```
+
+Wdrozenie produkcyjne (Linux + Nginx + FortiGate) opisuje [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ### Opcja 2: Lokalny Backend i Frontend
 

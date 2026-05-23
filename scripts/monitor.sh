@@ -25,7 +25,7 @@ echo ""
 # Function to display container status
 show_status() {
     echo -e "${BLUE}📊 Container Status:${NC}"
-    docker-compose -f docker-compose.prod.yml ps --format "table {{.Service}}\t{{.Status}}\t{{.Ports}}"
+    docker-compose ps --format "table {{.Service}}\t{{.Status}}\t{{.Ports}}"
     echo ""
 }
 
@@ -48,7 +48,7 @@ show_health() {
     fi
     
     # Nginx health
-    if docker-compose -f docker-compose.prod.yml exec nginx nginx -t > /dev/null 2>&1; then
+    if docker-compose exec nginx nginx -t > /dev/null 2>&1; then
         echo -e "${GREEN}✓${NC} Nginx: Healthy"
     else
         echo -e "${RED}✗${NC} Nginx: Unhealthy"
@@ -70,11 +70,11 @@ show_logs() {
     echo ""
     
     echo -e "${YELLOW}Flask:${NC}"
-    docker-compose -f docker-compose.prod.yml logs --tail=5 web
+    docker-compose logs --tail=5 web
     echo ""
     
     echo -e "${YELLOW}Nginx:${NC}"
-    docker-compose -f docker-compose.prod.yml logs --tail=5 nginx
+    docker-compose logs --tail=5 nginx
     echo ""
 }
 
@@ -83,7 +83,7 @@ show_disk() {
     echo -e "${BLUE}💿 Disk Usage:${NC}"
     
     # Instance directory
-    INSTANCE_SIZE=$(docker-compose -f docker-compose.prod.yml exec web du -sh /app/instance 2>/dev/null | cut -f1)
+    INSTANCE_SIZE=$(docker-compose exec web du -sh /app/instance 2>/dev/null | cut -f1)
     echo "Instance directory: $INSTANCE_SIZE"
     
     # Docker volumes
@@ -107,7 +107,7 @@ show_network() {
     # Get container IPs
     echo ""
     echo "Container IPs:"
-    docker-compose -f docker-compose.prod.yml exec web hostname -I 2>/dev/null || echo "N/A"
+    docker-compose exec web hostname -I 2>/dev/null || echo "N/A"
     echo ""
 }
 
@@ -168,11 +168,11 @@ handle_input() {
             clear
             echo -e "${BLUE}Following logs (Ctrl+C to exit)...${NC}"
             echo ""
-            docker-compose -f docker-compose.prod.yml logs -f
+            docker-compose logs -f
             ;;
         9)
             echo -e "${YELLOW}Restarting containers...${NC}"
-            docker-compose -f docker-compose.prod.yml restart
+            docker-compose restart
             echo -e "${GREEN}✓ Containers restarted${NC}"
             sleep 2
             clear

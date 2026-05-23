@@ -71,5 +71,5 @@ fi
 echo ""
 echo "🚀 Next steps:"
 echo "   1. Update nginx/conf.d/taskmaster.conf with your domain"
-echo "   2. Run: docker-compose -f docker-compose.prod.yml up -d"
+echo "   2. Run: docker-compose up -d"
 echo "   3. Access: https://$DOMAIN"

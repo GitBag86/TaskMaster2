@@ -82,8 +82,8 @@ echo ""
 echo "⚙️  Setting up environment..."
 
 if [ ! -f "$REPO_DIR/.env" ]; then
-    log_info "Creating .env from .env.production..."
-    cp "$REPO_DIR/.env.production" "$REPO_DIR/.env"
+    log_info "Creating .env from .env.example..."
+    cp "$REPO_DIR/.env.example" "$REPO_DIR/.env"
     
     # Generate SECRET_KEY
     SECRET_KEY=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
@@ -125,10 +125,10 @@ echo "🐳 Building and starting containers..."
 cd "$REPO_DIR"
 
 log_info "Building Docker images..."
-docker-compose -f docker-compose.prod.yml build --no-cache
+docker-compose build --no-cache
 
 log_info "Starting containers..."
-docker-compose -f docker-compose.prod.yml up -d
+docker-compose up -d
 
 # Wait for services to be ready
 echo ""
@@ -147,11 +147,11 @@ done
 echo ""
 echo "✅ Verifying deployment..."
 
-if docker-compose -f docker-compose.prod.yml ps | grep -q "Up"; then
+if docker-compose ps | grep -q "Up"; then
     log_info "All containers are running"
 else
     log_error "Some containers are not running"
-    docker-compose -f docker-compose.prod.yml ps
+    docker-compose ps
     exit 1
 fi
 
@@ -190,8 +190,8 @@ echo "   3. Set up SSL certificate (Let's Encrypt recommended)"
 echo "   4. Configure backup strategy"
 echo "   5. Set up monitoring"
 echo ""
-echo "📚 Documentation: $REPO_DIR/DEPLOYMENT_NGINX.md"
+echo "📚 Documentation: $REPO_DIR/DEPLOYMENT.md"
 echo ""
 echo "🆘 Troubleshooting:"
-echo "   docker-compose -f docker-compose.prod.yml logs -f"
+echo "   docker-compose logs -f"
 echo ""

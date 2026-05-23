@@ -70,12 +70,12 @@ description: AI coding agent instructions for TaskMaster2 workspace
 
 ## Deployment
 
-- **Development**: `docker-compose up --build` (runs Flask on port 5000, frontend dev on 3000)
-- **Cloud**: Use `./deploy-cloud-run.sh` for Google Cloud Run + Cloud SQL (Postgres)
-- See [CLOUD_RUN_SETUP.md](../../CLOUD_RUN_SETUP.md) for detailed deployment instructions
+- **Development**: `docker-compose up --build` (Nginx + Flask, dostęp na https://localhost)
+- **Frontend dev (z hot-reload)**: `cd frontend && npm run dev` (Vite na :3000, proxy do Flask :5000)
+- **Self-hosted production**: Linux/Docker za Nginx + FortiGate. Pełna instrukcja w [DEPLOYMENT.md](../../DEPLOYMENT.md).
 
 ## Need More?
 
-- [AGENTS.md](../AGENTS.md) — Comprehensive architecture, exemplary files, resolved issues, Docker/Cloud Run details
-- [POSTGRES_MIGRATION.md](../../POSTGRES_MIGRATION.md) — Local Postgres testing before Cloud Run
-- [RELEASE_CHECKLIST.md](../../RELEASE_CHECKLIST.md) — Pre-deployment checks
+- [AGENTS.md](../AGENTS.md) — Architektura, exemplary files, common pitfalls, troubleshooting
+- [DEPLOYMENT.md](../../DEPLOYMENT.md) — Wdrażanie na własnym serwerze (Nginx + Docker + SSL)
+- [FORTIGATE_SETUP.md](../../FORTIGATE_SETUP.md) — Konfiguracja FortiGate
