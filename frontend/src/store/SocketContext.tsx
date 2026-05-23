@@ -34,7 +34,13 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!user) return;
 
-    const socket = io(window.location.origin, {
+    const socketOrigin =
+      (import.meta.env.VITE_SOCKET_ORIGIN as string | undefined) ??
+      (import.meta.env.VITE_API_BASE as string | undefined) ??
+      (import.meta.env.VITE_API_URL as string | undefined) ??
+      window.location.origin;
+
+    const socket = io(socketOrigin, {
       path: '/socket.io',
       transports: ['websocket'],
       withCredentials: true,

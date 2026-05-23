@@ -3,20 +3,37 @@ import os
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 INSTANCE_DB_PATH = os.path.join(BASE_DIR, "instance", "tasks.db")
 
+
+def normalize_database_uri(uri):
+    if uri.startswith("postgres://"):
+        uri = f"postgresql://{uri.removeprefix('postgres://')}"
+    if uri.startswith("postgresql://"):
+        return f"postgresql+psycopg://{uri.removeprefix('postgresql://')}"
+    return uri
+
+
+def parse_cors_origins(value):
+    return [origin.strip() for origin in value.split(",") if origin.strip()]
+
+
 class Config:
     # Database: SQLite by default (simplest for local Docker)
     # Override with DATABASE_URL or SQLALCHEMY_DATABASE_URI environment variables if needed
-    SQLALCHEMY_DATABASE_URI = os.environ.get(
-        "SQLALCHEMY_DATABASE_URI",
-        os.environ.get("DATABASE_URL", f"sqlite:///{INSTANCE_DB_PATH}")
+    SQLALCHEMY_DATABASE_URI = normalize_database_uri(
+        os.environ.get(
+            "SQLALCHEMY_DATABASE_URI",
+            os.environ.get("DATABASE_URL", f"sqlite:///{INSTANCE_DB_PATH}")
+        )
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-key-change-me")
-    CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "http://localhost:5000").split(",")
+    CORS_ORIGINS = parse_cors_origins(os.environ.get("CORS_ORIGINS", "http://localhost:5000"))
+    SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "false").lower() == "true"
+    SESSION_COOKIE_SAMESITE = os.environ.get("SESSION_COOKIE_SAMESITE", "Lax")
     ENABLE_SCHEDULER = os.environ.get("ENABLE_SCHEDULER", "true").lower() == "true"
-    DEFAULT_ADMIN_USERNAME = "admin"
-    DEFAULT_ADMIN_PASSWORD = "dakos1admin2"
-    DEFAULT_ADMIN_EMAIL = "admin@taskmaster.local"
+    DEFAULT_ADMIN_USERNAME = os.environ.get("DEFAULT_ADMIN_USERNAME", "admin")
+    DEFAULT_ADMIN_PASSWORD = os.environ.get("DEFAULT_ADMIN_PASSWORD", "dakos1admin2")
+    DEFAULT_ADMIN_EMAIL = os.environ.get("DEFAULT_ADMIN_EMAIL", "admin@taskmaster.local")
 
     # Email configuration (optional)
     MAIL_SERVER = os.environ.get("MAIL_SERVER")

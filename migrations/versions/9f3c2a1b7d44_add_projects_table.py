@@ -55,7 +55,7 @@ def upgrade():
         bind.execute(
             text(
                 "INSERT INTO project (name, description, color, archived, created_at) "
-                "VALUES (:name, '', '#3b82f6', 0, CURRENT_TIMESTAMP)"
+                "VALUES (:name, '', '#3b82f6', false, CURRENT_TIMESTAMP)"
             ),
             {"name": name},
         )

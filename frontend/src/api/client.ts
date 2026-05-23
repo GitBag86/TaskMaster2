@@ -18,7 +18,10 @@ import type {
   NotificationItem,
 } from '@/types';
 
-const API_BASE = '';
+const API_BASE =
+  (import.meta.env.VITE_API_BASE as string | undefined) ??
+  (import.meta.env.VITE_API_URL as string | undefined) ??
+  '';
 
 type TaskPayload = {
   title: string;

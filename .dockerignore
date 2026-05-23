@@ -5,7 +5,7 @@ lib/
 lib64/
 include/
 __pycache__/
-*.pyc
+*.py[cod]
 *.pyo
 *.egg-info/
 .pytest_cache/
@@ -16,6 +16,7 @@ htmlcov/
 node_modules/
 frontend/node_modules/
 frontend/dist/
+frontend/tsconfig.tsbuildinfo
 
 # Instance
 instance/
@@ -32,16 +33,12 @@ Thumbs.db
 .env
 .env.local
 .env.example
-.gitignore
 cookies.txt
 *.log
 
 # Git
 .git/
+.gitignore
 
-# Instance (DB)
-instance/
-
-# Frontend (built in container)
-frontend/node_modules/
-frontend/dist/
+# Local archives
+taskmaster2.tar

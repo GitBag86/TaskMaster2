@@ -1013,6 +1013,20 @@ def test_bulk_delete_emits_socket_event(auth_client, monkeypatch):
     assert emitted["payload"]["action"] == "bulk_deleted"
     assert emitted["payload"]["task_ids"] == [task["id"]]
 
+
+def test_normalize_database_uri_uses_psycopg_driver():
+    from config import normalize_database_uri, parse_cors_origins
+
+    assert normalize_database_uri("postgres://user:pass@host/db") == "postgresql+psycopg://user:pass@host/db"
+    assert normalize_database_uri("postgresql://user:pass@host/db") == "postgresql+psycopg://user:pass@host/db"
+    assert normalize_database_uri("postgresql+psycopg://user:pass@host/db") == "postgresql+psycopg://user:pass@host/db"
+    assert normalize_database_uri("sqlite:///tmp.db") == "sqlite:///tmp.db"
+    assert parse_cors_origins("https://app.example.com, http://localhost:3000,") == [
+        "https://app.example.com",
+        "http://localhost:3000",
+    ]
+
+
 def test_migration_upgrade_smoke_fresh_sqlite(tmp_path, monkeypatch):
     db_path = tmp_path / "migration-smoke.db"
     db_uri = f"sqlite:///{db_path.as_posix()}"
