@@ -326,3 +326,139 @@ class Project(db.Model):
         if include_tasks:
             data['tasks'] = [task.to_dict() for task in self.tasks]
         return data
+
+
+
+# ============================================================
+# Team workspaces (multi-tenancy)
+# Wprowadzone w ramach feature/team-workspaces.
+# Zobacz .kiro/specs/team-workspaces/ dla pełnego kontekstu.
+# ============================================================
+
+class Team(db.Model):
+    """Workspace owning a disjoint set of users, tasks, projects, etc.
+
+    Identified by a unique non-archived name (case-insensitive).
+    See requirements R1, design 3.1.
+    """
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(80), nullable=False)
+    slug = db.Column(db.String(80), unique=True, nullable=False)
+    description = db.Column(db.String(500), nullable=False, default='', server_default='')
+    archived = db.Column(db.Boolean, nullable=False, default=False, server_default=db.text('false'))
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=utcnow)
+
+    def to_dict(self, include_stats: bool = False) -> dict:
+        data = {
+            'id': self.id,
+            'name': self.name,
+            'slug': self.slug,
+            'description': self.description or '',
+            'archived': self.archived,
+            'created_by_id': self.created_by_id,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+        if include_stats:
+            # Counts loaded on demand. The `members` relationship is added later
+            # via User.team backref (Task 3). Until then count returns 0 (no
+            # team_id column on User yet). After Task 3 the same code keeps working
+            # because `members` will exist as a relationship attribute.
+            members = getattr(self, 'members', None)
+            data['stats'] = {
+                'members': len(members) if members else 0,
+            }
+        return data
+
+
+class TeamInvite(db.Model):
+    """Single-use invite token issued by a manager to onboard a team member.
+
+    Stored as SHA-256 hash; raw token returned only once at creation time.
+    See requirements R8, design 8.1.
+    """
+
+    __tablename__ = 'team_invite'
+
+    id = db.Column(db.Integer, primary_key=True)
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id', ondelete='CASCADE'), nullable=False)
+    token_hash = db.Column(db.String(64), unique=True, nullable=False)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=utcnow)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    consumed_at = db.Column(db.DateTime, nullable=True)
+    consumed_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    default_role = db.Column(db.String(20), nullable=False, default='user', server_default='user')
+
+    team = db.relationship('Team', backref=db.backref('invites', lazy=True, cascade='all, delete-orphan'))
+
+    def is_active(self) -> bool:
+        """True only if not consumed and not expired.
+
+        Compares in naive UTC because SQLite strips timezone info on read;
+        Postgres stores TIMESTAMPTZ but Flask-SQLAlchemy's default Python type
+        also gives naive on read for plain DateTime columns.
+        """
+        if self.consumed_at is not None:
+            return False
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        expires = self.expires_at
+        if expires.tzinfo is not None:
+            expires = expires.astimezone(timezone.utc).replace(tzinfo=None)
+        return expires > now
+
+    def to_dict(self, include_token: str | None = None) -> dict:
+        """Serialize. `include_token` (raw, plain) only passed at creation time."""
+        data = {
+            'id': self.id,
+            'team_id': self.team_id,
+            'created_by_id': self.created_by_id,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'expires_at': self.expires_at.isoformat() if self.expires_at else None,
+            'consumed_at': self.consumed_at.isoformat() if self.consumed_at else None,
+            'consumed_by_id': self.consumed_by_id,
+            'default_role': self.default_role,
+            'active': self.is_active(),
+        }
+        if include_token is not None:
+            data['token'] = include_token  # raw, plaintext - never persisted
+        return data
+
+
+class TeamAuditLog(db.Model):
+    """Audit trail for super-admin team-management operations.
+
+    Visible only to super-admin (R26.3); not part of any team-scoped feed.
+    Actions follow `<entity>.<verb>` convention: 'team.create', 'team.archive',
+    'user.move', 'user.role_change', 'invite.generate', 'invite.revoke', etc.
+    """
+
+    __tablename__ = 'team_audit_log'
+
+    id = db.Column(db.Integer, primary_key=True)
+    actor_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    action = db.Column(db.String(50), nullable=False)
+    target_team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=True)
+    target_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    source_team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=True)
+    details = db.Column(db.JSON, nullable=True)
+    created_at = db.Column(db.DateTime, default=utcnow)
+
+    actor = db.relationship('User', foreign_keys=[actor_id])
+    target_user = db.relationship('User', foreign_keys=[target_user_id])
+    target_team = db.relationship('Team', foreign_keys=[target_team_id])
+    source_team = db.relationship('Team', foreign_keys=[source_team_id])
+
+    def to_dict(self) -> dict:
+        return {
+            'id': self.id,
+            'actor_id': self.actor_id,
+            'actor': self.actor.username if self.actor else None,
+            'action': self.action,
+            'target_team_id': self.target_team_id,
+            'target_user_id': self.target_user_id,
+            'source_team_id': self.source_team_id,
+            'details': self.details,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
