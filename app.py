@@ -171,14 +171,20 @@ def _ensure_default_admin(app):
     try:
         user = User.query.filter_by(username=username).first()
         if user is None:
-            user = User(username=username, email=email, role="admin")
+            # Brand-new database: create the bootstrap account directly as super_admin
+            # with team_id=None (R3.4).
+            user = User(username=username, email=email, role="super_admin", team_id=None)
             db.session.add(user)
         else:
-            user.role = "admin"
+            # Existing account: ensure it stays super_admin and detached from any team.
+            # The migration in 81d661ec5395 already promoted legacy 'admin' → 'super_admin'
+            # for the bootstrap user; this is just defensive idempotency.
+            user.role = "super_admin"
+            user.team_id = None
             user.email = user.email or email
         user.set_password(password)
         db.session.commit()
-        logger.info("Default admin account is ready: %s", username)
+        logger.info("Default super-admin account is ready: %s", username)
     except SQLAlchemyError:
         db.session.rollback()
         logger.info("Default admin bootstrap skipped until database schema is ready")

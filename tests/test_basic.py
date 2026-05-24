@@ -80,7 +80,9 @@ def test_default_admin_bootstrap(app):
         admin = User.query.filter_by(username="admin").first()
 
         assert admin is not None
-        assert admin.role == "admin"
+        # Task 6: bootstrap account is the super_admin (R3.4); team_id is NULL.
+        assert admin.role == "super_admin"
+        assert admin.team_id is None
         assert admin.email == "admin@taskmaster.local"
         assert admin.password != "dakos1admin2"
         assert admin.check_password("dakos1admin2")
