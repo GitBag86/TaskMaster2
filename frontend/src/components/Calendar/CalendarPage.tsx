@@ -382,33 +382,36 @@ export default function CalendarPage() {
                       }}
                       role="button"
                       tabIndex={0}
-                      className={`min-h-[92px] border-b border-r border-border p-1.5 text-left transition-colors ${dayCellClass(calendarDay.weekday, isToday, isSelected)}`}
+                      className={`flex min-h-[92px] flex-col gap-1 border-b border-r border-border p-1.5 text-left transition-colors ${dayCellClass(calendarDay.weekday, isToday, isSelected)}`}
                     >
-                      <div className="flex items-start justify-between gap-1">
+                      {/* Numer dnia (zawsze caly wiersz, zeby badge nie zaslanial) */}
+                      <div className="flex items-center justify-between gap-1">
                         <span className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${dayNumberClass(calendarDay.weekday, isToday)}`}>
                           {calendarDay.day}
                         </span>
-                        <div className="flex min-w-0 flex-col items-end gap-1">
-                          {calendarInfo.holidays.length > 0 && (
-                            <span
-                              className="max-w-full truncate rounded-full bg-rose-100 px-1.5 py-0.5 text-[9px] font-semibold text-rose-700 dark:bg-rose-900/30 dark:text-rose-300"
-                              title={calendarInfo.holidays.join(', ')}
-                            >
-                              Święto
-                            </span>
-                          )}
-                          {calendarInfo.nameDays.length > 0 && (
-                            <span
-                              className="max-w-[5.5rem] truncate rounded-full bg-sky-100 px-1.5 py-0.5 text-[9px] font-medium text-sky-700 dark:bg-sky-900/30 dark:text-sky-300"
-                              title={`Imieniny: ${calendarInfo.nameDays.join(', ')}`}
-                            >
-                              {calendarInfo.nameDays.slice(0, 2).join(', ')}
-                            </span>
-                          )}
-                        </div>
+                        {calendarInfo.holidays.length > 0 && (
+                          <span
+                            className="rounded-full bg-rose-100 px-1.5 py-0.5 text-[9px] font-semibold text-rose-700 dark:bg-rose-900/30 dark:text-rose-300"
+                            title={calendarInfo.holidays.join(', ')}
+                            aria-label={`Święto: ${calendarInfo.holidays.join(', ')}`}
+                          >
+                            🎉
+                          </span>
+                        )}
                       </div>
 
-                      <div className="mt-1 space-y-1">
+                      {/* Imieniny - osobny wiersz, calej szerokosci */}
+                      {calendarInfo.nameDays.length > 0 && (
+                        <span
+                          className="block truncate rounded-full bg-sky-100 px-1.5 py-0.5 text-[9px] font-medium text-sky-700 dark:bg-sky-900/30 dark:text-sky-300"
+                          title={`Imieniny: ${calendarInfo.nameDays.join(', ')}`}
+                        >
+                          {calendarInfo.nameDays.slice(0, 2).join(', ')}
+                        </span>
+                      )}
+
+                      {/* Zadania */}
+                      <div className="space-y-0.5">
                         {dayTasks.slice(0, 2).map(task => (
                           <button
                             key={task.id}
