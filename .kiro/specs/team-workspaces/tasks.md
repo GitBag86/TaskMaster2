@@ -55,7 +55,7 @@ Estymacja: ~8.5 dnia roboczego, +30% rezerwy = ~11 dni.
 
 ## Tasks
 
-- [ ] 1. Konfiguracja i error vocabulary
+- [x] 1. Konfiguracja i error vocabulary
   - Dodaj do `config.py` zmienne: `SIGNUP_MODE` (default `invite_only`), `INVITE_TOKEN_TTL_DAYS` (default 7), `SUPER_ADMIN_LANDING` (default `/admin/teams`).
   - Stwórz `utils/errors.py` z bazową `TaskMasterError` i klasami: `TeamArchivedError` (403, `team_archived`), `CrossTeamReferenceError` (400, `cross_team_reference`), `SignupDisabledError` (403, `signup_disabled`), `InviteTokenInvalidError` (410, `invite_token_invalid`), `TeamNotEmptyError` (409, `team_not_empty`).
   - W `app.py::create_app` zarejestruj `@app.errorhandler(TaskMasterError)` zwracający `{"error": exc.message, "code": exc.code}` z `exc.http_status`.
@@ -64,7 +64,7 @@ Estymacja: ~8.5 dnia roboczego, +30% rezerwy = ~11 dni.
   - Done: `pytest` zielony, error handler odpowiada zgodnie ze specem.
   - _Refs: R30, design 13_
 
-- [ ] 2. Model Team + TeamInvite + TeamAuditLog
+- [x] 2. Model Team + TeamInvite + TeamAuditLog
   - W `models.py` dodaj klasy `Team` (id, name, slug, description, archived, created_by_id, created_at), `TeamInvite` (token_hash CHAR 64, expires_at, consumed_at, consumed_by_id, default_role, team_id, created_by_id), `TeamAuditLog` (actor_id, action, target_team_id, target_user_id, source_team_id, details JSON, created_at).
   - Dodaj metody: `Team.to_dict(include_stats=False)`, `TeamInvite.is_active()`, `TeamAuditLog.to_dict()`.
   - Wygeneruj migrację Alembica: `flask db migrate -m "add team, team_invite, team_audit_log tables"`.
@@ -74,7 +74,7 @@ Estymacja: ~8.5 dnia roboczego, +30% rezerwy = ~11 dni.
   - Done: migracja przechodzi na pustej bazie SQLite + Postgres lokalnym.
   - _Refs: R1, R8, R26, design 3.1_
 
-- [ ] 3. User model — team_id, session_version, nowe role
+- [x] 3. User model — team_id, session_version, nowe role
   - W `models.py::User` dodaj kolumny: `team_id INTEGER FK -> team(id) NULL`, `session_version INTEGER NOT NULL DEFAULT 0`.
   - Dodaj relację: `team = db.relationship('Team', backref='members', foreign_keys=[team_id])`.
   - Update `User.to_dict()` żeby zwracało `team_id` i opcjonalnie expanded `team` (przy `expand_team=True`, dla `/auth/me`).
@@ -85,7 +85,7 @@ Estymacja: ~8.5 dnia roboczego, +30% rezerwy = ~11 dni.
   - Done: istniejący `pytest` zielony, możliwe utworzenie usera w 3 wariantach.
   - _Refs: R2, R3, R7.7, design 3.3, 4.1_
 
-- [ ] 4. Authorization Layer — decoratory + helpery
+- [x] 4. Authorization Layer — decoratory + helpery
   - Stwórz `utils/scoping.py` z `team_scoped(query, model, *, team_id=None)` i `get_team_resource_or_404(model, resource_id)` zgodnie z design 4.4.
   - Stwórz dekoratory w `utils/auth_decorators.py`: `require_role(*roles)`, `require_team_member`, `require_super_admin`, `require_manager_or_super`.
   - Zachowaj `login_required` jako alias `require_team_member` (kompatybilność z istniejącymi routami).
@@ -97,7 +97,7 @@ Estymacja: ~8.5 dnia roboczego, +30% rezerwy = ~11 dni.
   - Done: dekoratory dostępne, before_request nie psuje istniejących testów.
   - _Refs: R9, R25, design 4_
 
-- [ ] 5. Project template catalogue + ProjectTemplate model
+- [x] 5. Project template catalogue + ProjectTemplate model
   - Stwórz `utils/project_template_catalogue.py`, przenieś `PROJECT_TEMPLATES` z `routes/tasks.py` jako `PROJECT_TEMPLATE_CATALOGUE`.
   - W `routes/tasks.py` zaimportuj z catalogue, usuń lokalną kopię.
   - W `models.py` dodaj `ProjectTemplate(id, team_id FK, source_catalogue_key, name, description, color, payload JSON, created_by_id, created_at, updated_at)`.
@@ -107,7 +107,7 @@ Estymacja: ~8.5 dnia roboczego, +30% rezerwy = ~11 dni.
   - Done: seed_team_templates działa, stara logika /project-templates/{key}/use nadal używa katalogu (refaktor endpointu w Task 9).
   - _Refs: R17, design 7_
 
-- [ ] 6. Migracja 001 — schema + backfill
+- [x] 6. Migracja 001 — schema + backfill
   - Wygeneruj nową rewizję: `flask db migrate -m "team_workspaces schema and backfill"`.
   - Edytuj plik ręcznie (auto-generate nie pokryje data migration).
   - Schema: dodaj `team_id INTEGER FK -> team(id) NULL` na 12 tabelach (task, project, tag, saved_filter, task_template, recurring_task, notification, activity_log, comment, subtask, task_dependency, custom_field). Dodaj zwykłe `ix_<tab>_team` indexy.
@@ -126,7 +126,7 @@ Estymacja: ~8.5 dnia roboczego, +30% rezerwy = ~11 dni.
   - Done: migration test zielony, ręczny test na pg_dump produkcji.
   - _Refs: R3, R4, R29, design 6_
 
-- [ ] 7. Migracja 002 — flip do NOT NULL + constraints
+- [x] 7. Migracja 002 — flip do NOT NULL + constraints
   - Nowa rewizja: `flask db migrate -m "team_workspaces enforce non-null"`.
   - W `upgrade()`:
     1. Pre-check sierot: dla każdej tabeli `SELECT count(*) WHERE team_id IS NULL`. Jeśli > 0 → raise z nazwą tabeli + count.
@@ -316,6 +316,30 @@ Estymacja: ~8.5 dnia roboczego, +30% rezerwy = ~11 dni.
   - _Refs: R23.3_
 
 ## Notes
+
+### Status (aktualizacja 2026-05-24)
+
+**Ukończone (Wave 1 + Wave 2 + hotfix):**
+
+| Task | Commit | Testy |
+|------|--------|-------|
+| 1 — Error vocabulary + config | `e89097c` | 11 testów |
+| 2 — Team/TeamInvite/TeamAuditLog models | `1e51dcb` | 11 testów |
+| 3 — User.team_id + session_version | `5823926` | 8 testów |
+| 4 — Authorization Layer | `20601d3` | 17 testów |
+| 5 — ProjectTemplate + catalogue | `6ffe635` | 7 testów |
+| 6 — Migracja 001 (schema + backfill) | `ea6e45d` | 6 testów |
+| 7 — Migracja 002 (NOT NULL + constraints) | `23ad174` | 3 testy |
+| **hotfix** — frontend role super_admin | `5a72efc` | build TS ✅ |
+
+**Łącznie: 117 passed, 1 skipped** (stan po Task 7 + hotfix)
+
+**Checkpoint A** ✅ (po Task 4) — modele i auth shell  
+**Checkpoint B** ✅ (po Task 7) — migracje działają, Default team, super_admin promoted
+
+**Następny: Task 8** — refaktor `routes/tasks.py` → team scope
+
+---
 
 ### Checkpoints (sensowne PR boundaries)
 
