@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { Project, ProjectTemplate, Task, User } from '@/types'
+import { isAdminRole } from '@/types'
 import { api } from '@/api/client'
 import { useAuth } from '@/store/AuthContext'
 import { useSocket } from '@/store/SocketContext'
@@ -95,7 +96,7 @@ export default function ProjectsPage() {
   }, [selectedTemplateId])
 
   const loadUsers = useCallback(async () => {
-    if (user?.role !== 'admin') {
+    if (!isAdminRole(user?.role)) {
       setAllUsers([])
       return
     }
@@ -331,7 +332,7 @@ export default function ProjectsPage() {
           <p className="text-sm text-muted-foreground">Prawdziwe projekty z opisem, kolorem, archiwum i przypisanymi zadaniami.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {user?.role === 'admin' && (
+          {isAdminRole(user?.role) && (
             <button onClick={() => setShowNewProject(true)} className="btn btn-primary btn-sm">
               <svg className="mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
@@ -348,7 +349,7 @@ export default function ProjectsPage() {
         <div className="rounded-lg border border-dashed border-border py-16 text-center">
           <p className="text-lg font-medium text-gray-500 dark:text-gray-400">Brak projektów</p>
           <p className="text-sm text-muted-foreground">Utwórz pusty projekt i przypisz do niego zadania, kiedy będą gotowe.</p>
-          {user?.role === 'admin' && (
+          {isAdminRole(user?.role) && (
             <button onClick={() => setShowNewProject(true)} className="btn btn-primary btn-sm mt-4">
               Nowy projekt
             </button>
@@ -407,7 +408,7 @@ export default function ProjectsPage() {
                     <span className="text-sm text-muted-foreground">
                       Postęp: {selectedProject.total > 0 ? Math.round((selectedProject.completed / selectedProject.total) * 100) : 0}%
                     </span>
-                    {user?.role === 'admin' && !selectedProject.archived && (
+                    {isAdminRole(user?.role) && !selectedProject.archived && (
                       <>
                         <button
                           onClick={() => setShowNewProjectTask(true)}
@@ -460,7 +461,7 @@ export default function ProjectsPage() {
                 {selectedProject.tasks.length === 0 ? (
                   <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
                     <p>Ten projekt nie ma jeszcze zadań.</p>
-                    {user?.role === 'admin' && !selectedProject.archived && (
+                    {isAdminRole(user?.role) && !selectedProject.archived && (
                       <button onClick={() => setShowNewProjectTask(true)} className="btn btn-primary btn-sm mt-3">
                         Dodaj pierwsze zadanie
                       </button>
@@ -486,7 +487,7 @@ export default function ProjectsPage() {
           </div>
 
           <aside className="rounded-lg border border-border bg-card p-4">
-            {user?.role === 'admin' && (
+            {isAdminRole(user?.role) && (
               <div className="mb-5 border-b border-border pb-5">
                 <h3 className="mb-1 text-sm font-semibold text-gray-900 dark:text-white">Szablony projektów</h3>
                 <p className="mb-3 text-xs text-muted-foreground">Utwórz projekt z gotowym zestawem zadań i zależności.</p>
@@ -538,12 +539,12 @@ export default function ProjectsPage() {
 
             <h3 className="mb-1 text-sm font-semibold text-gray-900 dark:text-white">Przypisywanie</h3>
             <p className="mb-4 text-xs text-muted-foreground">
-              {user?.role === 'admin'
+              {isAdminRole(user?.role)
                 ? 'Przenieś istniejące zadanie do aktywnego projektu.'
                 : 'Możesz przeglądać projekty, w których masz przypisane zadania.'}
             </p>
 
-            {user?.role === 'admin' ? (
+            {isAdminRole(user?.role) ? (
               <div className="space-y-3">
                 {selectedProject && (
                   <div className="rounded-lg border border-border p-3">

@@ -150,8 +150,14 @@ export default function AdminPage() {
                   </td>
                   <td className="px-4 py-3 text-sm text-muted-foreground">{u.email || '—'}</td>
                   <td className="px-4 py-3">
-                    <span className={`badge ${u.role === 'admin' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}>
-                      {u.role === 'admin' ? 'Administrator' : 'Użytkownik'}
+                    <span className={`badge ${
+                      u.role === 'super_admin' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                      : u.role === 'admin' || u.role === 'manager' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
+                      : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
+                    }`}>
+                      {u.role === 'super_admin' ? 'Super Admin'
+                        : u.role === 'admin' || u.role === 'manager' ? 'Administrator'
+                        : 'Użytkownik'}
                     </span>
                   </td>
                   <td className="px-4 py-3">

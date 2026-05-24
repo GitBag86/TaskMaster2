@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import type { Task } from '@/types'
+import { isAdminRole } from '@/types'
 import { api } from '@/api/client'
 import { useToast } from '@/store/ToastContext'
 import { useSocket } from '@/store/SocketContext'
@@ -324,7 +325,7 @@ export default function CalendarPage() {
 
         <div className="flex gap-2">
           <button onClick={clearFilters} className="btn btn-ghost btn-sm">Wyczyść</button>
-          {user?.role === 'admin' && (
+          {isAdminRole(user?.role) && (
             <button
               onClick={() => setShowCreate(true)}
               disabled={selectedDay === null}
@@ -447,7 +448,7 @@ export default function CalendarPage() {
               </h3>
               <p className="text-xs text-muted-foreground">Kliknij zadanie, aby otworzyć szczegóły.</p>
             </div>
-            {user?.role === 'admin' && selectedDay !== null && (
+            {isAdminRole(user?.role) && selectedDay !== null && (
               <button onClick={() => setShowCreate(true)} className="btn btn-secondary btn-sm">Dodaj</button>
             )}
           </div>

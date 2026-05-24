@@ -2,7 +2,8 @@ export interface User {
   id: number;
   username: string;
   email: string;
-  role: 'admin' | 'user';
+  role: 'super_admin' | 'manager' | 'admin' | 'user';
+  team_id: number | null;
   terms_accepted: boolean;
   privacy_accepted: boolean;
   marketing_consent: boolean;
@@ -204,4 +205,20 @@ export interface Toast {
   id: string;
   message: string;
   type: 'success' | 'error' | 'warning' | 'info';
+}
+
+// Role helpers — use these instead of hardcoded string comparisons.
+// 'admin' is the legacy role kept for backwards compat during migration.
+// After Task 6 backfill: 'admin' -> 'manager', bootstrap -> 'super_admin'.
+
+export type Role = 'super_admin' | 'manager' | 'admin' | 'user';
+
+/** True for any role that can create/edit/delete tasks and projects. */
+export function isAdminRole(role: Role | string | undefined): boolean {
+  return role === 'admin' || role === 'manager' || role === 'super_admin';
+}
+
+/** True only for the platform-wide super administrator. */
+export function isSuperAdmin(role: Role | string | undefined): boolean {
+  return role === 'super_admin';
 }

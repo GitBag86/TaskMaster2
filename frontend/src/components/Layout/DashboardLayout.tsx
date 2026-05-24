@@ -146,7 +146,7 @@ export default function DashboardLayout() {
               </NavLink>
             ))}
 
-            {user?.role === 'admin' && (
+            {(user?.role === 'admin' || user?.role === 'manager' || user?.role === 'super_admin') && (
               <NavLink
                 to="/admin"
                 onClick={() => setSidebarOpen(false)}
@@ -173,7 +173,11 @@ export default function DashboardLayout() {
               </div>
               <div className="flex-1 overflow-hidden">
                 <p className="truncate text-sm font-medium text-gray-900 dark:text-white">{user?.username}</p>
-                <p className="truncate text-xs text-gray-500 dark:text-gray-400">{user?.role === 'admin' ? 'Administrator' : 'Użytkownik'}</p>
+                <p className="truncate text-xs text-gray-500 dark:text-gray-400">
+                  {user?.role === 'super_admin' ? 'Super Admin'
+                    : user?.role === 'admin' || user?.role === 'manager' ? 'Administrator'
+                    : 'Użytkownik'}
+                </p>
               </div>
             </div>
           </div>
