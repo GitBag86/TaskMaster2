@@ -16,6 +16,7 @@ from config import Config
 from extensions import mail, migrate, scheduler, socketio
 from jobs.deadline_notifier import check_deadlines
 from models import User, db
+from utils.errors import TaskMasterError
 from utils.logging_config import register_request_logging, setup_logging
 
 logger = logging.getLogger(__name__)
@@ -143,6 +144,11 @@ def _register_routes(app):
     @app.errorhandler(404)
     def not_found(_):
         return jsonify({"error": "Not found"}), 404
+
+    @app.errorhandler(TaskMasterError)
+    def _handle_app_error(exc: TaskMasterError):
+        # Application-level errors with a stable code + HTTP status (R30, see utils/errors.py)
+        return jsonify({"error": exc.message, "code": exc.code}), exc.http_status
 
 
 def _register_scheduler(app):
