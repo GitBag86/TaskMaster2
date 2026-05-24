@@ -331,7 +331,11 @@ class Notification(db.Model):
 
 class Project(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), unique=True, nullable=False)
+    # Pre-team-workspaces: name was globally unique. Post Task 7 (migration 002):
+    # uniqueness is per-team via the partial functional index uq_project_team_name_lower.
+    # The Python-side unique=True is removed so create_all() in tests doesn't
+    # build the now-incorrect global UNIQUE.
+    name = db.Column(db.String(100), nullable=False)
     description = db.Column(db.String(500), default='')
     color = db.Column(db.String(7), default='#3b82f6')
     archived = db.Column(db.Boolean, nullable=False, default=False)
