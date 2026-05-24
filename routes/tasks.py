@@ -17,48 +17,15 @@ from utils.email_sender import (
     get_task_completion_body,
 )
 from utils.notifications import create_notification, emit_notifications
+from utils.project_template_catalogue import PROJECT_TEMPLATE_CATALOGUE
 
 TASK_ALLOWED_FIELDS = {'title', 'priority', 'project', 'project_id', 'due_date', 'notes', 'completed', 'status'}
 BULK_MAX_TASKS = 100
 
-PROJECT_TEMPLATES = {
-    "client_onboarding": {
-        "name": "Wdrożenie klienta",
-        "description": "Standardowy proces startu współpracy z klientem.",
-        "color": "#14b8a6",
-        "tasks": [
-            {"title": "Zebrać wymagania", "priority": "high", "due_offset": 1},
-            {"title": "Przygotować plan wdrożenia", "priority": "high", "due_offset": 3, "depends_on": [0]},
-            {"title": "Skonfigurować środowisko", "priority": "medium", "due_offset": 5, "depends_on": [1]},
-            {"title": "Przeprowadzić szkolenie", "priority": "medium", "due_offset": 7, "depends_on": [2]},
-            {"title": "Zamknąć odbiór", "priority": "high", "due_offset": 10, "depends_on": [3]},
-        ],
-    },
-    "release": {
-        "name": "Release",
-        "description": "Kontrolna lista wydania wersji produkcyjnej.",
-        "color": "#6366f1",
-        "tasks": [
-            {"title": "Zamrozić zakres release'u", "priority": "high", "due_offset": 1},
-            {"title": "Przejść testy regresji", "priority": "high", "due_offset": 2, "depends_on": [0]},
-            {"title": "Przygotować notatki wydania", "priority": "medium", "due_offset": 2, "depends_on": [0]},
-            {"title": "Wdrożyć na produkcję", "priority": "high", "due_offset": 3, "depends_on": [1, 2]},
-            {"title": "Monitorować po wdrożeniu", "priority": "medium", "due_offset": 4, "depends_on": [3]},
-        ],
-    },
-    "campaign": {
-        "name": "Kampania",
-        "description": "Plan przygotowania i uruchomienia kampanii.",
-        "color": "#f59e0b",
-        "tasks": [
-            {"title": "Ustalić cel kampanii", "priority": "high", "due_offset": 1},
-            {"title": "Przygotować treści", "priority": "medium", "due_offset": 3, "depends_on": [0]},
-            {"title": "Skonfigurować kanały", "priority": "medium", "due_offset": 4, "depends_on": [0]},
-            {"title": "Uruchomić kampanię", "priority": "high", "due_offset": 5, "depends_on": [1, 2]},
-            {"title": "Podsumować wyniki", "priority": "medium", "due_offset": 12, "depends_on": [3]},
-        ],
-    },
-}
+# Backwards-compat name for the in-route handlers; the global catalogue lives
+# in utils/project_template_catalogue.py. Removed when route handlers switch
+# to reading from per-team DB rows (Task 9).
+PROJECT_TEMPLATES = PROJECT_TEMPLATE_CATALOGUE
 
 def emit_task_event(action, user, task=None, task_ids=None, task_id=None, task_payload=None, extra=None):
     payload = {

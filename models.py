@@ -491,3 +491,46 @@ class TeamAuditLog(db.Model):
             'details': self.details,
             'created_at': self.created_at.isoformat() if self.created_at else None,
         }
+
+
+
+class ProjectTemplate(db.Model):
+    """Per-team copy of a project template, seeded from PROJECT_TEMPLATE_CATALOGUE.
+
+    See requirements R17, design 7. Different from `TaskTemplate` (per-user
+    snippets for individual tasks). Managers may edit/delete their team's copies
+    independently — edits do not propagate to other teams or to the catalogue.
+
+    `source_catalogue_key` keeps a link to the original entry so we can later
+    detect "team-customized vs pristine seed". NULL when a manager creates a
+    template from scratch.
+    """
+
+    __tablename__ = 'project_template'
+
+    id = db.Column(db.Integer, primary_key=True)
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=False)
+    source_catalogue_key = db.Column(db.String(50), nullable=True)
+    name = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.String(500), nullable=False, default='', server_default='')
+    color = db.Column(db.String(7), nullable=False, default='#3b82f6', server_default='#3b82f6')
+    payload = db.Column(db.JSON, nullable=False)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=utcnow)
+    updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow)
+
+    team = db.relationship('Team', backref=db.backref('project_templates', lazy=True, cascade='all, delete-orphan'))
+
+    def to_dict(self) -> dict:
+        return {
+            'id': self.id,
+            'team_id': self.team_id,
+            'source_catalogue_key': self.source_catalogue_key,
+            'name': self.name,
+            'description': self.description or '',
+            'color': self.color,
+            'payload': self.payload,
+            'created_by_id': self.created_by_id,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
