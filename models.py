@@ -28,8 +28,22 @@ class User(db.Model):
     privacy_accepted = db.Column(db.Boolean, nullable=False, default=False)
     marketing_consent = db.Column(db.Boolean, nullable=False, default=False)
     consented_at = db.Column(db.DateTime, nullable=True)
+    # Team workspaces (R2-R3): super_admin has team_id NULL, manager/user must have one.
+    # NOT NULL constraint + CHECK come in a later migration (Task 7) once data is backfilled.
+    # use_alter=True breaks the User<->Team circular FK at table-drop time (Team.created_by_id
+    # also references user.id), important for clean test teardown on SQLite.
+    team_id = db.Column(
+        db.Integer,
+        db.ForeignKey('team.id', name='fk_user_team_id', use_alter=True),
+        nullable=True,
+    )
+    # Bumped on team move / team archival to invalidate active sessions (R7.7, R25.3).
+    session_version = db.Column(db.Integer, nullable=False, default=0, server_default='0')
     tasks = db.relationship('Task', backref='owner', lazy=True, cascade='all, delete-orphan')
     created_at = db.Column(db.DateTime, default=utcnow)
+
+    # Backref `team` on User; backref `members` on Team. Foreign keys on team_id.
+    team = db.relationship('Team', backref=db.backref('members', lazy=True), foreign_keys=[team_id])
 
     def set_password(self, password):
         self.password = generate_password_hash(password)
@@ -37,18 +51,33 @@ class User(db.Model):
     def check_password(self, password):
         return check_password_hash(self.password, password)
 
-    def to_dict(self):
-        return {
+    # Role helpers (R2: super_admin / manager / user)
+    def is_super_admin(self) -> bool:
+        return self.role == 'super_admin'
+
+    def is_manager(self) -> bool:
+        return self.role == 'manager'
+
+    def is_team_member(self) -> bool:
+        """Manager or user — anyone bound to exactly one team."""
+        return self.role in ('manager', 'user')
+
+    def to_dict(self, expand_team: bool = False):
+        data = {
             'id': self.id,
             'username': self.username,
             'email': self.email,
             'role': self.role,
+            'team_id': self.team_id,
             'terms_accepted': self.terms_accepted,
             'privacy_accepted': self.privacy_accepted,
             'marketing_consent': self.marketing_consent,
             'consented_at': self.consented_at.isoformat() if self.consented_at else None,
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
+        if expand_team and self.team is not None:
+            data['team'] = self.team.to_dict()
+        return data
 
 class Task(db.Model):
     id = db.Column(db.Integer, primary_key=True)
