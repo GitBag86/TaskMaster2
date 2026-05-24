@@ -78,7 +78,7 @@ def signup():
         logger.exception("Signup failed while saving user '%s'", username)
         return jsonify({"error": "Nie udało się zapisać użytkownika w bazie danych"}), 500
 
-    session['user_id'] = user.id
+    _establish_session(user)
     return jsonify({"message": "Rejestracja pomyślna", "user": user.to_dict()}), 201
 
 @auth_bp.route('/login', methods=['POST'])
@@ -95,13 +95,15 @@ def login():
     if not user or not user.check_password(validated['password']):
         return jsonify({"error": "Błędne dane logowania"}), 401
 
-    session['user_id'] = user.id
+    _establish_session(user)
     session.permanent = True
-    return jsonify({"message": "Logowanie pomyślne", "user": user.to_dict()})
+    return jsonify({"message": "Logowanie pomyślne", "user": user.to_dict(expand_team=True)})
 
 @auth_bp.route('/logout', methods=['POST'])
 def logout():
-    session.pop('user_id', None)
+    # Atomically clear every key set by _establish_session.
+    for key in ('user_id', 'team_id', 'role', 'session_version'):
+        session.pop(key, None)
     return jsonify({"message": "Wylogowano"})
 
 @auth_bp.route('/me', methods=['GET'])
@@ -111,4 +113,17 @@ def get_current_user():
     user = db.session.get(User, user_id)
     if not user:
         return jsonify({"error": "Użytkownik nie znaleziony"}), 404
-    return jsonify(user.to_dict())
+    # expand_team=True so the SPA gets `team` populated for the sidebar (Task 15).
+    return jsonify(user.to_dict(expand_team=True))
+
+
+def _establish_session(user):
+    """Populate session keys consumed by the auth layer (utils/auth_layer.py).
+
+    Called by login and signup. Stores user_id, team_id, role and session_version
+    so the next request's before_request hook can validate them in O(1).
+    """
+    session['user_id'] = user.id
+    session['team_id'] = user.team_id  # may be None for super_admin
+    session['role'] = user.role
+    session['session_version'] = user.session_version

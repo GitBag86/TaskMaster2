@@ -18,6 +18,7 @@ from jobs.deadline_notifier import check_deadlines
 from models import User, db
 from utils.errors import TaskMasterError
 from utils.logging_config import register_request_logging, setup_logging
+from utils.auth_layer import register_auth_layer
 
 logger = logging.getLogger(__name__)
 
@@ -202,6 +203,7 @@ def create_app(config_object=Config):
 
     _register_blueprints(app)
     _register_routes(app)
+    register_auth_layer(app)
     register_request_logging(app)
 
     with app.app_context():
