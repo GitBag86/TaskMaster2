@@ -1,3 +1,10 @@
+"""
+TaskMaster2 — Flask application factory.
+
+Copyright © 2026 Krzysztof Graczyk. All rights reserved.
+This software is proprietary. See LICENSE for terms.
+"""
+
 import logging
 import os
 from datetime import datetime, timezone
@@ -122,8 +129,8 @@ def _register_routes(app):
 
     @app.route("/<path:path>")
     def serve_spa(path):
+        # Pure-API prefixes — these are always JSON, never SPA routes.
         api_prefixes = (
-            "auth",
             "tasks",
             "projects",
             "users",
@@ -135,20 +142,43 @@ def _register_routes(app):
             "dependencies",
             "subtasks",
             "notifications",
-            "admin",
-            "team",
             "socket.io",
             "version",
+            "project-templates",
         )
         if path.startswith(api_prefixes):
             return jsonify({"error": "Not found"}), 404
-        try:
+
+        # Mixed prefixes — used by both the SPA (e.g. /admin/teams page) and
+        # the JSON API (e.g. POST /admin/teams). Decide based on the request:
+        # - browser navigation / refresh → Accept includes text/html → serve SPA
+        # - fetch() from the SPA → no text/html in Accept → return JSON 404
+        mixed_prefixes = ("auth", "admin", "team")
+        if path.startswith(mixed_prefixes):
+            accept = request.headers.get("Accept", "")
+            if "text/html" not in accept:
+                return jsonify({"error": "Not found"}), 404
+
+        # Static asset (JS chunk, image, etc.) if it exists, otherwise fall
+        # through to index.html so React Router can handle the route.
+        # We avoid `send_from_directory` raising NotFound (which Flask would
+        # turn into a 404 via the errorhandler) by checking with os.path.isfile.
+        candidate = os.path.normpath(os.path.join(app.static_folder, path))
+        if candidate.startswith(os.path.abspath(app.static_folder)) and os.path.isfile(candidate):
             return send_from_directory(app.static_folder, path)
-        except Exception:
-            return send_from_directory(app.static_folder, "index.html")
+        return send_from_directory(app.static_folder, "index.html")
 
     @app.errorhandler(404)
     def not_found(_):
+        # Browser navigation that doesn't match any registered route should
+        # still receive the SPA shell so React Router can render the matching
+        # client-side route (e.g. /today, /admin/teams).
+        accept = request.headers.get("Accept", "")
+        if "text/html" in accept:
+            try:
+                return send_from_directory(app.static_folder, "index.html")
+            except Exception:
+                pass
         return jsonify({"error": "Not found"}), 404
 
     @app.errorhandler(TaskMasterError)

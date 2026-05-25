@@ -1,3 +1,10 @@
+"""
+TaskMaster2 — SQLAlchemy data models.
+
+Copyright © 2026 Krzysztof Graczyk. All rights reserved.
+This software is proprietary. See LICENSE for terms.
+"""
+
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timezone
 from werkzeug.security import generate_password_hash, check_password_hash

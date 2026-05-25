@@ -1,0 +1,87 @@
+Copyright © 2026 Krzysztof Graczyk. All rights reserved.
+
+TaskMaster2 — Proprietary Software License
+
+1. OWNERSHIP
+   This software, including all source code, documentation, design,
+   architecture, user interface, and any other associated materials
+   (collectively, "the Software"), is the exclusive intellectual property
+   of Krzysztof Graczyk ("the Author").
+
+   All rights, title, and interest in and to the Software, including all
+   intellectual property rights, are and shall remain the sole property
+   of the Author. This includes copyrights, trade secrets, and any other
+   proprietary rights worldwide.
+
+2. PROHIBITED USES
+   Without the prior written consent of the Author, you MAY NOT:
+
+   a) copy, reproduce, or duplicate the Software in whole or in part;
+   b) modify, adapt, translate, or create derivative works based on the
+      Software;
+   c) distribute, sublicense, lease, rent, sell, or otherwise transfer
+      the Software or any copy thereof to any third party;
+   d) host the Software, or any portion of it, as a service for others;
+   e) reverse engineer, decompile, or disassemble the Software, except
+      to the extent that such activity is expressly permitted by
+      applicable law notwithstanding this limitation;
+   f) remove, alter, or obscure any copyright notice, trademark, or
+      other proprietary rights notices contained in or on the Software;
+   g) use the Software, in whole or in part, to develop a competing
+      product or service.
+
+3. NO LICENSE GRANTED
+   No license, express or implied, is granted to you under this notice.
+   Mere access to the Software (e.g. through a public source repository
+   for portfolio purposes) does not constitute a license to use it.
+
+4. PERMITTED VIEWING
+   The Author may make portions of the source code visible for the
+   purpose of demonstration, portfolio, or evaluation. Such visibility
+   does not transfer any rights other than the right to read the code
+   on the platform where it is published.
+
+5. WARRANTY DISCLAIMER
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+   EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND
+   NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
+   CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM, OUT OF, OR IN
+   CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+   THE SOFTWARE.
+
+6. JURISDICTION
+   This license shall be governed by the laws of the Republic of Poland.
+   Any disputes arising from or related to this license shall be
+   resolved by the competent Polish courts.
+
+7. CONTACT
+   For licensing inquiries, business cooperation, or to request
+   permission for any use described above, contact the Author.
+
+---
+
+POLSKA WERSJA (informacyjna; w razie rozbieżności wiążąca jest wersja angielska):
+
+Copyright © 2026 Krzysztof Graczyk. Wszelkie prawa zastrzeżone.
+
+TaskMaster2 — Licencja zastrzeżona
+
+Niniejsze oprogramowanie, wraz z całym kodem źródłowym, dokumentacją,
+projektem, architekturą i interfejsem użytkownika, stanowi wyłączną
+własność intelektualną Krzysztofa Graczyka.
+
+Bez uprzedniej pisemnej zgody Autora zabrania się:
+- kopiowania, powielania lub odtwarzania oprogramowania,
+- modyfikowania, adaptowania ani tworzenia utworów zależnych,
+- dystrybucji, sublicencjonowania, najmu ani sprzedaży,
+- udostępniania oprogramowania jako usługi (hosting, SaaS),
+- inżynierii wstecznej, dekompilacji ani dezasemblacji,
+- usuwania lub zmieniania not o prawach autorskich,
+- wykorzystywania oprogramowania do tworzenia produktów konkurencyjnych.
+
+Oprogramowanie jest udostępniane "TAK JAK JEST", bez żadnych gwarancji.
+Autor nie ponosi odpowiedzialności za szkody wynikające z użytkowania.
+
+Licencja podlega prawu Rzeczypospolitej Polskiej.
+W sprawach licencyjnych prosimy o kontakt z Autorem.

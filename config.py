@@ -61,3 +61,8 @@ class TestingConfig(Config):
     SECRET_KEY = "test-secret-key"
     ENABLE_SCHEDULER = False
     MAIL_SUPPRESS_SEND = True
+    # Bootstrap admin defaults isolated from any .env values that may
+    # be loaded into the process. Tests assert against these constants.
+    DEFAULT_ADMIN_USERNAME = "admin"
+    DEFAULT_ADMIN_PASSWORD = "dakos1admin2"
+    DEFAULT_ADMIN_EMAIL = "admin@taskmaster.local"

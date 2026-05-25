@@ -22,11 +22,11 @@ Deployment target: **self-hosted Docker on a Linux server (Ubuntu) behind Nginx 
 
 | Task Type | First Steps | See Also |
 |-----------|------------|----------|
-| **New REST endpoint** | 1. Create route in `routes/` <br> 2. Add Marshmallow schema <br> 3. If POST/PATCH/DELETE: emit `task_action` <br> 4. Add pytest tests | [Socket.IO Patterns](#socket-io-real-time-sync), [Exemplary: routes/tasks.py](#key-files--exemplary-patterns) |
-| **Database schema change** | 1. Update `models.py` <br> 2. `flask db migrate -m "desc"` <br> 3. `flask db upgrade` <br> 4. Add tests | [Common Pitfalls](#common-pitfalls) |
-| **New frontend page/component** | 1. Create in `frontend/src/components/` <br> 2. Lazy-load in `App.tsx` <br> 3. Use `useAuth()`, `useSocket()`, `useTheme()` hooks <br> 4. Style with Tailwind | [Frontend Guidelines](#related-instruction-files), [Exemplary: DashboardLayout.tsx](#key-files--exemplary-patterns) |
-| **Real-time sync issue** | 1. Check: Backend emits `socketio.emit()` after DB commit <br> 2. Verify: Frontend listens in `SocketContext.tsx` <br> 3. Check browser console for Socket.IO events | [Socket.IO Patterns](#socket-io-real-time-sync), [Pitfall: Missing Socket.IO Emit](#common-pitfalls) |
-| **Bug or performance issue** | 1. Review [Common Pitfalls](#common-pitfalls) <br> 2. Check instruction files for domain-specific rules | [Pitfalls Table](#common-pitfalls) |
+| **New REST endpoint** | 1. Create route in `routes/` <br> 2. Pick decorator: `@require_team_member` (default), `@require_super_admin`, `@require_role(...)` <br> 3. Use `team_scoped(Model.query, Model)` for lists, `get_team_resource_or_404(Model, id)` for single resource <br> 4. Add Marshmallow schema <br> 5. If POST/PATCH/DELETE: `socketio.emit('task_action', payload, room=f'team:{team_id}')` <br> 6. Add pytest tests | [Authorization Layer](#authorization-layer-team-workspaces), [Socket.IO Patterns](#socket-io-real-time-sync), [Exemplary: routes/tasks.py](#key-files--exemplary-patterns) |
+| **Database schema change** | 1. Update `models.py` (add `team_id` if team-scoped) <br> 2. `flask db migrate -m "desc"` <br> 3. Edit migration manually if data backfill needed <br> 4. `flask db upgrade` <br> 5. Add tests | [Common Pitfalls](#common-pitfalls) |
+| **New frontend page/component** | 1. Create in `frontend/src/components/` <br> 2. Lazy-load in `App.tsx` (wrap in `<RoleRoute roles={[...]}>` if role-restricted) <br> 3. Use `useAuth()`, `useSocket()`, `useTheme()` hooks <br> 4. Style with Tailwind | [Frontend Guidelines](#related-instruction-files), [Exemplary: DashboardLayout.tsx](#key-files--exemplary-patterns) |
+| **Real-time sync issue** | 1. Check: Backend emits `socketio.emit()` with `room=f'team:{team_id}'` after DB commit <br> 2. Verify: Frontend listens in `SocketContext.tsx` <br> 3. Check browser console for Socket.IO events | [Socket.IO Patterns](#socket-io-real-time-sync), [Pitfall: Missing Socket.IO Emit](#common-pitfalls) |
+| **Bug or performance issue** | 1. Review [Common Pitfalls](#common-pitfalls) <br> 2. For list endpoints: ensure `_eager_task_options()` is used <br> 3. Check instruction files for domain-specific rules | [Pitfalls Table](#common-pitfalls), [Authorization Layer](#authorization-layer-team-workspaces) |
 
 ---
 
@@ -273,15 +273,105 @@ DEFAULT_ADMIN_EMAIL=...
 - `gthread` — Docker / Gunicorn (default in `docker-compose.yml`)
 - ❌ **Avoid `eventlet`** — Deprecated, known compatibility issues
 
+## Authorization Layer (Team Workspaces)
+
+TaskMaster2 enforces multi-tenancy via the team_workspaces feature. Every team-scoped resource (task, project, comment, subtask, tag, saved_filter, task_template, recurring_task, notification, activity_log, custom_field, task_dependency, project_template) carries a `team_id` foreign key. The auth layer plus a small set of helpers keep cross-team access impossible.
+
+### Roles (R2)
+
+- `super_admin` — `team_id IS NULL`. Operates above teams via `/admin/...` endpoints. Does NOT see team-scoped resources through standard endpoints (R9.6).
+- `manager` — Bound to exactly one team (`team_id NOT NULL`). Equivalent of legacy admin but scoped to a single team.
+- `user` — Bound to exactly one team. Sees only own assigned tasks and projects they're a member of.
+
+A CHECK constraint (`ck_user_team_role_consistency`) enforces the role/team invariant at the DB level.
+
+### Decorators (`utils/auth_decorators`)
+
+```python
+from utils.auth_decorators import require_role, require_team_member, require_super_admin, require_manager_or_super
+
+@tasks_bp.route('/tasks', methods=['GET'])
+@login_required           # alias for @require_team_member
+def get_tasks(): ...
+
+@admin_bp.route('/admin/teams', methods=['POST'])
+@require_super_admin
+def create_team(): ...
+
+@admin_bp.route('/admin/users/<int:user_id>/role', methods=['POST'])
+@require_role('super_admin')
+def change_user_role(user_id): ...
+```
+
+`@login_required` is preserved as an alias of `@require_team_member` for backward compat.
+
+### Scoping helpers (`utils/scoping`)
+
+```python
+from utils.scoping import team_scoped, get_team_resource_or_404
+
+# Lists: always scope the base query
+tasks = team_scoped(Task.query, Task).filter_by(status='todo').all()
+
+# Single resource: 404 if cross-team
+task = get_team_resource_or_404(Task, task_id)
+```
+
+`team_scoped(query, Model)` reads `g.current_team_id` and silently returns an empty result for super_admin (so `/tasks` returns `[]` for super_admin per R9.6 — they should use `/admin/teams/<id>/...` instead).
+
+### Auth layer (`utils/auth_layer`)
+
+Registered in `app.py::create_app` after blueprints. Runs as a `before_request` hook on every API call:
+
+1. Public path whitelist (`/health`, `/ready`, `/version`, `/auth/login`, `/auth/signup`, `/auth/signup-info`, static assets) → pass through.
+2. Loads user from `session['user_id']`; missing → 401.
+3. Compares `session['session_version']` with `User.session_version`; mismatch → 401 with `code: 'session_stale'`.
+4. If user has a team and team is archived → 403 with `code: 'team_archived'`.
+5. Populates `g.current_user`, `g.current_team_id`, `g.current_role`.
+
+Bumping `User.session_version` (e.g. on team move, role change, archive) atomically invalidates every active session for that user.
+
+### Per-team Socket.IO rooms (R22, design 5)
+
+Connect handler in `utils/realtime`:
+- Super admin → joins `super_admin` room.
+- Manager/user → joins `team:<team_id>` room.
+- Anything else → connection rejected.
+
+Every `socketio.emit('task_action', ...)` and `socketio.emit('notification', ...)` must include `room=f'team:{task.team_id}'` to prevent cross-team leak.
+
+### Denormalized team_id
+
+`Comment`, `Subtask`, `TaskDependency`, `CustomField` carry their own `team_id` (denormalized from parent task) so that scoped queries don't need a join. **When creating these resources from a route handler, set `child.team_id = parent_task.team_id` before commit.** Missing this is the most common source of "user can't see their own comment" bugs.
+
+### Performance (Task 21, design 15)
+
+Composite indexes from migration `2c8e44f754b0` cover the hot query paths:
+- `ix_task_team_due` (team_id, due_date) WHERE completed=false
+- `ix_task_team_status` (team_id, status)
+- `ix_notification_team_user_unread` (team_id, user_id) WHERE read=false
+- `ix_activity_team_created` (team_id, created_at DESC)
+
+When listing many tasks, use the `_eager_task_options()` helper in `routes/tasks.py` to avoid N+1 queries:
+```python
+tasks = visible_task_query(user).options(*_eager_task_options()).all()
+```
+
+Benchmark suite: `scripts/seed_perf.py` + `scripts/perf_bench.py`.
+
 ## Common Pitfalls
 
+- **Missing team_id on denormalized resources** - When creating `Comment`, `Subtask`, `TaskDependency`, `CustomField`, always set `child.team_id = parent_task.team_id`. Otherwise scoped queries silently exclude the row.
+- **Cross-team references** - When accepting `assignee_ids` / `member_ids` / `depends_on_task_id` from request bodies, validate every referenced entity has the current `team_id`. Raise `CrossTeamReferenceError` (400 `cross_team_reference`) on mismatch.
+- **Socket.IO room scope** - `socketio.emit('task_action', payload)` without `room=f'team:{team_id}'` leaks events to other teams. Always pass `room=`.
+- **N+1 in list endpoints** - Use `selectinload`/`joinedload` (`_eager_task_options()`) when serializing many tasks via `to_dict()`. Without it, `/tasks?per_page=50` issues 250+ queries.
 - **Marshmallow v3.x compatibility** - Use `load_default` instead of `default` for field defaults in schemas.
 - **Decorator stacking** - `@app.route()` must come BEFORE `@login_required` in the decorator stack.
 - **WebSocket workers** - With Gunicorn use `gthread`. For local development, `threading` is preferred (avoid `eventlet`).
 - **Port Conflicts**: Port 5000 (Flask) and 80/443 (Nginx) - check with `lsof -i :5000` / `netstat -ano | findstr :5000`.
 - **Frontend not built**: Flask serves `frontend/dist/`. After frontend edits run `npm run build` (or rebuild Docker image).
-- **Socket.IO Emission**: Any POST/PATCH/DELETE that modifies task state MUST emit `socketio.emit('task_action', ...)`. Without it, other clients won't see updates.
-- **Session Timeout**: Session-based auth means users are logged in as long as the session exists. Test logout thoroughly.
+- **Socket.IO Emission**: Any POST/PATCH/DELETE that modifies task state MUST emit `socketio.emit('task_action', ...)` with `room=f'team:{team_id}'`. Without it, other clients won't see updates.
+- **Session Timeout**: Session-based auth invalidated by bumping `User.session_version`. Use this on team move, role change, archive.
 - **Large Files**: `app.py` and `routes/tasks.py` are sizeable. When editing, use `str_replace` with 3+ lines of context to avoid ambiguous matches.
 - **Cascade Deletes**: Models use `cascade='all, delete-orphan'`. Deleting a parent (e.g., Task) automatically deletes children (e.g., Subtasks, Comments). Be careful with migrations affecting parent-child relationships.
 - **SQLite concurrency**: SQLite is single-writer. For >20 concurrent users consider PostgreSQL. Current setup is sized for self-hosted internal use.

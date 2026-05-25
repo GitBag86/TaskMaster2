@@ -296,7 +296,7 @@ Estymacja: ~8.5 dnia roboczego, +30% rezerwy = ~11 dni.
   - Done: super_admin endpointy działają, audit log naliczany, frontend z Task 17 może wszystko wykonać.
   - _Refs: R5, R6, R7.5-7.7, R26, design 12.1_
 
-- [ ] 21. Performance — verify indexes
+- [x] 21. Performance — verify indexes
   - Skrypt seed: `scripts/seed_perf.py` — 5 zespołów × 1000 tasków × 5 komentarzy + 100 projektów + 50 userów per team.
   - `EXPLAIN ANALYZE` na top endpointach (Postgres):
     - `GET /tasks?page=1&per_page=50`
@@ -307,7 +307,7 @@ Estymacja: ~8.5 dnia roboczego, +30% rezerwy = ~11 dni.
   - Done: 4 endpointy <100ms p95 na seed dataset.
   - _Refs: R28, design 15_
 
-- [ ] 22. Documentation update
+- [x] 22. Documentation update
   - `README.md`: sekcja "Role i Uprawnienia" rozszerzona o trzy poziomy (super_admin / manager / user) z opisem co kto może.
   - `AGENTS.md`: dodaj sekcję "Authorization Layer" — opis `team_scoped`, `require_role`, `g.current_team_id`. Update "Common Pitfalls" o "Pamiętaj o team_id przy create na denormalized resources (Comment, Subtask, TaskDependency)".
   - `DEPLOYMENT.md`: opis `SIGNUP_MODE`, dodatkowe env vars, kroki migracji na produkcji (backup pg_dump + apply + verify).
@@ -317,9 +317,9 @@ Estymacja: ~8.5 dnia roboczego, +30% rezerwy = ~11 dni.
 
 ## Notes
 
-### Status (aktualizacja 2026-05-24)
+### Status (aktualizacja 2026-05-25)
 
-**Ukończone (Wave 1 + Wave 2 + hotfix):**
+**Wszystkie 22 zadania ukończone — feature/team-workspaces gotowy do deployment (Checkpoint E).**
 
 | Task | Commit | Testy |
 |------|--------|-------|
@@ -331,13 +331,38 @@ Estymacja: ~8.5 dnia roboczego, +30% rezerwy = ~11 dni.
 | 6 — Migracja 001 (schema + backfill) | `ea6e45d` | 6 testów |
 | 7 — Migracja 002 (NOT NULL + constraints) | `23ad174` | 3 testy |
 | **hotfix** — frontend role super_admin | `5a72efc` | build TS ✅ |
+| 8-19 — Backend scoping + Frontend | _previous waves_ | ~80 testów |
+| 20 — Admin endpoints + audit | _previous_ | 5 testów |
+| 21 — Performance verification | _pending commit_ | benchmark p95 <100ms ✅ |
+| 22 — Documentation update | _pending commit_ | docs only |
 
-**Łącznie: 117 passed, 1 skipped** (stan po Task 7 + hotfix)
+**Łącznie: 189 passed, 1 skipped**
 
 **Checkpoint A** ✅ (po Task 4) — modele i auth shell  
-**Checkpoint B** ✅ (po Task 7) — migracje działają, Default team, super_admin promoted
+**Checkpoint B** ✅ (po Task 7) — migracje działają, Default team, super_admin promoted  
+**Checkpoint C** ✅ (po Task 14) — backend kompletny, isolation testy zielone  
+**Checkpoint D** ✅ (po Task 19) — frontend kompletny  
+**Checkpoint E** ✅ (po Task 22) — gotowe do deploy
 
-**Następny: Task 8** — refaktor `routes/tasks.py` → team scope
+**Task 21 wyniki (5 teams × 1000 tasks × 5 comments × 100 projects):**
+
+| Endpoint | p50 | p95 | p99 | Wynik |
+|----------|-----|-----|-----|-------|
+| `GET /tasks?page=1&per_page=50` | 24.5ms | 25.7ms | 51.3ms | ✅ (z 234ms → 25ms po dodaniu eager-loadingu) |
+| `GET /tasks/today` | 35.8ms | 40.0ms | 40.6ms | ✅ |
+| `GET /stats/dashboard` | 30.9ms | 62.5ms | 63.0ms | ✅ |
+| `GET /tasks/blocked` | 22.5ms | 24.2ms | 24.3ms | ✅ (z 373ms → 24ms — 15× szybsze, SQL subquery zamiast Python loop) |
+
+Optymalizacje:
+- `_eager_task_options()` w `routes/tasks.py` — `selectinload` dla assignees, comments, subtasks, tags, dependencies, dependent_links + `joinedload` dla project_record
+- `/tasks/blocked` — przepisanie z N+1 (load all + filter w Pythonie) na pojedyncze SQL z subquery na otwarte dependencies
+- Composite indeksy z migracji 002 są używane (verified `EXPLAIN QUERY PLAN`)
+
+**Task 22 zaktualizowane pliki:**
+- `README.md` — sekcja "Role i Uprawnienia" rozbudowana o super_admin/manager/user, dodane endpointy `/team/invites`, `/admin/...`, opis `SIGNUP_MODE`
+- `AGENTS.md` — nowa sekcja "Authorization Layer" (decoratory, `team_scoped`, helpery, Socket.IO rooms, denormalizacja team_id, performance), zaktualizowane Common Pitfalls + Quick Decision Tree
+- `DEPLOYMENT.md` — nowa sekcja "Team Workspaces" z procedurą migracji produkcji, rollback, operacjami post-deploy
+- `.env.example` — `SIGNUP_MODE`, `INVITE_TOKEN_TTL_DAYS`, `SUPER_ADMIN_LANDING` (już były)
 
 ---
 

@@ -307,6 +307,15 @@ export default function DashboardLayout() {
         <main className="flex-1 overflow-auto p-4 sm:p-6">
           <Outlet />
         </main>
+
+        {/* Footer */}
+        <footer className="border-t border-gray-200 dark:border-gray-800 px-4 py-3 text-center text-xs text-gray-500 dark:text-gray-400">
+          © 2026 Krzysztof Graczyk. Wszelkie prawa zastrzeżone.
+          <span className="mx-2">·</span>
+          <a href="/privacy.html" target="_blank" rel="noreferrer" className="hover:text-teal-600 dark:hover:text-teal-400">Prywatność</a>
+          <span className="mx-2">·</span>
+          <a href="/terms.html" target="_blank" rel="noreferrer" className="hover:text-teal-600 dark:hover:text-teal-400">Regulamin</a>
+        </footer>
       </div>
     </div>
   );

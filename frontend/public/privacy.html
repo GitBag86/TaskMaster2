@@ -3,51 +3,218 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Polityka prywatności</title>
+    <title>Polityka prywatności — TaskMaster2</title>
     <style>
-      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; line-height: 1.55; margin: 0; background: #f8fafc; color: #0f172a; }
-      main { max-width: 860px; margin: 0 auto; padding: 32px 16px; }
-      h1, h2 { line-height: 1.2; }
-      section { background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin-bottom: 14px; }
-      ul { padding-left: 18px; }
+      :root {
+        --bg: #f8fafc;
+        --card: #ffffff;
+        --text: #0f172a;
+        --muted: #475569;
+        --border: #e2e8f0;
+        --accent: #14b8a6;
+      }
+      body {
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        line-height: 1.6;
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+      }
+      main { max-width: 880px; margin: 0 auto; padding: 32px 16px 80px; }
+      h1, h2, h3 { line-height: 1.25; }
+      h1 { font-size: 2rem; margin-bottom: 0.25em; }
+      h2 { margin-top: 0; color: var(--accent); }
+      .meta { color: var(--muted); font-size: 0.9rem; margin-bottom: 32px; }
+      section {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 24px;
+        margin-bottom: 16px;
+      }
+      ul, ol { padding-left: 22px; }
+      li { margin-bottom: 6px; }
+      strong { color: var(--text); }
+      footer {
+        margin-top: 40px;
+        padding-top: 20px;
+        border-top: 1px solid var(--border);
+        text-align: center;
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+      a { color: var(--accent); }
     </style>
   </head>
   <body>
     <main>
       <h1>Polityka prywatności</h1>
-      <p>Data wejścia w życie: 17 maja 2026</p>
+      <p class="meta">Aplikacja: <strong>TaskMaster2</strong> · Data wejścia w życie: 25 maja 2026</p>
 
       <section>
-        <h2>1. Jakie dane przetwarzamy</h2>
+        <h2>1. Administrator danych</h2>
+        <p>
+          Administratorem danych osobowych przetwarzanych w aplikacji TaskMaster2 jest
+          <strong>Krzysztof Graczyk</strong> (dalej "Administrator"). Aplikacja jest
+          autorskim projektem prywatnym i dystrybuowana jest jako oprogramowanie
+          self-hosted.
+        </p>
+        <p>
+          W przypadku, gdy aplikacja jest wdrożona w Twojej organizacji, administratorem
+          przetwarzanych w niej danych w rozumieniu RODO może być Twój pracodawca lub
+          podmiot, który udostępnił Ci konto. W takim przypadku Administrator
+          oprogramowania (Krzysztof Graczyk) nie ma dostępu do Twoich danych —
+          działa wyłącznie jako twórca oprogramowania.
+        </p>
+      </section>
+
+      <section>
+        <h2>2. Jakie dane przetwarzamy</h2>
+        <h3>2.1 Dane konta użytkownika</h3>
         <ul>
-          <li>Dane konta: nazwa użytkownika, e-mail, hasło (w postaci skrótu).</li>
-          <li>Dane operacyjne: zadania, komentarze, ustawienia.</li>
+          <li><strong>Nazwa użytkownika</strong> — wybierana podczas rejestracji.</li>
+          <li><strong>Adres e-mail</strong> — używany do logowania i powiadomień.</li>
+          <li><strong>Hasło</strong> — przechowywane w postaci skrótu (hash bcrypt/scrypt), nigdy w postaci jawnej.</li>
+          <li><strong>Rola</strong> — super_admin, manager lub user.</li>
+          <li><strong>Przynależność do zespołu</strong> — identyfikator zespołu (workspace), do którego należysz.</li>
+          <li><strong>Zgody</strong> — informacja o akceptacji regulaminu, polityki prywatności i opcjonalnej zgody marketingowej, wraz z datą.</li>
+          <li><strong>Data utworzenia konta</strong>.</li>
+        </ul>
+
+        <h3>2.2 Dane operacyjne (treści tworzone przez Ciebie)</h3>
+        <ul>
+          <li>Zadania i ich atrybuty (tytuł, opis, priorytet, status, terminy).</li>
+          <li>Komentarze i wzmianki (mentions).</li>
+          <li>Podzadania i listy kontrolne.</li>
+          <li>Projekty, tagi, filtry, szablony.</li>
+          <li>Powiadomienia i historia aktywności.</li>
+          <li>Zaproszenia do zespołów (invite tokens, w postaci skrótu).</li>
+        </ul>
+
+        <h3>2.3 Dane techniczne</h3>
+        <ul>
+          <li><strong>Logi serwera</strong> — adres IP, znacznik czasu, ścieżka żądania, kod odpowiedzi, identyfikator sesji. Logi są przechowywane lokalnie na serwerze przez maksymalnie 30 dni i służą wyłącznie celom diagnostycznym.</li>
+          <li><strong>Sesja</strong> — bezpieczne ciasteczko sesyjne (HttpOnly, Secure, SameSite=Lax) niezbędne do utrzymania zalogowania.</li>
+          <li><strong>Audit log</strong> (tylko dla super-administratora) — historia operacji administracyjnych: tworzenie/archiwizacja zespołów, zmiany ról, przenoszenie użytkowników. Zawiera: identyfikator wykonawcy, akcję, czas, identyfikator celu.</li>
+        </ul>
+
+        <h3>2.4 Czego NIE zbieramy</h3>
+        <ul>
+          <li>Aplikacja <strong>nie używa</strong> third-party trackerów, Google Analytics, Facebook Pixel ani podobnych narzędzi.</li>
+          <li>Aplikacja <strong>nie wysyła</strong> Twoich danych do podmiotów trzecich (wyjątek: opcjonalny serwer SMTP do wysyłki maili powiadomień, jeśli skonfigurowany).</li>
+          <li>Aplikacja <strong>nie używa</strong> ciasteczek reklamowych ani profilujących.</li>
         </ul>
       </section>
 
       <section>
-        <h2>2. Cel przetwarzania</h2>
-        <p>Dane są przetwarzane wyłącznie w celu świadczenia usługi zarządzania zadaniami i poprawy jakości działania aplikacji.</p>
-      </section>
-
-      <section>
-        <h2>3. Podstawa prawna</h2>
-        <p>Podstawą jest zgoda użytkownika na warunki korzystania i przetwarzanie danych zgodnie z niniejszą polityką.</p>
-      </section>
-
-      <section>
-        <h2>4. Prawa użytkownika</h2>
+        <h2>3. Cel i podstawa prawna przetwarzania</h2>
+        <p>Przetwarzanie odbywa się zgodnie z Rozporządzeniem Parlamentu Europejskiego i Rady (UE) 2016/679 (RODO).</p>
         <ul>
-          <li>Prawo dostępu do danych.</li>
-          <li>Prawo poprawiania i usunięcia danych.</li>
-          <li>Prawo cofnięcia zgody marketingowej.</li>
+          <li><strong>Świadczenie usługi</strong> (art. 6 ust. 1 lit. b RODO — wykonanie umowy): rejestracja, logowanie, zarządzanie zadaniami, projektami, komentarzami, zespołami.</li>
+          <li><strong>Bezpieczeństwo i zapobieganie nadużyciom</strong> (art. 6 ust. 1 lit. f RODO — uzasadniony interes): logi serwera, audit log administracyjny, rate limiting.</li>
+          <li><strong>Powiadomienia e-mail</strong> (art. 6 ust. 1 lit. b RODO — wykonanie umowy): wysyłka powiadomień o przypisaniach, zbliżających się terminach itp.</li>
+          <li><strong>Komunikacja marketingowa</strong> (art. 6 ust. 1 lit. a RODO — zgoda): wyłącznie po wyraźnej, dobrowolnej zgodzie. Możesz cofnąć ją w każdej chwili.</li>
         </ul>
       </section>
 
       <section>
-        <h2>5. Kontakt</h2>
-        <p>W sprawach danych osobowych skontaktuj się z administratorem usługi.</p>
+        <h2>4. Okres przechowywania danych</h2>
+        <ul>
+          <li><strong>Dane konta</strong> — przez cały okres aktywności konta. Po usunięciu konta dane są kasowane w ciągu 30 dni.</li>
+          <li><strong>Dane operacyjne</strong> — przez czas korzystania z usługi. Usunięcie konta usuwa również utworzone przez Ciebie zadania, komentarze i podzadania (cascade delete).</li>
+          <li><strong>Logi serwera</strong> — maksymalnie 30 dni.</li>
+          <li><strong>Audit log</strong> — bez ograniczenia czasowego (potrzebny dla bezpieczeństwa platformy), ale można usunąć ręcznie przez administratora.</li>
+          <li><strong>Backupy bazy</strong> — okresowe, przechowywane do 90 dni.</li>
+        </ul>
       </section>
+
+      <section>
+        <h2>5. Prawa użytkownika (RODO)</h2>
+        <p>Przysługują Ci następujące prawa:</p>
+        <ul>
+          <li><strong>Prawo dostępu do danych</strong> (art. 15 RODO) — możesz zażądać kopii swoich danych.</li>
+          <li><strong>Prawo do sprostowania</strong> (art. 16 RODO) — możesz poprawić nieprawidłowe dane w ustawieniach konta.</li>
+          <li><strong>Prawo do usunięcia</strong> ("prawo do bycia zapomnianym", art. 17 RODO) — możesz zażądać usunięcia konta i wszystkich danych.</li>
+          <li><strong>Prawo do ograniczenia przetwarzania</strong> (art. 18 RODO).</li>
+          <li><strong>Prawo do przenoszenia danych</strong> (art. 20 RODO) — możesz pobrać dane w formacie maszynowo czytelnym.</li>
+          <li><strong>Prawo do sprzeciwu</strong> (art. 21 RODO).</li>
+          <li><strong>Prawo do cofnięcia zgody</strong> (art. 7 ust. 3 RODO) — w dowolnym momencie, bez wpływu na zgodność z prawem dotychczasowego przetwarzania.</li>
+          <li><strong>Prawo do skargi</strong> — do organu nadzorczego (w Polsce: Prezes Urzędu Ochrony Danych Osobowych, <a href="https://uodo.gov.pl">uodo.gov.pl</a>).</li>
+        </ul>
+        <p>Aby skorzystać z powyższych praw, skontaktuj się z administratorem swojej instancji aplikacji.</p>
+      </section>
+
+      <section>
+        <h2>6. Bezpieczeństwo danych</h2>
+        <p>Stosujemy następujące środki bezpieczeństwa:</p>
+        <ul>
+          <li>Szyfrowanie transmisji danych (HTTPS/TLS 1.2+).</li>
+          <li>Hashowanie haseł (Werkzeug security, scrypt/bcrypt).</li>
+          <li>Bezpieczne sesje (cookies HttpOnly, Secure, SameSite).</li>
+          <li>Rate limiting na endpointach uwierzytelniania.</li>
+          <li>Izolacja danych pomiędzy zespołami (multi-tenancy z constraint na poziomie bazy danych).</li>
+          <li>Walidacja po stronie serwera dla każdego żądania.</li>
+          <li>Audit log dla operacji administracyjnych.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>7. Pliki cookies</h2>
+        <p>Aplikacja używa wyłącznie ciasteczek niezbędnych do działania:</p>
+        <ul>
+          <li><strong>session</strong> — identyfikator sesji użytkownika. Wygasa po zamknięciu przeglądarki lub po wylogowaniu.</li>
+        </ul>
+        <p>Nie używamy ciasteczek reklamowych, analitycznych ani profilujących. Nie wymagamy zgody na cookies w rozumieniu dyrektywy ePrivacy, ponieważ ciasteczko sesji jest niezbędne do świadczenia usługi.</p>
+      </section>
+
+      <section>
+        <h2>8. Powierzenie przetwarzania (jeśli dotyczy)</h2>
+        <p>
+          Jeśli aplikacja jest wdrożona w Twojej organizacji (model self-hosted),
+          dane przetwarzane są wyłącznie na infrastrukturze Twojego pracodawcy lub
+          podmiotu, który Ci udostępnił dostęp. Autor oprogramowania nie ma dostępu
+          do tych danych.
+        </p>
+        <p>
+          Jeśli administrator instancji skonfigurował serwer SMTP do wysyłki
+          powiadomień e-mail, treść wiadomości (np. "Przypisano Ci zadanie X")
+          przechodzi przez ten serwer. Dane logowania do SMTP są pod kontrolą
+          administratora instancji.
+        </p>
+      </section>
+
+      <section>
+        <h2>9. Przekazywanie danych poza EOG</h2>
+        <p>
+          Domyślnie aplikacja nie przekazuje danych poza Europejski Obszar Gospodarczy.
+          Jeśli administrator instancji wybrał hosting lub serwer SMTP poza EOG,
+          jest zobowiązany zapewnić odpowiednie zabezpieczenia (np. standardowe
+          klauzule umowne UE).
+        </p>
+      </section>
+
+      <section>
+        <h2>10. Zmiany polityki prywatności</h2>
+        <p>
+          Niniejsza polityka może być aktualizowana. O istotnych zmianach
+          poinformujemy Cię przy najbliższym logowaniu. Aktualną wersję zawsze
+          znajdziesz pod tym samym adresem.
+        </p>
+      </section>
+
+      <section>
+        <h2>11. Kontakt</h2>
+        <p>
+          W sprawach związanych z przetwarzaniem danych osobowych skontaktuj się
+          z administratorem swojej instancji TaskMaster2. W sprawach dotyczących
+          samego oprogramowania (np. zgłoszenia błędów, prośby o licencję)
+          skontaktuj się z autorem: <strong>Krzysztof Graczyk</strong>.
+        </p>
+      </section>
+
+      <footer>
+        © 2026 Krzysztof Graczyk. Wszelkie prawa zastrzeżone.
+      </footer>
     </main>
   </body>
 </html>

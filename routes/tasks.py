@@ -3,6 +3,7 @@ import re
 from flask import g, request, jsonify, session, url_for
 from datetime import date, datetime, timedelta, timezone
 from marshmallow import ValidationError
+from sqlalchemy.orm import selectinload, joinedload
 from extensions import socketio
 from routes import tasks_bp
 from models import db, User, Task, Comment, Subtask, ActivityLog, Tag, Project, ProjectTemplate, TaskDependency
@@ -217,6 +218,24 @@ def visible_task_query(user):
     if g.get('current_role') in ('manager', 'super_admin'):
         return team_scoped(Task.query, Task)
     return assigned_task_query(user)
+
+
+def _eager_task_options():
+    """Eager-loading options for Task to avoid N+1 in to_dict() / dependency checks.
+
+    Use with `query.options(*_eager_task_options())` whenever a list of full
+    Task dicts is being serialized, or whenever we need to inspect dependencies/
+    subtasks for many tasks (e.g. /tasks/blocked, /tasks/today).
+    """
+    return (
+        selectinload(Task.assignees),
+        selectinload(Task.comments),
+        selectinload(Task.subtasks),
+        selectinload(Task.tags),
+        selectinload(Task.dependencies).selectinload(TaskDependency.depends_on_task),
+        selectinload(Task.dependent_links).selectinload(TaskDependency.task),
+        joinedload(Task.project_record).selectinload(Project.members),
+    )
 
 def assignee_names(task):
     return ', '.join(user.username for user in task.assignees)
@@ -442,7 +461,7 @@ def get_tasks():
     per_page = request.args.get('per_page', 50, type=int)
     per_page = min(per_page, 100)
 
-    query = visible_task_query(user)
+    query = visible_task_query(user).options(*_eager_task_options())
 
     pagination = query.order_by(Task.created_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
     tasks = pagination.items
@@ -467,6 +486,7 @@ def get_today_tasks():
 
     tasks = (
         visible_task_query(user)
+        .options(*_eager_task_options())
         .filter(Task.completed.is_(False), Task.due_date.isnot(None), Task.due_date <= week_end)
         .order_by(Task.due_date.asc(), Task.priority.asc(), Task.created_at.desc())
         .all()
@@ -508,8 +528,25 @@ def get_today_tasks():
 def get_blocked_tasks():
     user_id = session.get('user_id')
     user = db.session.get(User, user_id)
-    tasks = visible_task_query(user).order_by(Task.created_at.desc()).all()
-    blocked_tasks = [task for task in tasks if not task_is_done(task) and task_open_dependencies(task)]
+
+    # SQL-side filter: only fetch tasks that are open (not done) AND have at least
+    # one open dependency. This avoids loading the entire team task list and
+    # checking dependencies in Python (was N+1 over thousands of tasks).
+    open_dep_subquery = (
+        db.session.query(TaskDependency.task_id)
+        .join(Task, TaskDependency.depends_on_task_id == Task.id)
+        .filter(Task.completed.is_(False), Task.status != 'done')
+        .subquery()
+    )
+
+    blocked_tasks = (
+        visible_task_query(user)
+        .options(*_eager_task_options())
+        .filter(Task.completed.is_(False), Task.status != 'done')
+        .filter(Task.id.in_(db.session.query(open_dep_subquery.c.task_id)))
+        .order_by(Task.created_at.desc())
+        .all()
+    )
 
     return jsonify({
         "tasks": [task.to_dict() for task in blocked_tasks],
@@ -521,7 +558,7 @@ def get_blocked_tasks():
 def get_dependency_board():
     user_id = session.get('user_id')
     user = db.session.get(User, user_id)
-    tasks = visible_task_query(user).all()
+    tasks = visible_task_query(user).options(*_eager_task_options()).all()
     priority_rank = {'high': 0, 'medium': 1, 'low': 2}
 
     def due_sort_value(task):
@@ -1133,7 +1170,7 @@ def filter_tasks():
     if completed is not None:
         query = query.filter_by(completed=(completed.lower() == 'true'))
 
-    tasks = query.all()
+    tasks = query.options(*_eager_task_options()).all()
     return jsonify({"tasks": [t.to_dict() for t in tasks]})
 
 @tasks_bp.route('/tasks/by-project', methods=['GET'])
@@ -1142,7 +1179,7 @@ def tasks_by_project():
     user_id = session.get('user_id')
     user = db.session.get(User, user_id)
 
-    tasks = visible_task_query(user).all()
+    tasks = visible_task_query(user).options(*_eager_task_options()).all()
 
     projects = {}
     if g.get('current_role') in ('manager', 'super_admin'):
@@ -1437,7 +1474,7 @@ def search_tasks():
     if not query_str:
         return jsonify({'tasks': []})
 
-    tasks = visible_task_query(user).filter(
+    tasks = visible_task_query(user).options(*_eager_task_options()).filter(
         (Task.title.ilike(f'%{query_str}%')) | (Task.notes.ilike(f'%{query_str}%'))
     ).all()
 

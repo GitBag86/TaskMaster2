@@ -243,6 +243,14 @@ export default function AuthPage() {
             </button>
           </div>
         </div>
+
+        <div className="mt-6 text-center text-xs text-gray-500 dark:text-gray-400">
+          © 2026 Krzysztof Graczyk. Wszelkie prawa zastrzeżone.
+          <span className="mx-2">·</span>
+          <a href="/privacy.html" target="_blank" rel="noreferrer" className="hover:text-teal-600 dark:hover:text-teal-400">Prywatność</a>
+          <span className="mx-2">·</span>
+          <a href="/terms.html" target="_blank" rel="noreferrer" className="hover:text-teal-600 dark:hover:text-teal-400">Regulamin</a>
+        </div>
       </div>
     </div>
   );
