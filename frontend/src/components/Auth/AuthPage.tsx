@@ -21,7 +21,7 @@ export default function AuthPage() {
     setLoading(true);
     try {
       if (isSignup) {
-        await signup({
+        const createdUser = await signup({
           username: username.trim(),
           password,
           email: email.trim(),
@@ -30,11 +30,12 @@ export default function AuthPage() {
           accept_marketing: acceptMarketing,
         });
         addToast('Rejestracja pomyślna', 'success');
+        navigate(createdUser.role === 'super_admin' ? '/admin/teams' : '/');
       } else {
-        await login(username, password);
+        const loggedUser = await login(username, password);
         addToast('Logowanie pomyślne', 'success');
+        navigate(loggedUser.role === 'super_admin' ? '/admin/teams' : '/');
       }
-      navigate('/');
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Błąd autoryzacji';
       addToast(message, 'error');

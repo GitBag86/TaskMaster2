@@ -88,7 +88,7 @@ export default function ProjectsPage() {
       const response = await api.projects.templates()
       setTemplates(response.templates)
       if (!selectedTemplateId && response.templates.length > 0) {
-        setSelectedTemplateId(response.templates[0].id)
+        setSelectedTemplateId(String(response.templates[0].id))
       }
     } catch {
       setTemplates([])

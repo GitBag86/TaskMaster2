@@ -228,7 +228,7 @@ Estymacja: ~8.5 dnia roboczego, +30% rezerwy = ~11 dni.
   - Done: parametryczny test w CI, każda kombinacja (resource × method) zielona.
   - _Refs: R9, R31, design 14_
 
-- [ ] 15. TypeScript types + AuthContext + api/client
+- [x] 15. TypeScript types + AuthContext + api/client
   - `frontend/src/types/index.ts`:
     - `type Role = 'super_admin' | 'manager' | 'user'`.
     - `interface Team { id, name, slug, description, archived, created_at }`.
@@ -242,7 +242,7 @@ Estymacja: ~8.5 dnia roboczego, +30% rezerwy = ~11 dni.
   - Done: auth flow działa, useAuth() dostępne `currentTeam` i `user.role`.
   - _Refs: design 11_
 
-- [ ] 16. RoleRoute guard + Layout adaptacja
+- [x] 16. RoleRoute guard + Layout adaptacja
   - Stwórz `frontend/src/components/common/RoleRoute.tsx` (jak w design 11.4).
   - W `App.tsx` opakowanie nowych rout w `<RoleRoute roles={['super_admin']}>...` itd.
   - W `DashboardLayout.tsx` warunkowy sidebar:

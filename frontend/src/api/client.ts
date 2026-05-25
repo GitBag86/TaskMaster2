@@ -16,6 +16,10 @@ import type {
   WeeklyReport,
   ProjectTemplate,
   NotificationItem,
+  Role,
+  Team,
+  InviteToken,
+  TeamAuditEntry,
 } from '@/types';
 
 const API_BASE =
@@ -58,8 +62,53 @@ type UserCreatePayload = {
   username: string;
   password: string;
   email: string;
-  role: 'admin' | 'user';
+  role: 'manager' | 'user';
 };
+
+type SignupPayload = {
+  username: string;
+  password: string;
+  email: string;
+  accept_terms: boolean;
+  accept_privacy: boolean;
+  accept_marketing: boolean;
+  invite_token?: string | null;
+};
+
+type SignupMode = 'disabled' | 'invite_only' | 'default_team';
+
+type SignupInfo = {
+  mode: SignupMode;
+  team_name?: string;
+  token_valid?: boolean;
+};
+
+type TeamPayload = {
+  name: string;
+  description?: string;
+};
+
+type AuthErrorHandler = (error: ApiError) => void;
+
+let authErrorHandler: AuthErrorHandler | null = null;
+
+export class ApiError extends Error {
+  status: number;
+  code?: string;
+  body: unknown;
+
+  constructor(message: string, status: number, body: unknown, code?: string) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.body = body;
+    this.code = code;
+  }
+}
+
+export function setAuthErrorHandler(handler: AuthErrorHandler | null) {
+  authErrorHandler = handler;
+}
 
 const ERROR_FIELD_LABELS: Record<string, string> = {
   username: 'Nazwa użytkownika',
@@ -98,6 +147,14 @@ function getErrorMessage(errorBody: unknown, status: number): string {
   return formatErrorValue(errorBody) || `HTTP ${status}`;
 }
 
+function getErrorCode(errorBody: unknown): string | undefined {
+  if (errorBody && typeof errorBody === 'object') {
+    const body = errorBody as { code?: unknown };
+    return typeof body.code === 'string' ? body.code : undefined;
+  }
+  return undefined;
+}
+
 async function request<T>(
   url: string,
   options: RequestInit = {}
@@ -113,10 +170,24 @@ async function request<T>(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Request failed' }));
-    throw new Error(getErrorMessage(error, response.status));
+    const apiError = new ApiError(
+      getErrorMessage(error, response.status),
+      response.status,
+      error,
+      getErrorCode(error),
+    );
+    if (apiError.code === 'team_archived' || apiError.code === 'session_stale') {
+      authErrorHandler?.(apiError);
+    }
+    throw apiError;
   }
 
-  return response.json();
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  const text = await response.text();
+  return (text ? JSON.parse(text) : undefined) as T;
 }
 
 export const api = {
@@ -126,14 +197,7 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ username, password }),
       }),
-    signup: (data: {
-      username: string;
-      password: string;
-      email: string;
-      accept_terms: boolean;
-      accept_privacy: boolean;
-      accept_marketing: boolean;
-    }) =>
+    signup: (data: SignupPayload) =>
       request<{ message: string; user: User }>('/auth/signup', {
         method: 'POST',
         body: JSON.stringify(data),
@@ -143,6 +207,18 @@ export const api = {
     me: () => request<User>('/auth/me'),
   },
 
+  signup: {
+    info: (token?: string | null) => {
+      const query = token ? `?token=${encodeURIComponent(token)}` : '';
+      return request<SignupInfo>(`/auth/signup-info${query}`);
+    },
+    create: (data: SignupPayload) =>
+      request<{ message: string; user: User }>('/auth/signup', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+  },
+
   users: {
     getAll: () => request<{ users: User[] }>('/users'),
     create: (data: UserCreatePayload) =>
@@ -150,13 +226,61 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(data),
       }),
-    updateRole: (userId: number, role: 'admin' | 'user') =>
+    updateRole: (userId: number, role: 'manager' | 'user') =>
       request<{ message: string }>(`/users/${userId}/role`, {
         method: 'PUT',
         body: JSON.stringify({ role }),
       }),
     delete: (userId: number) =>
       request<{ message: string }>(`/users/${userId}`, { method: 'DELETE' }),
+  },
+
+  teams: {
+    list: () => request<{ teams: Team[] }>('/admin/teams'),
+    create: (data: TeamPayload) =>
+      request<{ team: Team }>('/admin/teams', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    update: (id: number, data: Partial<TeamPayload>) =>
+      request<{ team: Team }>(`/admin/teams/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+    archive: (id: number, archived = true) =>
+      request<{ team: Team }>(`/admin/teams/${id}/archive`, {
+        method: 'POST',
+        body: JSON.stringify({ archived }),
+      }),
+    delete: (id: number) =>
+      request<void>(`/admin/teams/${id}`, { method: 'DELETE' }),
+    members: (id: number) =>
+      request<{ team: Team; members: User[] }>(`/admin/teams/${id}/members`),
+    audit: (id: number) =>
+      request<{ audit: TeamAuditEntry[] }>(`/admin/teams/${id}/audit`),
+    globalAudit: () =>
+      request<{ audit: TeamAuditEntry[] }>('/admin/audit'),
+    moveUser: (userId: number, teamId: number) =>
+      request<{ user: User }>(`/admin/users/${userId}/team`, {
+        method: 'POST',
+        body: JSON.stringify({ team_id: teamId }),
+      }),
+    updateUserRole: (userId: number, role: Role, teamId?: number | null) =>
+      request<{ user: User }>(`/admin/users/${userId}/role`, {
+        method: 'POST',
+        body: JSON.stringify({ role, team_id: teamId }),
+      }),
+  },
+
+  invites: {
+    list: () => request<{ invites: InviteToken[] }>('/team/invites'),
+    create: () =>
+      request<InviteToken>('/team/invites', {
+        method: 'POST',
+        body: JSON.stringify({ default_role: 'user' }),
+      }),
+    revoke: (id: number) =>
+      request<void>(`/team/invites/${id}`, { method: 'DELETE' }),
   },
 
   tasks: {
@@ -218,7 +342,7 @@ export const api = {
   projects: {
     getAll: () => request<{ projects: Project[] }>('/projects'),
     templates: () => request<{ templates: ProjectTemplate[] }>('/project-templates'),
-    useTemplate: (templateId: string, name?: string, startDate?: string) =>
+    useTemplate: (templateId: number | string, name?: string, startDate?: string) =>
       request<Project>(`/project-templates/${templateId}/use`, {
         method: 'POST',
         body: JSON.stringify({ name, start_date: startDate || undefined }),
