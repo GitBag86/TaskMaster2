@@ -1,4 +1,4 @@
-from flask import request, jsonify, session
+from flask import g, request, jsonify, session
 from marshmallow import ValidationError
 from routes import users_bp
 from models import (
@@ -17,13 +17,13 @@ from schemas import AdminUserCreateSchema
 
 def current_admin_or_error(action):
     user = db.session.get(User, session.get('user_id'))
-    if not user or user.role != 'admin':
+    if not user or g.get('current_role') not in ('manager', 'super_admin'):
         return None, jsonify({"error": f"Tylko administrator może {action}"}), 403
     return user, None, None
 
 
 def admin_count():
-    return User.query.filter_by(role='admin').count()
+    return User.query.filter(User.role.in_(('admin', 'manager', 'super_admin'))).count()
 
 @users_bp.route('/users', methods=['GET'])
 @login_required
@@ -57,7 +57,8 @@ def create_user():
     if User.query.filter_by(email=email).first():
         return jsonify({"error": "Użytkownik z tym adresem e-mail już istnieje"}), 400
 
-    new_user = User(username=username, email=email, role=validated["role"])
+    role = 'manager' if validated["role"] == 'admin' else validated["role"]
+    new_user = User(username=username, email=email, role=role, team_id=g.get('current_team_id'))
     new_user.set_password(validated["password"])
     db.session.add(new_user)
     db.session.commit()
@@ -77,13 +78,14 @@ def update_user_role(target_user_id):
 
     data = request.get_json() or {}
     new_role = data.get('role')
-    if new_role not in ['user', 'admin']:
+    if new_role not in ['user', 'manager', 'admin']:
         return jsonify({"error": "Nieprawidłowa rola"}), 400
+    new_role = 'manager' if new_role == 'admin' else new_role
 
-    if target_user.id == user.id and new_role != 'admin':
+    if target_user.id == user.id and new_role != 'manager':
         return jsonify({"error": "Nie możesz odebrać roli admina samemu sobie"}), 400
 
-    if target_user.role == 'admin' and new_role != 'admin' and admin_count() <= 1:
+    if target_user.role in ('admin', 'manager', 'super_admin') and new_role != 'manager' and admin_count() <= 1:
         return jsonify({"error": "Nie można odebrać roli ostatniemu administratorowi"}), 400
 
     target_user.role = new_role
@@ -106,7 +108,7 @@ def delete_user(target_user_id):
     if target_user.id == user.id:
         return jsonify({"error": "Nie możesz usunąć własnego konta"}), 400
 
-    if target_user.role == 'admin' and admin_count() <= 1:
+    if target_user.role in ('admin', 'manager', 'super_admin') and admin_count() <= 1:
         return jsonify({"error": "Nie można usunąć ostatniego administratora"}), 400
 
     username = target_user.username

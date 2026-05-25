@@ -19,6 +19,7 @@ from models import User, db
 from utils.errors import TaskMasterError
 from utils.logging_config import register_request_logging, setup_logging
 from utils.auth_layer import register_auth_layer
+from utils.realtime import register_socketio_handlers
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,7 @@ def _configure_app(app):
 
 
 def _register_blueprints(app):
-    from routes import auth_bp, filters_bp, notifications_bp, stats_bp, tasks_bp, users_bp
+    from routes import auth_bp, filters_bp, invites_bp, notifications_bp, stats_bp, tasks_bp, users_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(users_bp)
@@ -59,6 +60,7 @@ def _register_blueprints(app):
     app.register_blueprint(stats_bp)
     app.register_blueprint(filters_bp)
     app.register_blueprint(notifications_bp)
+    app.register_blueprint(invites_bp)
 
 
 def _register_routes(app):
@@ -132,6 +134,7 @@ def _register_routes(app):
             "dependencies",
             "subtasks",
             "notifications",
+            "team",
             "socket.io",
             "version",
         )
@@ -204,6 +207,7 @@ def create_app(config_object=Config):
     mail.init_app(app)
     migrate.init_app(app, db)
     socketio.init_app(app, cors_allowed_origins=app.config["CORS_ORIGINS"])
+    register_socketio_handlers()
     if app.config.get("ENABLE_SCHEDULER", True):
         scheduler.init_app(app)
 

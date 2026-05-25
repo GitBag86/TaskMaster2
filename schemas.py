@@ -90,6 +90,7 @@ class SignupSchema(Schema):
         error_messages={"required": "Musisz zaakceptować politykę prywatności."},
     )
     accept_marketing = fields.Bool(load_default=False)
+    invite_token = fields.Str(load_default=None, allow_none=True)
 
 class AdminUserCreateSchema(Schema):
     username = fields.Str(
@@ -106,7 +107,7 @@ class AdminUserCreateSchema(Schema):
         required=True,
         error_messages={"required": "Podaj adres e-mail.", "invalid": "Podaj prawidłowy adres e-mail."},
     )
-    role = fields.Str(load_default="user", validate=validate.OneOf(["user", "admin"]))
+    role = fields.Str(load_default="user", validate=validate.OneOf(["user", "manager", "admin"]))
 
 class TagSchema(Schema):
     id = fields.Int(dump_only=True)

@@ -83,6 +83,7 @@ class Task(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=True)
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=True)
     assignees = db.relationship('User', secondary=task_assignees, lazy='subquery',
                                backref=db.backref('assigned_tasks', lazy=True)) # New relationship
     title = db.Column(db.String(200), nullable=False)
@@ -164,6 +165,7 @@ class Task(db.Model):
 class Comment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     task_id = db.Column(db.Integer, db.ForeignKey('task.id'), nullable=False)
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=True)
     author = db.Column(db.String(100), default='Anonimowy')
     text = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=utcnow)
@@ -179,6 +181,7 @@ class Comment(db.Model):
 class Subtask(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     task_id = db.Column(db.Integer, db.ForeignKey('task.id'), nullable=False)
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=True)
     title = db.Column(db.String(200), nullable=False)
     completed = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=utcnow)
@@ -194,6 +197,7 @@ class Subtask(db.Model):
 class Tag(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=True)
     name = db.Column(db.String(50), nullable=False)
     color = db.Column(db.String(7), default='#667eea')
     created_at = db.Column(db.DateTime, default=utcnow)
@@ -212,6 +216,7 @@ Task.tags = db.relationship('Tag', secondary=task_tags, lazy='subquery',
 class SavedFilter(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=True)
     name = db.Column(db.String(100), nullable=False)
     filters = db.Column(db.JSON, nullable=False)
     created_at = db.Column(db.DateTime, default=utcnow)
@@ -223,6 +228,7 @@ class ActivityLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     task_id = db.Column(db.Integer, db.ForeignKey('task.id'))
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=True)
     action = db.Column(db.String(50), nullable=False)
     details = db.Column(db.JSON)
     created_at = db.Column(db.DateTime, default=utcnow)
@@ -240,6 +246,7 @@ class ActivityLog(db.Model):
 class RecurringTask(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     task_id = db.Column(db.Integer, db.ForeignKey('task.id'), nullable=False)
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=True)
     frequency = db.Column(db.String(20), nullable=False)
     interval = db.Column(db.Integer, default=1)
     end_date = db.Column(db.Date, nullable=True)
@@ -258,6 +265,7 @@ class RecurringTask(db.Model):
 class TaskTemplate(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=True)
     name = db.Column(db.String(200), nullable=False)
     description = db.Column(db.String(500))
     template_data = db.Column(db.JSON, nullable=False)
@@ -275,6 +283,7 @@ class TaskDependency(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     task_id = db.Column(db.Integer, db.ForeignKey('task.id'), nullable=False)
     depends_on_task_id = db.Column(db.Integer, db.ForeignKey('task.id'), nullable=False)
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=True)
     created_at = db.Column(db.DateTime, default=utcnow)
     task = db.relationship('Task', foreign_keys=[task_id], back_populates='dependencies')
     depends_on_task = db.relationship('Task', foreign_keys=[depends_on_task_id], back_populates='dependent_links')
@@ -292,6 +301,7 @@ class CustomField(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     task_id = db.Column(db.Integer, db.ForeignKey('task.id'), nullable=False)
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=True)
     field_name = db.Column(db.String(100), nullable=False)
     field_value = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=utcnow)
@@ -308,6 +318,7 @@ class Notification(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     task_id = db.Column(db.Integer, db.ForeignKey('task.id'), nullable=True)
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=True)
     actor = db.Column(db.String(100), nullable=True)
     type = db.Column(db.String(50), nullable=False)
     message = db.Column(db.String(300), nullable=False)
@@ -340,6 +351,7 @@ class Project(db.Model):
     color = db.Column(db.String(7), default='#3b82f6')
     archived = db.Column(db.Boolean, nullable=False, default=False)
     created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=True)
     created_at = db.Column(db.DateTime, default=utcnow)
     members = db.relationship('User', secondary=project_members, lazy='subquery',
                               backref=db.backref('member_projects', lazy=True))

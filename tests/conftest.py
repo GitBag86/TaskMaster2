@@ -13,7 +13,8 @@ os.environ.setdefault("ENABLE_SCHEDULER", "false")
 
 from app import create_app
 from config import TestingConfig
-from models import db, User, Task
+from models import db, Team, User, Task
+from utils.template_service import seed_team_templates
 
 @pytest.fixture
 def app():
@@ -36,15 +37,23 @@ def runner(app):
 
 @pytest.fixture
 def auth_client(client, app):
-    """A client with a logged-in admin user."""
+    """A client with a logged-in team manager."""
     with app.app_context():
-        admin = User(username="admin", email="admin@example.com", role="admin")
+        team = Team(name="Default", slug="default")
+        db.session.add(team)
+        db.session.flush()
+        admin = User(username="admin", email="admin@example.com", role="manager", team_id=team.id)
         admin.set_password("password")
         db.session.add(admin)
+        db.session.flush()
+        seed_team_templates(team.id, created_by_id=admin.id)
         db.session.commit()
         
         with client.session_transaction() as sess:
             sess['user_id'] = admin.id
+            sess['team_id'] = team.id
+            sess['role'] = admin.role
+            sess['session_version'] = admin.session_version
         
         return client
 
@@ -52,12 +61,18 @@ def auth_client(client, app):
 def user_client(client, app):
     """A client with a logged-in regular user."""
     with app.app_context():
-        user = User(username="user", email="user@example.com", role="user")
+        team = Team(name="Default", slug="default")
+        db.session.add(team)
+        db.session.flush()
+        user = User(username="user", email="user@example.com", role="user", team_id=team.id)
         user.set_password("password")
         db.session.add(user)
         db.session.commit()
         
         with client.session_transaction() as sess:
             sess['user_id'] = user.id
+            sess['team_id'] = team.id
+            sess['role'] = user.role
+            sess['session_version'] = user.session_version
         
         return client

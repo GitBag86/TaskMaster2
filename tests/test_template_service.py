@@ -6,7 +6,7 @@ Covers:
 - `payload['tasks']` matches the catalogue tasks list.
 - Idempotency: running seed_team_templates twice does not duplicate rows.
 - Each team gets independent copies (manager edit on team A doesn't bleed to B).
-- Existing routes /project-templates GET still work (legacy alias path).
+- Existing routes /project-templates GET return per-team template rows.
 """
 
 from __future__ import annotations
@@ -105,17 +105,16 @@ def test_project_template_to_dict(app):
         assert "tasks" in data["payload"]
 
 
-def test_legacy_project_templates_endpoint_still_returns_catalogue(auth_client):
-    """The existing GET /project-templates endpoint reads PROJECT_TEMPLATES dict
-    (which now points at PROJECT_TEMPLATE_CATALOGUE) — must not regress in Task 5.
-    Refactor to per-team rows happens in Task 9.
-    """
+def test_project_templates_endpoint_returns_current_team_rows(auth_client, app):
+    """Task 9: GET /project-templates reads the current team's DB copies."""
     response = auth_client.get("/project-templates")
     assert response.status_code == 200
     data = response.get_json()
     assert "templates" in data
-    template_keys = {t["id"] for t in data["templates"]}
-    assert template_keys == set(PROJECT_TEMPLATE_CATALOGUE.keys())
+    template_ids = {t["id"] for t in data["templates"]}
+    assert len(template_ids) == len(PROJECT_TEMPLATE_CATALOGUE)
+    with app.app_context():
+        assert template_ids == {row.id for row in ProjectTemplate.query.all()}
 
 
 def test_cascade_delete_team_removes_its_templates(app):

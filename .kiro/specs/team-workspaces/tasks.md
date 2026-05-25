@@ -140,7 +140,7 @@ Estymacja: ~8.5 dnia roboczego, +30% rezerwy = ~11 dni.
   - Done: obie migracje przechodzą na czystej bazie + na pg_dump produkcji.
   - _Refs: R3.5, R4.7, R4.8, R29, design 6_
 
-- [ ] 8. Tasks routes — team scope
+- [x] 8. Tasks routes — team scope
   - W `routes/tasks.py` zamień `Task.query` → `team_scoped(Task.query, Task)` we wszystkich list endpointach (get_tasks, today, blocked, dependency_board, search, filter).
   - Zamień `db.session.get(Task, id)` → `get_team_resource_or_404(Task, id)` w endpointach single-resource.
   - Zamień `if user.role != 'admin'` → `if g.current_role not in ('manager', 'super_admin')`.
@@ -155,7 +155,7 @@ Estymacja: ~8.5 dnia roboczego, +30% rezerwy = ~11 dni.
   - Done: `tests/test_basic.py` (tasks) + nowe scope testy zielone.
   - _Refs: R10, R12, R14, R15, R16, design 4, 9, 10_
 
-- [ ] 9. Projects routes — team scope
+- [x] 9. Projects routes — team scope
   - W endpointach projektów (`routes/tasks.py` lub wydzielony `routes/projects.py` — sprawdź): `Project.query` → `team_scoped`. `db.session.get(Project, id)` → `get_team_resource_or_404`.
   - W `create_project` set `project.team_id = g.current_team_id`.
   - Walidacja `member_ids`: każdy user musi mieć `team_id == g.current_team_id`. Inaczej 400 `cross_team_reference` (R11.3).
@@ -167,7 +167,7 @@ Estymacja: ~8.5 dnia roboczego, +30% rezerwy = ~11 dni.
   - Done: testy projektowe + isolation zielone.
   - _Refs: R11, R17, design 4, 7_
 
-- [ ] 10. Comments, subtasks, tags, custom_fields — team scope + denormalizacja
+- [x] 10. Comments, subtasks, tags, custom_fields — team scope + denormalizacja
   - W `add_comment`: po Comment(...) ustaw `comment.team_id = task.team_id`.
   - W `add_subtask`: `subtask.team_id = task.team_id`.
   - W `manage_task_dependencies POST`: `dependency.team_id = task.team_id` (oba taski mają ten sam team po walidacji w Task 8).
@@ -177,7 +177,7 @@ Estymacja: ~8.5 dnia roboczego, +30% rezerwy = ~11 dni.
   - Done: denormalizacja działa, isolation zielone.
   - _Refs: R12, design 3.2, 4_
 
-- [ ] 11. Filters, notifications, activity log — team scope
+- [x] 11. Filters, notifications, activity log — team scope
   - `routes/filters.py`: `team_scoped(SavedFilter.query, SavedFilter)`. `SavedFilter.team_id = g.current_team_id` przy create. Re-scope: gdy filter wykonuje query, dodatkowo filtrujemy wynik po team_id (R13.2).
   - `routes/notifications.py`: list i mark-read scoped per user_id + team_id.
   - `utils/notifications.py::create_notification`: rozszerz signature o opcjonalny `team_id` (z task.team_id lub g.current_team_id).
@@ -188,7 +188,7 @@ Estymacja: ~8.5 dnia roboczego, +30% rezerwy = ~11 dni.
   - Done: isolation zielone, weekly report dla A nie zawiera danych B.
   - _Refs: R13, R19, R20, design 4_
 
-- [ ] 12. Invite tokens + signup flow
+- [x] 12. Invite tokens + signup flow
   - Stwórz `routes/invites.py` (lub dodaj do `routes/users.py`):
     - `POST /team/invites` — manager only, walidacja `default_role='user'` (manager nie może wystawiać manager-invite). Generuj `secrets.token_urlsafe(32)`, zapisz `token_hash = sha256(raw)`. Response zwraca `raw_token` jednorazowo + `expires_at` (now + INVITE_TOKEN_TTL_DAYS).
     - `DELETE /team/invites/{id}` — revoke (tylko jeśli invite w teamie managera).
@@ -204,7 +204,7 @@ Estymacja: ~8.5 dnia roboczego, +30% rezerwy = ~11 dni.
   - Done: signup per SIGNUP_MODE, idempotent consumption.
   - _Refs: R3, R8, design 8_
 
-- [ ] 13. Socket.IO per-team rooms
+- [x] 13. Socket.IO per-team rooms
   - W `app.py` (lub `utils/realtime.py`) dodaj `@socketio.on('connect')`:
     - Załaduj user z `session['user_id']`.
     - Super_admin → `join_room('super_admin')`.

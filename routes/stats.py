@@ -1,13 +1,19 @@
-from flask import request, jsonify, session
+from flask import g, request, jsonify, session
 from datetime import datetime, timedelta, timezone
 from routes import stats_bp
 from models import db, User, Task, ActivityLog
 from routes.auth import login_required
+from utils.scoping import team_scoped
 import csv
 from io import StringIO
 
 def assigned_task_query(user):
-    return Task.query.filter(Task.assignees.any(User.id == user.id))
+    return team_scoped(Task.query, Task).filter(Task.assignees.any(User.id == user.id))
+
+def visible_task_query(user):
+    if g.get('current_role') in ('manager', 'super_admin'):
+        return team_scoped(Task.query, Task)
+    return assigned_task_query(user)
 
 def assignee_names(task):
     return ', '.join(assignee.username for assignee in task.assignees)
@@ -35,10 +41,7 @@ def get_dashboard_stats():
     user_id = session.get('user_id')
     user = db.session.get(User, user_id)
 
-    if user.role == 'admin':
-        tasks = Task.query.all()
-    else:
-        tasks = assigned_task_query(user).all()
+    tasks = visible_task_query(user).all()
 
     total = len(tasks)
     completed = len([t for t in tasks if t.completed])
@@ -82,16 +85,14 @@ def get_weekly_report():
     week_start = now - timedelta(days=7)
     today = now.date()
 
-    if user.role == 'admin':
-        tasks = Task.query.all()
-    else:
-        tasks = assigned_task_query(user).all()
+    tasks = visible_task_query(user).all()
     visible_task_ids = {task.id for task in tasks}
 
     created = [task for task in tasks if as_utc(task.created_at) and as_utc(task.created_at) >= week_start]
     completed_logs = (
         ActivityLog.query
         .filter(ActivityLog.action == 'completed', ActivityLog.created_at >= week_start)
+        .filter(ActivityLog.team_id == g.get('current_team_id'))
         .all()
     )
     completed_logs = [log for log in completed_logs if log.task_id in visible_task_ids]
@@ -143,7 +144,12 @@ def get_weekly_report():
 def get_activity_log():
     limit = request.args.get('limit', 50, type=int)
     limit = min(limit, 200)
-    activity = ActivityLog.query.order_by(ActivityLog.created_at.desc()).limit(limit).all()
+    activity = (
+        team_scoped(ActivityLog.query, ActivityLog)
+        .order_by(ActivityLog.created_at.desc())
+        .limit(limit)
+        .all()
+    )
     return jsonify({'activity': [a.to_dict() for a in activity]})
 
 @stats_bp.route('/tasks/export/csv', methods=['GET'])
@@ -152,10 +158,7 @@ def export_csv():
     user_id = session.get('user_id')
     user = db.session.get(User, user_id)
 
-    if user.role == 'admin':
-        tasks = Task.query.all()
-    else:
-        tasks = assigned_task_query(user).all()
+    tasks = visible_task_query(user).all()
 
     output = StringIO()
     writer = csv.writer(output)

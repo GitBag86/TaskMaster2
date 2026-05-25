@@ -1,8 +1,21 @@
 import sqlite3
 from datetime import date, timedelta
 
-from models import db, User, Task, Project, Tag, TaskDependency, ActivityLog, Notification
+from models import db, Team, User, Task, Project, Tag, TaskDependency, ActivityLog, Notification
 from utils.email_sender import get_task_assignment_body, send_email
+
+
+def default_team_id(app):
+    with app.app_context():
+        return Team.query.filter_by(slug="default").one().id
+
+
+def set_login_session(client, user):
+    with client.session_transaction() as sess:
+        sess['user_id'] = user.id
+        sess['team_id'] = user.team_id
+        sess['role'] = user.role
+        sess['session_version'] = user.session_version
 
 def test_health_check(client):
     response = client.get('/health')
@@ -43,6 +56,12 @@ def test_email_templates_include_html_text_and_escape_content(app, monkeypatch):
     assert sent[0].html == body["html"]
 
 def test_signup(client):
+    with client.application.app_context():
+        team = Team(name="Default", slug="default")
+        db.session.add(team)
+        db.session.commit()
+    client.application.config["SIGNUP_MODE"] = "default_team"
+
     response = client.post('/auth/signup', json={
         "username": "newuser",
         "password": "password123",
@@ -57,6 +76,8 @@ def test_signup(client):
     assert user_data["terms_accepted"] is True
     assert user_data["privacy_accepted"] is True
     assert user_data["marketing_consent"] is False
+    assert user_data["role"] == "user"
+    assert user_data["team"]["name"] == "Default"
 
 def test_signup_requires_terms_and_privacy(client):
     response = client.post('/auth/signup', json={
@@ -191,7 +212,8 @@ def test_project_changes_email_project_participants(auth_client, app, monkeypatc
     monkeypatch.setattr("routes.tasks.send_email", fake_send_email)
 
     with app.app_context():
-        assignee = User(username="project_mail_user", email="project_mail_user@example.com", role="user")
+        team_id = Team.query.filter_by(slug="default").one().id
+        assignee = User(username="project_mail_user", email="project_mail_user@example.com", role="user", team_id=team_id)
         assignee.set_password("password")
         db.session.add(assignee)
         db.session.commit()
@@ -215,9 +237,10 @@ def test_project_changes_email_project_participants(auth_client, app, monkeypatc
 
 def test_project_members_can_see_project_without_unassigned_tasks(auth_client, app):
     with app.app_context():
-        member = User(username="project_member", email="project_member@example.com", role="user")
+        team_id = Team.query.filter_by(slug="default").one().id
+        member = User(username="project_member", email="project_member@example.com", role="user", team_id=team_id)
         member.set_password("password")
-        other_user = User(username="other_project_user", email="other_project_user@example.com", role="user")
+        other_user = User(username="other_project_user", email="other_project_user@example.com", role="user", team_id=team_id)
         other_user.set_password("password")
         db.session.add_all([member, other_user])
         db.session.commit()
@@ -241,6 +264,9 @@ def test_project_members_can_see_project_without_unassigned_tasks(auth_client, a
 
     with auth_client.session_transaction() as sess:
         sess['user_id'] = member_id
+        sess['team_id'] = default_team_id(app)
+        sess['role'] = 'user'
+        sess['session_version'] = 0
 
     projects_response = auth_client.get('/projects')
     assert projects_response.status_code == 200
@@ -251,9 +277,10 @@ def test_project_members_can_see_project_without_unassigned_tasks(auth_client, a
 
 def test_task_accepts_only_one_assignee(auth_client, app):
     with app.app_context():
-        first_user = User(username="single_assignee_one", email="single1@example.com", role="user")
+        team_id = Team.query.filter_by(slug="default").one().id
+        first_user = User(username="single_assignee_one", email="single1@example.com", role="user", team_id=team_id)
         first_user.set_password("password")
-        second_user = User(username="single_assignee_two", email="single2@example.com", role="user")
+        second_user = User(username="single_assignee_two", email="single2@example.com", role="user", team_id=team_id)
         second_user.set_password("password")
         db.session.add_all([first_user, second_user])
         db.session.commit()
@@ -315,23 +342,30 @@ def test_create_task_can_attach_existing_project(auth_client):
 
 def test_regular_user_only_sees_projects_with_assigned_tasks(client, app):
     with app.app_context():
-        regular = User(username="project_user", email="project_user@example.com", role="user")
+        team = Team(name="Projects Scope", slug="projects-scope")
+        db.session.add(team)
+        db.session.flush()
+        regular = User(username="project_user", email="project_user@example.com", role="user", team_id=team.id)
         regular.set_password("password")
-        admin = User(username="project_admin", email="project_admin@example.com", role="admin")
+        admin = User(username="project_admin", email="project_admin@example.com", role="manager", team_id=team.id)
         admin.set_password("password")
-        visible_project = Project(name="Visible Project")
-        hidden_project = Project(name="Hidden Project")
+        visible_project = Project(name="Visible Project", team_id=team.id)
+        hidden_project = Project(name="Hidden Project", team_id=team.id)
         db.session.add_all([regular, admin, visible_project, hidden_project])
         db.session.flush()
-        visible_task = Task(user_id=admin.id, title="Visible project task", project="Visible Project", project_id=visible_project.id)
-        hidden_task = Task(user_id=admin.id, title="Hidden project task", project="Hidden Project", project_id=hidden_project.id)
+        visible_task = Task(user_id=admin.id, title="Visible project task", project="Visible Project", project_id=visible_project.id, team_id=team.id)
+        hidden_task = Task(user_id=admin.id, title="Hidden project task", project="Hidden Project", project_id=hidden_project.id, team_id=team.id)
         visible_task.assignees.append(regular)
         db.session.add_all([visible_task, hidden_task])
         db.session.commit()
         regular_id = regular.id
+        regular_team_id = regular.team_id
 
     with client.session_transaction() as sess:
         sess['user_id'] = regular_id
+        sess['team_id'] = regular_team_id
+        sess['role'] = 'user'
+        sess['session_version'] = 0
 
     response = client.get('/projects')
 
@@ -355,7 +389,7 @@ def test_get_tasks(auth_client):
 def test_weekly_report_summarizes_created_completed_and_overdue(auth_client):
     today = date.today()
     done = auth_client.post('/tasks', json={"title": "Report done"}).get_json()
-    auth_client.post('/tasks', json={"title": "Report overdue", "due_date": (today - timedelta(days=1)).isoformat()})
+    auth_client.post('/tasks', json={"title": "Report overdue", "due_date": (today - timedelta(days=2)).isoformat()})
     auth_client.put(f'/tasks/{done["id"]}/complete')
 
     response = auth_client.get('/reports/weekly')
@@ -425,7 +459,8 @@ def test_today_tasks_groups_visible_open_tasks_by_due_date(auth_client):
 
 def test_quick_add_parses_project_assignee_due_date_and_priority(auth_client, app):
     with app.app_context():
-        user = User(username="quickuser", email="quickuser@example.com", role="user")
+        team_id = Team.query.filter_by(slug="default").one().id
+        user = User(username="quickuser", email="quickuser@example.com", role="user", team_id=team_id)
         user.set_password("password")
         db.session.add(user)
         db.session.commit()
@@ -446,21 +481,28 @@ def test_quick_add_parses_project_assignee_due_date_and_priority(auth_client, ap
 def test_today_tasks_regular_user_only_sees_assigned_tasks(client, app):
     today = date.today()
     with app.app_context():
-        regular = User(username="today_user", email="today_user@example.com", role="user")
+        team = Team(name="Today Scope", slug="today-scope")
+        db.session.add(team)
+        db.session.flush()
+        regular = User(username="today_user", email="today_user@example.com", role="user", team_id=team.id)
         regular.set_password("password")
-        admin = User(username="today_admin", email="today_admin@example.com", role="admin")
+        admin = User(username="today_admin", email="today_admin@example.com", role="manager", team_id=team.id)
         admin.set_password("password")
         db.session.add_all([regular, admin])
         db.session.commit()
-        visible = Task(user_id=admin.id, title="Assigned today", due_date=today)
-        hidden = Task(user_id=admin.id, title="Hidden today", due_date=today)
+        visible = Task(user_id=admin.id, title="Assigned today", due_date=today, team_id=team.id)
+        hidden = Task(user_id=admin.id, title="Hidden today", due_date=today, team_id=team.id)
         visible.assignees.append(regular)
         db.session.add_all([visible, hidden])
         db.session.commit()
         regular_id = regular.id
+        regular_team_id = regular.team_id
 
     with client.session_transaction() as sess:
         sess['user_id'] = regular_id
+        sess['team_id'] = regular_team_id
+        sess['role'] = 'user'
+        sess['session_version'] = 0
 
     response = client.get('/tasks/today')
 
@@ -596,7 +638,8 @@ def test_dependency_delete_updates_task(auth_client, app):
 
 def test_create_task_with_assignees(auth_client, app):
     with app.app_context():
-        user = User(username="assigned", email="assigned@example.com", role="user")
+        team_id = Team.query.filter_by(slug="default").one().id
+        user = User(username="assigned", email="assigned@example.com", role="user", team_id=team_id)
         user.set_password("password")
         from models import db
         db.session.add(user)
@@ -619,7 +662,8 @@ def test_create_task_with_assignees(auth_client, app):
 
 def test_notifications_can_be_listed_and_marked_read(auth_client, app):
     with app.app_context():
-        user = User(username="notify_user", email="notify@example.com", role="user")
+        team_id = Team.query.filter_by(slug="default").one().id
+        user = User(username="notify_user", email="notify@example.com", role="user", team_id=team_id)
         user.set_password("password")
         db.session.add(user)
         db.session.commit()
@@ -629,6 +673,9 @@ def test_notifications_can_be_listed_and_marked_read(auth_client, app):
 
     with auth_client.session_transaction() as sess:
         sess['user_id'] = user_id
+        sess['team_id'] = default_team_id(app)
+        sess['role'] = 'user'
+        sess['session_version'] = 0
 
     list_response = auth_client.get('/notifications')
     assert list_response.status_code == 200
@@ -646,17 +693,24 @@ def test_notifications_can_be_listed_and_marked_read(auth_client, app):
 
 def test_completion_creates_unblocked_notification_for_assignee(client, app):
     with app.app_context():
-        admin = User(username="unblock_admin", email="unblock_admin@example.com", role="admin")
+        team = Team(name="Unblock Scope", slug="unblock-scope")
+        db.session.add(team)
+        db.session.flush()
+        admin = User(username="unblock_admin", email="unblock_admin@example.com", role="manager", team_id=team.id)
         admin.set_password("password")
-        regular = User(username="unblock_user", email="unblock_user@example.com", role="user")
+        regular = User(username="unblock_user", email="unblock_user@example.com", role="user", team_id=team.id)
         regular.set_password("password")
         db.session.add_all([admin, regular])
         db.session.commit()
         admin_id = admin.id
         regular_id = regular.id
+        admin_team_id = admin.team_id
 
     with client.session_transaction() as sess:
         sess['user_id'] = admin_id
+        sess['team_id'] = admin_team_id
+        sess['role'] = 'manager'
+        sess['session_version'] = 0
 
     blocked = client.post('/tasks', json={"title": "Blocked for notify", "assignee_ids": [regular_id]}).get_json()
     blocker = client.post('/tasks', json={"title": "Blocker for notify"}).get_json()
@@ -673,21 +727,28 @@ def test_completion_creates_unblocked_notification_for_assignee(client, app):
 def test_regular_user_only_sees_assigned_tasks(client, app):
     with app.app_context():
         from models import db
-        user = User(username="regular", email="regular@example.com", role="user")
+        team = Team(name="Task Scope", slug="task-scope")
+        db.session.add(team)
+        db.session.flush()
+        user = User(username="regular", email="regular@example.com", role="user", team_id=team.id)
         user.set_password("password")
-        owner = User(username="owner", email="owner@example.com", role="admin")
+        owner = User(username="owner", email="owner@example.com", role="manager", team_id=team.id)
         owner.set_password("password")
         db.session.add_all([user, owner])
         db.session.commit()
-        assigned_task = Task(user_id=owner.id, title="Visible")
-        hidden_task = Task(user_id=owner.id, title="Hidden")
+        assigned_task = Task(user_id=owner.id, title="Visible", team_id=team.id)
+        hidden_task = Task(user_id=owner.id, title="Hidden", team_id=team.id)
         assigned_task.assignees.append(user)
         db.session.add_all([assigned_task, hidden_task])
         db.session.commit()
         user_id = user.id
+        user_team_id = user.team_id
 
     with client.session_transaction() as sess:
         sess['user_id'] = user_id
+        sess['team_id'] = user_team_id
+        sess['role'] = 'user'
+        sess['session_version'] = 0
 
     response = client.get('/tasks')
 
@@ -704,13 +765,13 @@ def test_admin_can_create_user(auth_client, app):
         "username": "created_by_admin",
         "password": "password123",
         "email": "created_by_admin@example.com",
-        "role": "admin",
+        "role": "manager",
     })
 
     assert response.status_code == 201
     data = response.get_json()
     assert data["user"]["username"] == "created_by_admin"
-    assert data["user"]["role"] == "admin"
+    assert data["user"]["role"] == "manager"
 
     with app.app_context():
         created = User.query.filter_by(username="created_by_admin").first()
@@ -757,21 +818,28 @@ def test_admin_cannot_delete_self_or_last_admin(auth_client, app):
 def test_regular_user_cannot_update_or_delete_task(client, app):
     with app.app_context():
         from models import db
-        admin = User(username="admin_ops", email="admin_ops@example.com", role="admin")
+        team = Team(name="Ops Scope", slug="ops-scope")
+        db.session.add(team)
+        db.session.flush()
+        admin = User(username="admin_ops", email="admin_ops@example.com", role="manager", team_id=team.id)
         admin.set_password("password")
-        regular = User(username="regular_ops", email="regular_ops@example.com", role="user")
+        regular = User(username="regular_ops", email="regular_ops@example.com", role="user", team_id=team.id)
         regular.set_password("password")
         db.session.add_all([admin, regular])
         db.session.commit()
-        task = Task(user_id=admin.id, title="Admin task")
+        task = Task(user_id=admin.id, title="Admin task", team_id=team.id)
         task.assignees.append(regular)
         db.session.add(task)
         db.session.commit()
         regular_id = regular.id
+        regular_team_id = regular.team_id
         task_id = task.id
 
     with client.session_transaction() as sess:
         sess['user_id'] = regular_id
+        sess['team_id'] = regular_team_id
+        sess['role'] = 'user'
+        sess['session_version'] = 0
 
     update_response = client.put(f'/tasks/{task_id}', json={"title": "Changed"})
     delete_response = client.delete(f'/tasks/{task_id}')
@@ -782,21 +850,28 @@ def test_regular_user_cannot_update_or_delete_task(client, app):
 def test_regular_user_can_complete_assigned_task(client, app):
     with app.app_context():
         from models import db
-        admin = User(username="admin_complete", email="admin_complete@example.com", role="admin")
+        team = Team(name="Complete Scope", slug="complete-scope")
+        db.session.add(team)
+        db.session.flush()
+        admin = User(username="admin_complete", email="admin_complete@example.com", role="manager", team_id=team.id)
         admin.set_password("password")
-        regular = User(username="regular_complete", email="regular_complete@example.com", role="user")
+        regular = User(username="regular_complete", email="regular_complete@example.com", role="user", team_id=team.id)
         regular.set_password("password")
         db.session.add_all([admin, regular])
         db.session.commit()
-        task = Task(user_id=admin.id, title="Complete me")
+        task = Task(user_id=admin.id, title="Complete me", team_id=team.id)
         task.assignees.append(regular)
         db.session.add(task)
         db.session.commit()
         regular_id = regular.id
+        regular_team_id = regular.team_id
         task_id = task.id
 
     with client.session_transaction() as sess:
         sess['user_id'] = regular_id
+        sess['team_id'] = regular_team_id
+        sess['role'] = 'user'
+        sess['session_version'] = 0
 
     response = client.put(f'/tasks/{task_id}/complete')
     assert response.status_code == 200
@@ -804,20 +879,27 @@ def test_regular_user_can_complete_assigned_task(client, app):
 
 def test_regular_user_cannot_comment_unassigned_task(client, app):
     with app.app_context():
-        admin = User(username="admin_comment", email="admin_comment@example.com", role="admin")
+        team = Team(name="Comment Scope", slug="comment-scope")
+        db.session.add(team)
+        db.session.flush()
+        admin = User(username="admin_comment", email="admin_comment@example.com", role="manager", team_id=team.id)
         admin.set_password("password")
-        regular = User(username="regular_comment", email="regular_comment@example.com", role="user")
+        regular = User(username="regular_comment", email="regular_comment@example.com", role="user", team_id=team.id)
         regular.set_password("password")
         db.session.add_all([admin, regular])
         db.session.commit()
-        task = Task(user_id=admin.id, title="Private comment task")
+        task = Task(user_id=admin.id, title="Private comment task", team_id=team.id)
         db.session.add(task)
         db.session.commit()
         regular_id = regular.id
+        regular_team_id = regular.team_id
         task_id = task.id
 
     with client.session_transaction() as sess:
         sess['user_id'] = regular_id
+        sess['team_id'] = regular_team_id
+        sess['role'] = 'user'
+        sess['session_version'] = 0
 
     response = client.post(f'/tasks/{task_id}/comments', json={"text": "Should not appear"})
 
@@ -827,7 +909,8 @@ def test_regular_user_cannot_comment_unassigned_task(client, app):
 
 def test_comment_mentions_emit_event_and_activity(auth_client, app, monkeypatch):
     with app.app_context():
-        mentioned = User(username="mentioned_user", email="mentioned@example.com", role="user")
+        team_id = Team.query.filter_by(slug="default").one().id
+        mentioned = User(username="mentioned_user", email="mentioned@example.com", role="user", team_id=team_id)
         mentioned.set_password("password")
         db.session.add(mentioned)
         db.session.commit()
@@ -836,7 +919,7 @@ def test_comment_mentions_emit_event_and_activity(auth_client, app, monkeypatch)
     task = auth_client.post('/tasks', json={"title": "Mention target"}).get_json()
     emitted = []
 
-    def fake_emit(event_name, payload):
+    def fake_emit(event_name, payload, **kwargs):
         emitted.append({"event_name": event_name, "payload": payload})
 
     monkeypatch.setattr("routes.tasks.socketio.emit", fake_emit)
@@ -860,22 +943,29 @@ def test_comment_mentions_emit_event_and_activity(auth_client, app, monkeypatch)
 
 def test_regular_user_cannot_tag_unassigned_task(client, app):
     with app.app_context():
-        admin = User(username="admin_tag", email="admin_tag@example.com", role="admin")
+        team = Team(name="Tag Scope", slug="tag-scope")
+        db.session.add(team)
+        db.session.flush()
+        admin = User(username="admin_tag", email="admin_tag@example.com", role="manager", team_id=team.id)
         admin.set_password("password")
-        regular = User(username="regular_tag", email="regular_tag@example.com", role="user")
+        regular = User(username="regular_tag", email="regular_tag@example.com", role="user", team_id=team.id)
         regular.set_password("password")
         db.session.add_all([admin, regular])
         db.session.commit()
-        task = Task(user_id=admin.id, title="Private tag task")
-        tag = Tag(user_id=regular.id, name="Mine", color="#3b82f6")
+        task = Task(user_id=admin.id, title="Private tag task", team_id=team.id)
+        tag = Tag(user_id=regular.id, name="Mine", color="#3b82f6", team_id=team.id)
         db.session.add_all([task, tag])
         db.session.commit()
         regular_id = regular.id
+        regular_team_id = regular.team_id
         task_id = task.id
         tag_id = tag.id
 
     with client.session_transaction() as sess:
         sess['user_id'] = regular_id
+        sess['team_id'] = regular_team_id
+        sess['role'] = 'user'
+        sess['session_version'] = 0
 
     response = client.post(f'/tasks/{task_id}/tags/{tag_id}')
 
@@ -885,26 +975,33 @@ def test_regular_user_cannot_tag_unassigned_task(client, app):
 
 def test_regular_user_cannot_use_another_users_tag_on_assigned_task(client, app):
     with app.app_context():
-        admin = User(username="admin_other_tag", email="admin_other_tag@example.com", role="admin")
+        team = Team(name="Other Tag Scope", slug="other-tag-scope")
+        db.session.add(team)
+        db.session.flush()
+        admin = User(username="admin_other_tag", email="admin_other_tag@example.com", role="manager", team_id=team.id)
         admin.set_password("password")
-        regular = User(username="regular_other_tag", email="regular_other_tag@example.com", role="user")
+        regular = User(username="regular_other_tag", email="regular_other_tag@example.com", role="user", team_id=team.id)
         regular.set_password("password")
-        other = User(username="other_tag_owner", email="other_tag_owner@example.com", role="user")
+        other = User(username="other_tag_owner", email="other_tag_owner@example.com", role="user", team_id=team.id)
         other.set_password("password")
         db.session.add_all([admin, regular, other])
         db.session.commit()
-        task = Task(user_id=admin.id, title="Assigned private tag task")
+        task = Task(user_id=admin.id, title="Assigned private tag task", team_id=team.id)
         db.session.add(task)
         task.assignees.append(regular)
-        tag = Tag(user_id=other.id, name="Other", color="#ef4444")
+        tag = Tag(user_id=other.id, name="Other", color="#ef4444", team_id=team.id)
         db.session.add(tag)
         db.session.commit()
         regular_id = regular.id
+        regular_team_id = regular.team_id
         task_id = task.id
         tag_id = tag.id
 
     with client.session_transaction() as sess:
         sess['user_id'] = regular_id
+        sess['team_id'] = regular_team_id
+        sess['role'] = 'user'
+        sess['session_version'] = 0
 
     response = client.post(f'/tasks/{task_id}/tags/{tag_id}')
 
@@ -915,7 +1012,7 @@ def test_regular_user_cannot_use_another_users_tag_on_assigned_task(client, app)
 def test_create_task_emits_structured_socket_event(auth_client, monkeypatch):
     emitted = {}
 
-    def fake_emit(event_name, payload):
+    def fake_emit(event_name, payload, **kwargs):
         emitted["event_name"] = event_name
         emitted["payload"] = payload
 
@@ -947,7 +1044,7 @@ def test_delete_task_emits_snapshot_event(auth_client, monkeypatch):
 
     emitted = {}
 
-    def fake_emit(event_name, payload):
+    def fake_emit(event_name, payload, **kwargs):
         emitted["event_name"] = event_name
         emitted["payload"] = payload
 
@@ -965,7 +1062,7 @@ def test_bulk_complete_emits_socket_event(auth_client, monkeypatch):
     second = auth_client.post('/tasks', json={"title": "Bulk complete 2"}).get_json()
     emitted = {}
 
-    def fake_emit(event_name, payload):
+    def fake_emit(event_name, payload, **kwargs):
         emitted["event_name"] = event_name
         emitted["payload"] = payload
 
@@ -982,7 +1079,7 @@ def test_bulk_update_emits_socket_event(auth_client, monkeypatch):
     task = auth_client.post('/tasks', json={"title": "Bulk update"}).get_json()
     emitted = {}
 
-    def fake_emit(event_name, payload):
+    def fake_emit(event_name, payload, **kwargs):
         emitted["event_name"] = event_name
         emitted["payload"] = payload
 
@@ -1002,7 +1099,7 @@ def test_bulk_delete_emits_socket_event(auth_client, monkeypatch):
     task = auth_client.post('/tasks', json={"title": "Bulk delete"}).get_json()
     emitted = {}
 
-    def fake_emit(event_name, payload):
+    def fake_emit(event_name, payload, **kwargs):
         emitted["event_name"] = event_name
         emitted["payload"] = payload
 
