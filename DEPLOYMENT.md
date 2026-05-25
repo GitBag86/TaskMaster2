@@ -323,12 +323,100 @@ chmod 600 .env
 - [ ] Wygenerowany losowy `SECRET_KEY` (32 bajty hex)
 - [ ] Zmienione `DEFAULT_ADMIN_PASSWORD`
 - [ ] `CORS_ORIGINS` ustawione na właściwą domenę / IP
+- [ ] `SIGNUP_MODE` ustawiony zgodnie z planem rejestracji (`invite_only` zalecane dla wewnętrznych instancji)
 - [ ] Certyfikat SSL wygenerowany w `nginx/ssl/`
 - [ ] Porty 80/443 otwarte w UFW i FortiGate
 - [ ] Skonfigurowane backupy SQLite (cron)
 - [ ] Healthcheck zwraca 200 (`curl -k https://localhost/health`)
 - [ ] Frontend ładuje się bez błędów CORS
 - [ ] Socket.IO łączy się (sprawdź browser DevTools → Network → WS)
-- [ ] Test logowania jako admin → zmiana hasła
+- [ ] Test logowania jako bootstrap admin (zostaje promotowany do `super_admin`) → zmiana hasła
+- [ ] Super admin tworzy pierwszy zespół i promuje wybranego użytkownika do `manager`
 
 Po przejściu wszystkiego — gotowe do oddania użytkownikom.
+
+---
+
+## 👥 Team Workspaces (multi-tenancy)
+
+TaskMaster2 obsługuje izolację zespołów. Po pierwszym deploy bootstrap admin ma rolę `super_admin` (operuje ponad zespołami), a pozostali użytkownicy są przypisani do zespołu `Default` (utworzonego automatycznie przez migrację).
+
+### Zmienne środowiskowe
+
+```bash
+# Tryb rejestracji nowych kont
+#   disabled     - rejestracja wylaczona, super_admin/manager zaklada konta recznie
+#   invite_only  - wymagany jednorazowy token od managera (DOMYSLNE, zalecane)
+#   default_team - nowe konta laduja w zespole "Default" jako zwykly user
+SIGNUP_MODE=invite_only
+
+# Czas zycia tokena zaproszenia (dni)
+INVITE_TOKEN_TTL_DAYS=7
+
+# Strona startowa dla super-admina po zalogowaniu
+SUPER_ADMIN_LANDING=/admin/teams
+```
+
+### Migracja istniejącej instancji
+
+Aktualizacja z wersji sprzed feature/team-workspaces wymaga uruchomienia migracji `81d661ec5395` i `2c8e44f754b0`. Migracja jest idempotentna i automatycznie:
+
+1. Tworzy zespół `Default`.
+2. Promuje bootstrap admina (`DEFAULT_ADMIN_USERNAME`) do roli `super_admin` z `team_id=NULL`.
+3. Pozostali użytkownicy z rolą `admin` → `manager` w zespole `Default`.
+4. Wszyscy `user` → członkowie zespołu `Default`.
+5. Wszystkie istniejące zadania, projekty, tagi, filtry, szablony, powiadomienia, aktywność trafiają do `Default` (`team_id`).
+6. Bumpuje `session_version` u wszystkich userów (każda aktywna sesja zostaje unieważniona — wymagana ponowna autoryzacja).
+7. Seeduje `Default` 3 szablonami projektów z katalogu.
+8. Drugą migracją wprowadza constraint `NOT NULL` na `team_id` + CHECK `ck_user_team_role_consistency`.
+
+### Bezpieczna procedura migracji na produkcji
+
+```bash
+cd /opt/taskmaster2
+
+# 1. Backup PRZED migracją
+docker-compose exec -T web cp /app/instance/tasks.db /app/instance/tasks.db.pre-team-migration
+
+# 2. Test backupu na czystej kopii (poza produkcją)
+scp instance/tasks.db.pre-team-migration backup-host:/tmp/test.db
+# na maszynie testowej: ustaw env, wypal kontener, uruchom flask db upgrade i sprawdź /admin/teams
+
+# 3. Pull i przebudowa
+git pull origin main
+docker-compose down
+docker-compose up -d --build
+
+# 4. Migracja uruchomi się automatycznie ze start.sh; sprawdź logi
+docker-compose logs -f web | grep -E '(alembic|team_workspaces|super_admin)'
+
+# 5. Verify: bootstrap admin ma role super_admin, Default team istnieje
+curl -k https://localhost/health
+docker-compose exec web python -c "from app import create_app; from models import db, Team, User; app=create_app(); ctx=app.app_context(); ctx.push(); print('teams:', [t.name for t in Team.query.all()]); print('super_admins:', [u.username for u in User.query.filter_by(role='super_admin').all()])"
+```
+
+### Rollback
+
+Jeśli migracja zachowuje się nieprawidłowo, można cofnąć schema:
+
+```bash
+docker-compose exec web flask db downgrade -1   # cofnij Migrację 002 (NOT NULL + constraints)
+docker-compose exec web flask db downgrade -1   # cofnij Migrację 001 (team_id columns)
+# Tabele team / team_invite / team_audit_log zostają — są nieszkodliwe.
+```
+
+Pełniejszy rollback: zatrzymaj kontener, zastąp `instance/tasks.db` plikiem `tasks.db.pre-team-migration`, zrestartuj kontener z poprzednim build.
+
+### Operacje po deploy
+
+1. Zaloguj się jako bootstrap admin → trafiasz na `/admin/teams`.
+2. Zmień hasło bootstrap admina.
+3. Promuj wybranych userów do `manager` (`POST /admin/users/<id>/role`).
+4. Utwórz dedykowane zespoły dla każdego managera (`POST /admin/teams`).
+5. Przenieś userów do właściwych zespołów (`POST /admin/users/<id>/team`).
+6. Manager każdego zespołu generuje invite tokens dla nowych członków (`POST /team/invites`).
+7. Monitoruj `/admin/audit` przez pierwsze 24h.
+
+### Performance
+
+Indeksy z migracji 002 pokrywają hot-path query (`/tasks`, `/tasks/today`, `/tasks/blocked`, `/stats/dashboard`). Benchmark na 5 zespołów × 1000 zadań × 5 komentarzy: wszystkie 4 endpointy < 100ms p95 na SQLite. Skrypt: `scripts/seed_perf.py` + `scripts/perf_bench.py`.

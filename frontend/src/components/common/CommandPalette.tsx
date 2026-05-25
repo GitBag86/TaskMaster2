@@ -39,7 +39,7 @@ export function CommandPalette() {
   }, [])
 
   useEffect(() => {
-    if (!open || query.trim().length < 2 || query.trim().startsWith('+')) {
+    if (!open || user?.role === 'super_admin' || query.trim().length < 2 || query.trim().startsWith('+')) {
       setResults([])
       return
     }
@@ -54,10 +54,10 @@ export function CommandPalette() {
     }, 180)
 
     return () => window.clearTimeout(timeout)
-  }, [open, query])
+  }, [open, query, user?.role])
 
   const handleQuickAdd = useCallback(async () => {
-    if (!quickAddText || user?.role !== 'admin') return
+    if (!quickAddText || user?.role !== 'manager') return
     try {
       const response = await api.tasks.quickAdd(quickAddText)
       addToast(`Dodano: ${response.task.title}`, 'success')
@@ -71,7 +71,10 @@ export function CommandPalette() {
   const commands = useMemo<Command[]>(() => {
     if (!user) return []
 
-    const baseCommands: Command[] = [
+    const baseCommands: Command[] = user.role === 'super_admin' ? [
+      navCommand('teams', 'Zespoły', 'Lista workspaceów', '/admin/teams', navigate, setOpen),
+      navCommand('audit', 'Audyt', 'Dziennik administracyjny', '/admin/audit', navigate, setOpen),
+    ] : [
       navCommand('tasks', 'Zadania', 'Przejdź do listy zadań', '/', navigate, setOpen),
       navCommand('today', 'Dziś', 'Najbliższe terminy i zaległości', '/today', navigate, setOpen),
       navCommand('projects', 'Projekty', 'Przegląd projektów i przypisywanie zadań', '/projects', navigate, setOpen),
@@ -99,8 +102,23 @@ export function CommandPalette() {
       },
     ]
 
-    if (user.role === 'admin') {
-      baseCommands.push(navCommand('admin', 'Użytkownicy', 'Zarządzanie kontami', '/admin', navigate, setOpen))
+    if (user.role === 'super_admin') {
+      baseCommands.push({
+        id: 'theme',
+        label: 'Przełącz motyw',
+        description: 'Zmiana jasny/ciemny',
+        run: () => {
+          toggle()
+          setOpen(false)
+        },
+      })
+    }
+
+    if (user.role === 'manager') {
+      baseCommands.push(
+        navCommand('members', 'Członkowie zespołu', 'Zarządzanie kontami', '/team/members', navigate, setOpen),
+        navCommand('invites', 'Zaproszenia', 'Aktywne tokeny rejestracji', '/team/invites', navigate, setOpen),
+      )
     }
 
     return baseCommands
@@ -141,7 +159,7 @@ export function CommandPalette() {
         </div>
 
         <div className="max-h-[60vh] overflow-y-auto p-2">
-          {user.role === 'admin' && quickAddText && (
+          {user.role === 'manager' && quickAddText && (
             <section className="mb-2">
               <p className="px-2 py-1 text-[11px] font-semibold uppercase text-muted-foreground">Szybkie dodawanie</p>
               <button

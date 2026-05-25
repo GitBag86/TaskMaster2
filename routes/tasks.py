@@ -1,11 +1,12 @@
 import re
 
-from flask import request, jsonify, session, url_for
+from flask import g, request, jsonify, session, url_for
 from datetime import date, datetime, timedelta, timezone
 from marshmallow import ValidationError
+from sqlalchemy.orm import selectinload, joinedload
 from extensions import socketio
 from routes import tasks_bp
-from models import db, User, Task, Comment, Subtask, ActivityLog, Tag, Project, TaskDependency
+from models import db, User, Task, Comment, Subtask, ActivityLog, Tag, Project, ProjectTemplate, TaskDependency
 from schemas import TaskSchema, CommentSchema, SubtaskSchema, ProjectSchema, DependencySchema
 from routes.auth import login_required
 from utils.email_sender import (
@@ -17,48 +18,17 @@ from utils.email_sender import (
     get_task_completion_body,
 )
 from utils.notifications import create_notification, emit_notifications
+from utils.project_template_catalogue import PROJECT_TEMPLATE_CATALOGUE
+from utils.errors import CrossTeamReferenceError
+from utils.scoping import get_team_resource_or_404, team_scoped
 
 TASK_ALLOWED_FIELDS = {'title', 'priority', 'project', 'project_id', 'due_date', 'notes', 'completed', 'status'}
 BULK_MAX_TASKS = 100
 
-PROJECT_TEMPLATES = {
-    "client_onboarding": {
-        "name": "Wdrożenie klienta",
-        "description": "Standardowy proces startu współpracy z klientem.",
-        "color": "#14b8a6",
-        "tasks": [
-            {"title": "Zebrać wymagania", "priority": "high", "due_offset": 1},
-            {"title": "Przygotować plan wdrożenia", "priority": "high", "due_offset": 3, "depends_on": [0]},
-            {"title": "Skonfigurować środowisko", "priority": "medium", "due_offset": 5, "depends_on": [1]},
-            {"title": "Przeprowadzić szkolenie", "priority": "medium", "due_offset": 7, "depends_on": [2]},
-            {"title": "Zamknąć odbiór", "priority": "high", "due_offset": 10, "depends_on": [3]},
-        ],
-    },
-    "release": {
-        "name": "Release",
-        "description": "Kontrolna lista wydania wersji produkcyjnej.",
-        "color": "#6366f1",
-        "tasks": [
-            {"title": "Zamrozić zakres release'u", "priority": "high", "due_offset": 1},
-            {"title": "Przejść testy regresji", "priority": "high", "due_offset": 2, "depends_on": [0]},
-            {"title": "Przygotować notatki wydania", "priority": "medium", "due_offset": 2, "depends_on": [0]},
-            {"title": "Wdrożyć na produkcję", "priority": "high", "due_offset": 3, "depends_on": [1, 2]},
-            {"title": "Monitorować po wdrożeniu", "priority": "medium", "due_offset": 4, "depends_on": [3]},
-        ],
-    },
-    "campaign": {
-        "name": "Kampania",
-        "description": "Plan przygotowania i uruchomienia kampanii.",
-        "color": "#f59e0b",
-        "tasks": [
-            {"title": "Ustalić cel kampanii", "priority": "high", "due_offset": 1},
-            {"title": "Przygotować treści", "priority": "medium", "due_offset": 3, "depends_on": [0]},
-            {"title": "Skonfigurować kanały", "priority": "medium", "due_offset": 4, "depends_on": [0]},
-            {"title": "Uruchomić kampanię", "priority": "high", "due_offset": 5, "depends_on": [1, 2]},
-            {"title": "Podsumować wyniki", "priority": "medium", "due_offset": 12, "depends_on": [3]},
-        ],
-    },
-}
+# Backwards-compat name for the in-route handlers; the global catalogue lives
+# in utils/project_template_catalogue.py. Removed when route handlers switch
+# to reading from per-team DB rows (Task 9).
+PROJECT_TEMPLATES = PROJECT_TEMPLATE_CATALOGUE
 
 def emit_task_event(action, user, task=None, task_ids=None, task_id=None, task_payload=None, extra=None):
     payload = {
@@ -76,7 +46,14 @@ def emit_task_event(action, user, task=None, task_ids=None, task_id=None, task_p
         payload["task_ids"] = task_ids
     if extra:
         payload.update(extra)
-    socketio.emit("task_action", payload)
+    team_id = task.team_id if task is not None else g.get('current_team_id')
+    room = f"team:{team_id}" if team_id is not None else None
+    socketio.emit("task_action", payload, room=room)
+
+def emit_team_event(payload, team_id=None):
+    target_team_id = team_id if team_id is not None else g.get('current_team_id')
+    room = f"team:{target_team_id}" if target_team_id is not None else None
+    socketio.emit("task_action", payload, room=room)
 
 def app_url(path=''):
     return url_for('index', _external=True) + path.lstrip('/')
@@ -165,7 +142,7 @@ def parse_due_date(value):
     return value
 
 def user_can_access_task(user, task):
-    return user.role == 'admin' or user in task.assignees
+    return g.get('current_role') in ('manager', 'super_admin') or user in task.assignees
 
 def task_is_done(task):
     return task.completed or task.status == 'done'
@@ -205,30 +182,82 @@ def would_create_dependency_cycle(task_id, depends_on_task_id):
         visited.add(current_id)
         pending.extend(
             dependency.depends_on_task_id
-            for dependency in TaskDependency.query.filter_by(task_id=current_id).all()
+            for dependency in team_scoped(TaskDependency.query, TaskDependency).filter_by(task_id=current_id).all()
         )
 
     return False
 
+def validate_new_dependency(task, depends_on_task):
+    if depends_on_task is None:
+        return ("Dependency task not found", 404)
+    if task.team_id != depends_on_task.team_id:
+        raise CrossTeamReferenceError()
+    if depends_on_task.id == task.id:
+        return ("Zadanie nie może zależeć od samego siebie", 400)
+    if TaskDependency.query.filter_by(task_id=task.id, depends_on_task_id=depends_on_task.id).first():
+        return ("Ta zależność już istnieje", 409)
+    if would_create_dependency_cycle(task.id, depends_on_task.id):
+        return ("Ta zależność utworzyłaby cykl", 409)
+    return None
+
+def bulk_scoped_tasks_or_error(task_ids):
+    tasks = []
+    for task_id in task_ids:
+        task = db.session.get(Task, task_id)
+        if task is None:
+            continue
+        if task.team_id != g.get('current_team_id'):
+            raise CrossTeamReferenceError()
+        tasks.append(task)
+    return tasks
+
 def assigned_task_query(user):
-    return Task.query.filter(Task.assignees.any(User.id == user.id))
+    return team_scoped(Task.query, Task).filter(Task.assignees.any(User.id == user.id))
 
 def visible_task_query(user):
-    if user.role == 'admin':
-        return Task.query
+    if g.get('current_role') in ('manager', 'super_admin'):
+        return team_scoped(Task.query, Task)
     return assigned_task_query(user)
+
+
+def _eager_task_options():
+    """Eager-loading options for Task to avoid N+1 in to_dict() / dependency checks.
+
+    Use with `query.options(*_eager_task_options())` whenever a list of full
+    Task dicts is being serialized, or whenever we need to inspect dependencies/
+    subtasks for many tasks (e.g. /tasks/blocked, /tasks/today).
+    """
+    return (
+        selectinload(Task.assignees),
+        selectinload(Task.comments),
+        selectinload(Task.subtasks),
+        selectinload(Task.tags),
+        selectinload(Task.dependencies).selectinload(TaskDependency.depends_on_task),
+        selectinload(Task.dependent_links).selectinload(TaskDependency.task),
+        joinedload(Task.project_record).selectinload(Project.members),
+    )
 
 def assignee_names(task):
     return ', '.join(user.username for user in task.assignees)
 
 def update_task_assignees(task, assignee_ids):
     assignee_ids = (assignee_ids or [])[:1]
-    users = User.query.filter(User.id.in_(assignee_ids)).all() if assignee_ids else []
+    if not assignee_ids:
+        task.assignees = []
+        return []
+    users = User.query.filter(User.id.in_(assignee_ids)).all()
+    if len(users) != len(set(assignee_ids)) or any(user.team_id != g.get('current_team_id') for user in users):
+        raise CrossTeamReferenceError()
     task.assignees = users
     return users
 
 def update_project_members(project, member_ids):
-    users = User.query.filter(User.id.in_(member_ids or [])).all() if member_ids else []
+    if not member_ids:
+        project.members = []
+        return []
+    users = User.query.filter(User.id.in_(member_ids or [])).all()
+    if len(users) != len(set(member_ids or [])) or any(user.team_id != g.get('current_team_id') for user in users):
+        raise CrossTeamReferenceError()
     project.members = users
     return users
 
@@ -237,7 +266,7 @@ def normalize_project_name(name):
 
 def get_or_create_project(name, user, color='#3b82f6', description=''):
     project_name = normalize_project_name(name)
-    project = Project.query.filter_by(name=project_name).first()
+    project = team_scoped(Project.query, Project).filter_by(name=project_name).first()
     if project:
         return project
     project = Project(
@@ -245,6 +274,7 @@ def get_or_create_project(name, user, color='#3b82f6', description=''):
         description=description or '',
         color=color or '#3b82f6',
         created_by_id=user.id if user else None,
+        team_id=g.get('current_team_id'),
     )
     db.session.add(project)
     db.session.flush()
@@ -255,6 +285,8 @@ def resolve_project(project_id, project_name, user):
         project = db.session.get(Project, project_id)
         if not project:
             return None, ("Project not found", 404)
+        if project.team_id != g.get('current_team_id'):
+            raise CrossTeamReferenceError()
         return project, None
     return get_or_create_project(project_name, user), None
 
@@ -263,8 +295,8 @@ def set_task_project(task, project):
     task.project = project.name
 
 def visible_projects_for_user(user):
-    if user.role == 'admin':
-        return Project.query.order_by(Project.archived.asc(), Project.name.asc()).all()
+    if g.get('current_role') in ('manager', 'super_admin'):
+        return team_scoped(Project.query, Project).order_by(Project.archived.asc(), Project.name.asc()).all()
 
     project_ids = {
         task.project_id
@@ -273,12 +305,12 @@ def visible_projects_for_user(user):
     }
     member_project_ids = {
         project.id
-        for project in Project.query.filter(Project.members.any(User.id == user.id)).all()
+        for project in team_scoped(Project.query, Project).filter(Project.members.any(User.id == user.id)).all()
     }
     project_ids.update(member_project_ids)
     if not project_ids:
         return []
-    return Project.query.filter(Project.id.in_(project_ids)).order_by(Project.name.asc()).all()
+    return team_scoped(Project.query, Project).filter(Project.id.in_(project_ids)).order_by(Project.name.asc()).all()
 
 def project_completion_status(project):
     open_tasks = [task for task in project.tasks if not task_is_done(task)]
@@ -305,7 +337,7 @@ def project_completion_status(project):
     }
 
 def user_can_access_project(user, project):
-    if user.role == 'admin':
+    if g.get('current_role') in ('manager', 'super_admin'):
         return True
     if user in project.members:
         return True
@@ -352,11 +384,21 @@ def parse_quick_task(text):
     title = ' '.join(title_tokens).strip()
     return {
         "title": title,
+        "title_tokens": title_tokens,
         "assignee_names": assignee_names,
         "priority": priority,
         "project": project_name or 'Ogólny',
         "due_date": due_date,
     }
+
+def restore_unresolved_assignee_tokens(parsed, resolved_assignees):
+    resolved_names = {assignee.username for assignee in resolved_assignees}
+    unresolved_tokens = [
+        f"@{name}" for name in parsed["assignee_names"] if name not in resolved_names
+    ]
+    if not unresolved_tokens:
+        return parsed["title"]
+    return " ".join([*parsed["title_tokens"], *unresolved_tokens]).strip()
 
 def create_task_record(user, title, priority='medium', project_name='Ogólny', due_date=None, notes='', assignee_ids=None):
     project, project_error = resolve_project(None, project_name, user)
@@ -371,6 +413,7 @@ def create_task_record(user, title, priority='medium', project_name='Ogólny', d
         project_id=project.id,
         due_date=due_date,
         notes=notes or '',
+        team_id=g.get('current_team_id'),
     )
     assignees = update_task_assignees(task, assignee_ids or [])
     db.session.add(task)
@@ -418,7 +461,7 @@ def get_tasks():
     per_page = request.args.get('per_page', 50, type=int)
     per_page = min(per_page, 100)
 
-    query = visible_task_query(user)
+    query = visible_task_query(user).options(*_eager_task_options())
 
     pagination = query.order_by(Task.created_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
     tasks = pagination.items
@@ -443,6 +486,7 @@ def get_today_tasks():
 
     tasks = (
         visible_task_query(user)
+        .options(*_eager_task_options())
         .filter(Task.completed.is_(False), Task.due_date.isnot(None), Task.due_date <= week_end)
         .order_by(Task.due_date.asc(), Task.priority.asc(), Task.created_at.desc())
         .all()
@@ -484,8 +528,25 @@ def get_today_tasks():
 def get_blocked_tasks():
     user_id = session.get('user_id')
     user = db.session.get(User, user_id)
-    tasks = visible_task_query(user).order_by(Task.created_at.desc()).all()
-    blocked_tasks = [task for task in tasks if not task_is_done(task) and task_open_dependencies(task)]
+
+    # SQL-side filter: only fetch tasks that are open (not done) AND have at least
+    # one open dependency. This avoids loading the entire team task list and
+    # checking dependencies in Python (was N+1 over thousands of tasks).
+    open_dep_subquery = (
+        db.session.query(TaskDependency.task_id)
+        .join(Task, TaskDependency.depends_on_task_id == Task.id)
+        .filter(Task.completed.is_(False), Task.status != 'done')
+        .subquery()
+    )
+
+    blocked_tasks = (
+        visible_task_query(user)
+        .options(*_eager_task_options())
+        .filter(Task.completed.is_(False), Task.status != 'done')
+        .filter(Task.id.in_(db.session.query(open_dep_subquery.c.task_id)))
+        .order_by(Task.created_at.desc())
+        .all()
+    )
 
     return jsonify({
         "tasks": [task.to_dict() for task in blocked_tasks],
@@ -497,7 +558,7 @@ def get_blocked_tasks():
 def get_dependency_board():
     user_id = session.get('user_id')
     user = db.session.get(User, user_id)
-    tasks = visible_task_query(user).all()
+    tasks = visible_task_query(user).options(*_eager_task_options()).all()
     priority_rank = {'high': 0, 'medium': 1, 'low': 2}
 
     def due_sort_value(task):
@@ -543,7 +604,7 @@ def get_dependency_board():
 def manage_task_dependencies(task_id):
     user_id = session.get('user_id')
     user = db.session.get(User, user_id)
-    task = db.session.get(Task, task_id)
+    task = get_team_resource_or_404(Task, task_id)
     if not task:
         return jsonify({"error": "Task not found"}), 404
 
@@ -556,7 +617,7 @@ def manage_task_dependencies(task_id):
             "blocked_by": [dependency_task.summary_dict() for dependency_task in task_open_dependencies(task)],
         })
 
-    if user.role != 'admin':
+    if g.get('current_role') not in ('manager', 'super_admin'):
         return jsonify({"error": "Tylko administrator może zarządzać zależnościami"}), 403
 
     schema = DependencySchema()
@@ -567,20 +628,17 @@ def manage_task_dependencies(task_id):
 
     depends_on_task_id = validated['depends_on_task_id']
     depends_on_task = db.session.get(Task, depends_on_task_id)
-    if not depends_on_task:
-        return jsonify({"error": "Dependency task not found"}), 404
-    if depends_on_task.id == task.id:
-        return jsonify({"error": "Zadanie nie może zależeć od samego siebie"}), 400
-    if TaskDependency.query.filter_by(task_id=task.id, depends_on_task_id=depends_on_task.id).first():
-        return jsonify({"error": "Ta zależność już istnieje"}), 409
-    if would_create_dependency_cycle(task.id, depends_on_task.id):
-        return jsonify({"error": "Ta zależność utworzyłaby cykl"}), 409
+    dependency_error = validate_new_dependency(task, depends_on_task)
+    if dependency_error:
+        message, status = dependency_error
+        return jsonify({"error": message}), status
 
-    dependency = TaskDependency(task_id=task.id, depends_on_task_id=depends_on_task.id)
+    dependency = TaskDependency(task_id=task.id, depends_on_task_id=depends_on_task.id, team_id=task.team_id)
     db.session.add(dependency)
     db.session.add(ActivityLog(
         user_id=user_id,
         task_id=task.id,
+        team_id=task.team_id,
         action='dependency_added',
         details={'depends_on_task_id': depends_on_task.id, 'title': depends_on_task.title},
     ))
@@ -596,13 +654,13 @@ def delete_dependency(dep_id):
     user_id = session.get('user_id')
     user = db.session.get(User, user_id)
     dependency = db.session.get(TaskDependency, dep_id)
-    if not dependency:
+    if not dependency or dependency.team_id != g.get('current_team_id'):
         return jsonify({"error": "Not found"}), 404
 
     task = dependency.task
     if not task or not user_can_access_task(user, task):
         return jsonify({"error": "Permission denied"}), 403
-    if user.role != 'admin':
+    if g.get('current_role') not in ('manager', 'super_admin'):
         return jsonify({"error": "Tylko administrator może zarządzać zależnościami"}), 403
 
     depends_on_title = dependency.depends_on_task.title if dependency.depends_on_task else None
@@ -610,6 +668,7 @@ def delete_dependency(dep_id):
     db.session.add(ActivityLog(
         user_id=user_id,
         task_id=task.id,
+        team_id=task.team_id,
         action='dependency_removed',
         details={'title': depends_on_title},
     ))
@@ -625,7 +684,7 @@ def quick_add_task():
     user_id = session.get('user_id')
     user = db.session.get(User, user_id)
 
-    if user.role != 'admin':
+    if g.get('current_role') not in ('manager', 'super_admin'):
         return jsonify({"error": "Tylko administrator może tworzyć zadania"}), 403
 
     text = (request.get_json() or {}).get('text', '').strip()
@@ -633,13 +692,19 @@ def quick_add_task():
         return jsonify({"error": "Podaj treść zadania"}), 400
 
     parsed = parse_quick_task(text)
-    if not parsed["title"]:
+    if not parsed["title"] and not parsed["assignee_names"]:
         return jsonify({"error": "Nie udało się odczytać tytułu zadania"}), 400
 
-    assignees = User.query.filter(User.username.in_(parsed["assignee_names"])).all() if parsed["assignee_names"] else []
+    assignees = User.query.filter(
+        User.username.in_(parsed["assignee_names"]),
+        User.team_id == g.get('current_team_id'),
+    ).all() if parsed["assignee_names"] else []
+    title = restore_unresolved_assignee_tokens(parsed, assignees)
+    if not title:
+        return jsonify({"error": "Nie udało się odczytać tytułu zadania"}), 400
     task, result = create_task_record(
         user=user,
-        title=parsed["title"],
+        title=title,
         priority=parsed["priority"],
         project_name=parsed["project"],
         due_date=parsed["due_date"],
@@ -650,7 +715,7 @@ def quick_add_task():
         return jsonify({"error": message}), status
 
     notifications = create_assignment_notifications(task, user, assignees)
-    db.session.add(ActivityLog(user_id=user_id, task_id=task.id, action='created', details={'title': task.title, 'source': 'quick_add'}))
+    db.session.add(ActivityLog(user_id=user_id, task_id=task.id, team_id=task.team_id, action='created', details={'title': task.title, 'source': 'quick_add'}))
     db.session.commit()
 
     send_project_activity_emails(
@@ -678,7 +743,7 @@ def create_task():
     user_id = session.get('user_id')
     user = db.session.get(User, user_id)
 
-    if user.role != 'admin':
+    if g.get('current_role') not in ('manager', 'super_admin'):
         return jsonify({"error": "Tylko administrator może tworzyć zadania"}), 403
 
     data = request.get_json()
@@ -701,7 +766,8 @@ def create_task():
         project=project.name,
         project_id=project.id,
         due_date=due_date,
-        notes=validated.get("notes", "")
+        notes=validated.get("notes", ""),
+        team_id=g.get('current_team_id'),
     )
 
     assignees = update_task_assignees(task, validated.get('assignees', []))
@@ -716,7 +782,7 @@ def create_task():
             body = get_task_assignment_body(task.title, assignee.username, task_link)
             send_email(assignee.email, subject, body)
 
-    log = ActivityLog(user_id=user_id, task_id=task.id, action='created', details={'title': task.title})
+    log = ActivityLog(user_id=user_id, task_id=task.id, team_id=task.team_id, action='created', details={'title': task.title})
     db.session.add(log)
     notifications = create_assignment_notifications(task, user, assignees)
     db.session.commit()
@@ -738,11 +804,11 @@ def create_task():
 def update_task(task_id):
     user_id = session.get('user_id')
     user = db.session.get(User, user_id)
-    task = db.session.get(Task, task_id)
+    task = get_team_resource_or_404(Task, task_id)
     if not task:
         return jsonify({"error": "Task not found"}), 404
 
-    if user.role != 'admin':
+    if g.get('current_role') not in ('manager', 'super_admin'):
         return jsonify({"error": "Only admins can update tasks"}), 403
 
     old_values = {
@@ -826,7 +892,7 @@ def update_task(task_id):
         if new_values[key] != old_value:
             changes[key] = {'from': old_value, 'to': new_values[key]}
 
-    log = ActivityLog(user_id=user_id, task_id=task_id, action='updated', details={'title': task.title, 'changes': changes})
+    log = ActivityLog(user_id=user_id, task_id=task_id, team_id=task.team_id, action='updated', details={'title': task.title, 'changes': changes})
     db.session.add(log)
     db.session.commit()
     if changes:
@@ -846,7 +912,7 @@ def update_task(task_id):
 def complete_task(task_id):
     user_id = session.get('user_id')
     user = db.session.get(User, user_id)
-    task = db.session.get(Task, task_id)
+    task = get_team_resource_or_404(Task, task_id)
     if not task:
         return jsonify({"error": "Task not found"}), 404
 
@@ -861,7 +927,7 @@ def complete_task(task_id):
     task.status = 'done' if task.completed else 'todo'
     notifications = create_unblocked_notifications(task, user) if will_complete else []
 
-    log = ActivityLog(user_id=user_id, task_id=task_id, action='completed' if task.completed else 'reopened')
+    log = ActivityLog(user_id=user_id, task_id=task_id, team_id=task.team_id, action='completed' if task.completed else 'reopened')
     db.session.add(log)
     db.session.commit()
 
@@ -883,11 +949,11 @@ def complete_task(task_id):
 def delete_task(task_id):
     user_id = session.get('user_id')
     user = db.session.get(User, user_id)
-    task = db.session.get(Task, task_id)
+    task = get_team_resource_or_404(Task, task_id)
     if not task:
         return jsonify({"error": "Task not found"}), 404
 
-    if user.role != 'admin':
+    if g.get('current_role') not in ('manager', 'super_admin'):
         return jsonify({"error": "Only admins can delete tasks"}), 403
 
     project = task.project_record
@@ -906,7 +972,7 @@ def add_comment(task_id):
     user_id = session.get('user_id')
     user = db.session.get(User, user_id)
 
-    task = db.session.get(Task, task_id)
+    task = get_team_resource_or_404(Task, task_id)
     if not task:
         return jsonify({"error": "Task not found"}), 404
 
@@ -922,16 +988,21 @@ def add_comment(task_id):
 
     comment = Comment(
         task_id=task_id,
+        team_id=task.team_id,
         author=user.username,
         text=validated.get("text", "")
     )
     db.session.add(comment)
     mentioned_usernames = extract_mentions(comment.text)
-    mentioned_users = User.query.filter(User.username.in_(mentioned_usernames)).all() if mentioned_usernames else []
+    mentioned_users = User.query.filter(
+        User.username.in_(mentioned_usernames),
+        User.team_id == g.get('current_team_id'),
+    ).all() if mentioned_usernames else []
     mentioned_names = [mentioned.username for mentioned in mentioned_users]
     log = ActivityLog(
         user_id=user_id,
         task_id=task_id,
+        team_id=task.team_id,
         action='commented',
         details={'text': comment.text, 'mentions': mentioned_names},
     )
@@ -948,6 +1019,7 @@ def add_comment(task_id):
         db.session.add(ActivityLog(
             user_id=mentioned.id,
             task_id=task_id,
+            team_id=task.team_id,
             action='mentioned',
             details={'by': user.username, 'text': comment.text},
         ))
@@ -969,7 +1041,7 @@ def add_comment(task_id):
 def get_task_activity(task_id):
     user_id = session.get('user_id')
     user = db.session.get(User, user_id)
-    task = db.session.get(Task, task_id)
+    task = get_team_resource_or_404(Task, task_id)
     if not task:
         return jsonify({"error": "Task not found"}), 404
 
@@ -995,7 +1067,7 @@ def add_subtask(task_id):
     user_id = session.get('user_id')
     user = db.session.get(User, user_id)
 
-    task = db.session.get(Task, task_id)
+    task = get_team_resource_or_404(Task, task_id)
     if not task:
         return jsonify({"error": "Task not found"}), 404
 
@@ -1011,11 +1083,12 @@ def add_subtask(task_id):
 
     subtask = Subtask(
         task_id=task_id,
+        team_id=task.team_id,
         title=validated.get("title", "Subtask")
     )
     db.session.add(subtask)
 
-    log = ActivityLog(user_id=user_id, task_id=task_id, action='subtask_created', details={'title': subtask.title})
+    log = ActivityLog(user_id=user_id, task_id=task_id, team_id=task.team_id, action='subtask_created', details={'title': subtask.title})
     db.session.add(log)
     db.session.commit()
     db.session.refresh(task)
@@ -1031,16 +1104,16 @@ def complete_subtask(subtask_id):
     user = db.session.get(User, user_id)
 
     subtask = db.session.get(Subtask, subtask_id)
-    if not subtask:
+    if not subtask or subtask.team_id != g.get('current_team_id'):
         return jsonify({"error": "Subtask not found"}), 404
 
-    task = db.session.get(Task, subtask.task_id)
+    task = get_team_resource_or_404(Task, subtask.task_id)
     if not user_can_access_task(user, task):
         return jsonify({"error": "Permission denied"}), 403
 
     subtask.completed = not subtask.completed
 
-    log = ActivityLog(user_id=user_id, task_id=task.id, action='subtask_toggle', details={'subtask': subtask.title, 'completed': subtask.completed})
+    log = ActivityLog(user_id=user_id, task_id=task.id, team_id=task.team_id, action='subtask_toggle', details={'subtask': subtask.title, 'completed': subtask.completed})
     db.session.add(log)
     db.session.commit()
     db.session.refresh(task)
@@ -1061,10 +1134,10 @@ def delete_subtask(subtask_id):
     user = db.session.get(User, user_id)
 
     subtask = db.session.get(Subtask, subtask_id)
-    if not subtask:
+    if not subtask or subtask.team_id != g.get('current_team_id'):
         return jsonify({"error": "Subtask not found"}), 404
 
-    task = db.session.get(Task, subtask.task_id)
+    task = get_team_resource_or_404(Task, subtask.task_id)
     if not user_can_access_task(user, task):
         return jsonify({"error": "Permission denied"}), 403
 
@@ -1081,9 +1154,7 @@ def filter_tasks():
     user_id = session.get('user_id')
     user = db.session.get(User, user_id)
 
-    query = Task.query
-    if user.role != 'admin':
-        query = assigned_task_query(user)
+    query = visible_task_query(user)
 
     assigned_to = request.args.get('assigned_to')
     priority = request.args.get('priority')
@@ -1099,7 +1170,7 @@ def filter_tasks():
     if completed is not None:
         query = query.filter_by(completed=(completed.lower() == 'true'))
 
-    tasks = query.all()
+    tasks = query.options(*_eager_task_options()).all()
     return jsonify({"tasks": [t.to_dict() for t in tasks]})
 
 @tasks_bp.route('/tasks/by-project', methods=['GET'])
@@ -1108,11 +1179,11 @@ def tasks_by_project():
     user_id = session.get('user_id')
     user = db.session.get(User, user_id)
 
-    tasks = visible_task_query(user).all()
+    tasks = visible_task_query(user).options(*_eager_task_options()).all()
 
     projects = {}
-    if user.role == 'admin':
-        for project in Project.query.order_by(Project.name.asc()).all():
+    if g.get('current_role') in ('manager', 'super_admin'):
+        for project in team_scoped(Project.query, Project).order_by(Project.name.asc()).all():
             projects[project.name] = []
     for task in tasks:
         proj = task.project
@@ -1130,7 +1201,7 @@ def get_projects():
 
     for project in visible_projects_for_user(user):
         project_data = project.to_dict(include_tasks=False)
-        if user.role == 'admin':
+        if g.get('current_role') in ('manager', 'super_admin'):
             project_tasks = project.tasks
         else:
             project_tasks = [task for task in project.tasks if user_can_access_task(user, task)]
@@ -1145,7 +1216,7 @@ def create_project():
     user_id = session.get('user_id')
     user = db.session.get(User, user_id)
 
-    if user.role != 'admin':
+    if g.get('current_role') not in ('manager', 'super_admin'):
         return jsonify({"error": "Tylko administrator może tworzyć projekty"}), 403
 
     schema = ProjectSchema()
@@ -1155,7 +1226,7 @@ def create_project():
         return jsonify({"error": err.messages}), 400
 
     name = normalize_project_name(validated.get('name'))
-    if Project.query.filter_by(name=name).first():
+    if team_scoped(Project.query, Project).filter_by(name=name).first():
         return jsonify({"error": "Projekt o tej nazwie już istnieje"}), 409
 
     project = Project(
@@ -1164,11 +1235,12 @@ def create_project():
         color=validated.get('color') or '#3b82f6',
         archived=validated.get('archived', False),
         created_by_id=user_id,
+        team_id=g.get('current_team_id'),
     )
     update_project_members(project, validated.get('member_ids', []))
     db.session.add(project)
     db.session.commit()
-    socketio.emit("task_action", {
+    emit_team_event({
         "action": "project_created",
         "user": user.username,
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -1179,16 +1251,21 @@ def create_project():
 @tasks_bp.route('/project-templates', methods=['GET'])
 @login_required
 def get_project_templates():
+    templates = (
+        team_scoped(ProjectTemplate.query, ProjectTemplate)
+        .order_by(ProjectTemplate.created_at.asc(), ProjectTemplate.id.asc())
+        .all()
+    )
     return jsonify({
         "templates": [
             {
-                "id": template_id,
-                "name": template["name"],
-                "description": template["description"],
-                "task_count": len(template["tasks"]),
-                "color": template["color"],
+                "id": template.id,
+                "name": template.name,
+                "description": template.description,
+                "task_count": len((template.payload or {}).get("tasks", [])),
+                "color": template.color,
             }
-            for template_id, template in PROJECT_TEMPLATES.items()
+            for template in templates
         ]
     })
 
@@ -1198,30 +1275,35 @@ def use_project_template(template_id):
     user_id = session.get('user_id')
     user = db.session.get(User, user_id)
 
-    if user.role != 'admin':
+    if g.get('current_role') not in ('manager', 'super_admin'):
         return jsonify({"error": "Tylko administrator może tworzyć projekty z szablonu"}), 403
 
-    template = PROJECT_TEMPLATES.get(template_id)
+    template = None
+    if str(template_id).isdigit():
+        template = get_team_resource_or_404(ProjectTemplate, int(template_id))
     if not template:
         return jsonify({"error": "Template not found"}), 404
 
     payload = request.get_json() or {}
-    name = normalize_project_name(payload.get("name") or template["name"])
-    if Project.query.filter_by(name=name).first():
+    template_payload = template.payload or {}
+    template_tasks = template_payload.get("tasks", [])
+    name = normalize_project_name(payload.get("name") or template.name)
+    if team_scoped(Project.query, Project).filter_by(name=name).first():
         return jsonify({"error": "Projekt o tej nazwie już istnieje"}), 409
     start_date = parse_due_date(payload.get("start_date")) or date.today()
 
     project = Project(
         name=name,
-        description=payload.get("description") or template["description"],
-        color=payload.get("color") or template["color"],
+        description=payload.get("description") or template.description,
+        color=payload.get("color") or template.color,
         created_by_id=user_id,
+        team_id=g.get('current_team_id'),
     )
     db.session.add(project)
     db.session.flush()
 
     created_tasks = []
-    for template_task in template["tasks"]:
+    for template_task in template_tasks:
         task = Task(
             user_id=user_id,
             title=template_task["title"],
@@ -1230,21 +1312,23 @@ def use_project_template(template_id):
             project_id=project.id,
             due_date=start_date + timedelta(days=template_task.get("due_offset", 1)),
             notes=template_task.get("notes", ""),
+            team_id=project.team_id,
         )
         db.session.add(task)
         db.session.flush()
         created_tasks.append(task)
-        db.session.add(ActivityLog(user_id=user_id, task_id=task.id, action='created', details={'title': task.title, 'source': 'project_template'}))
+        db.session.add(ActivityLog(user_id=user_id, task_id=task.id, team_id=task.team_id, action='created', details={'title': task.title, 'source': 'project_template'}))
 
-    for task_index, template_task in enumerate(template["tasks"]):
+    for task_index, template_task in enumerate(template_tasks):
         for dependency_index in template_task.get("depends_on", []):
             db.session.add(TaskDependency(
                 task_id=created_tasks[task_index].id,
                 depends_on_task_id=created_tasks[dependency_index].id,
+                team_id=project.team_id,
             ))
 
     db.session.commit()
-    socketio.emit("task_action", {
+    emit_team_event({
         "action": "project_template_used",
         "user": user.username,
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -1259,10 +1343,10 @@ def update_project(project_id):
     user_id = session.get('user_id')
     user = db.session.get(User, user_id)
 
-    if user.role != 'admin':
+    if g.get('current_role') not in ('manager', 'super_admin'):
         return jsonify({"error": "Tylko administrator może edytować projekty"}), 403
 
-    project = db.session.get(Project, project_id)
+    project = get_team_resource_or_404(Project, project_id)
     if not project:
         return jsonify({"error": "Project not found"}), 404
 
@@ -1275,7 +1359,7 @@ def update_project(project_id):
     old_name = project.name
     if 'name' in validated:
         name = normalize_project_name(validated.get('name'))
-        duplicate = Project.query.filter(Project.name == name, Project.id != project.id).first()
+        duplicate = team_scoped(Project.query, Project).filter(Project.name == name, Project.id != project.id).first()
         if duplicate:
             return jsonify({"error": "Projekt o tej nazwie już istnieje"}), 409
         project.name = name
@@ -1294,7 +1378,7 @@ def update_project(project_id):
 
     db.session.commit()
     send_project_activity_emails(project, user, "Zaktualizowano ustawienia projektu")
-    socketio.emit("task_action", {
+    emit_team_event({
         "action": "project_updated",
         "user": user.username,
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -1307,7 +1391,7 @@ def update_project(project_id):
 def get_project_completion(project_id):
     user_id = session.get('user_id')
     user = db.session.get(User, user_id)
-    project = db.session.get(Project, project_id)
+    project = get_team_resource_or_404(Project, project_id)
     if not project:
         return jsonify({"error": "Project not found"}), 404
     if not user_can_access_project(user, project):
@@ -1321,10 +1405,10 @@ def complete_project(project_id):
     user_id = session.get('user_id')
     user = db.session.get(User, user_id)
 
-    if user.role != 'admin':
+    if g.get('current_role') not in ('manager', 'super_admin'):
         return jsonify({"error": "Tylko administrator może kończyć projekty"}), 403
 
-    project = db.session.get(Project, project_id)
+    project = get_team_resource_or_404(Project, project_id)
     if not project:
         return jsonify({"error": "Project not found"}), 404
 
@@ -1338,7 +1422,7 @@ def complete_project(project_id):
     project.archived = True
     db.session.commit()
     send_project_completed_emails(project, user)
-    socketio.emit("task_action", {
+    emit_team_event({
         "action": "project_completed",
         "user": user.username,
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -1355,10 +1439,10 @@ def archive_project(project_id):
     user_id = session.get('user_id')
     user = db.session.get(User, user_id)
 
-    if user.role != 'admin':
+    if g.get('current_role') not in ('manager', 'super_admin'):
         return jsonify({"error": "Tylko administrator może archiwizować projekty"}), 403
 
-    project = db.session.get(Project, project_id)
+    project = get_team_resource_or_404(Project, project_id)
     if not project:
         return jsonify({"error": "Project not found"}), 404
 
@@ -1372,7 +1456,7 @@ def archive_project(project_id):
     project.archived = True
     db.session.commit()
     send_project_completed_emails(project, user)
-    socketio.emit("task_action", {
+    emit_team_event({
         "action": "project_archived",
         "user": user.username,
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -1390,14 +1474,9 @@ def search_tasks():
     if not query_str:
         return jsonify({'tasks': []})
 
-    if user.role == 'admin':
-        tasks = Task.query.filter(
-            Task.title.ilike(f'%{query_str}%') | Task.notes.ilike(f'%{query_str}%')
-        ).all()
-    else:
-        tasks = assigned_task_query(user).filter(
-            (Task.title.ilike(f'%{query_str}%')) | (Task.notes.ilike(f'%{query_str}%'))
-        ).all()
+    tasks = visible_task_query(user).options(*_eager_task_options()).filter(
+        (Task.title.ilike(f'%{query_str}%')) | (Task.notes.ilike(f'%{query_str}%'))
+    ).all()
 
     return jsonify({'tasks': [t.to_dict() for t in tasks]})
 
@@ -1406,9 +1485,9 @@ def search_tasks():
 def manage_task_tags(task_id, tag_id):
     user_id = session.get('user_id')
     user = db.session.get(User, user_id)
-    task = db.session.get(Task, task_id)
+    task = get_team_resource_or_404(Task, task_id)
     tag = db.session.get(Tag, tag_id)
-    if not task or not tag:
+    if not task or not tag or tag.team_id != g.get('current_team_id'):
         return jsonify({"error": "Not found"}), 404
 
     if not user_can_access_task(user, task):
@@ -1434,7 +1513,7 @@ def bulk_complete_tasks():
     user_id = session.get('user_id')
     user = db.session.get(User, user_id)
 
-    if user.role != 'admin':
+    if g.get('current_role') not in ('manager', 'super_admin'):
         return jsonify({"error": "Tylko administrator może edytować masowo"}), 403
 
     data = request.get_json()
@@ -1443,7 +1522,7 @@ def bulk_complete_tasks():
     if len(task_ids) > BULK_MAX_TASKS:
         return jsonify({"error": f"Maksymalna liczba zadań w operacji masowej: {BULK_MAX_TASKS}"}), 400
 
-    tasks = [task for task_id in task_ids if (task := db.session.get(Task, task_id))]
+    tasks = bulk_scoped_tasks_or_error(task_ids)
     blocked_tasks = [task for task in tasks if not task_is_done(task) and task_blocks_completion(task)]
     if blocked_tasks:
         return jsonify({
@@ -1465,7 +1544,7 @@ def bulk_delete_tasks():
     user_id = session.get('user_id')
     user = db.session.get(User, user_id)
 
-    if user.role != 'admin':
+    if g.get('current_role') not in ('manager', 'super_admin'):
         return jsonify({"error": "Tylko administrator może usuwać masowo"}), 403
 
     data = request.get_json()
@@ -1477,6 +1556,8 @@ def bulk_delete_tasks():
     count = 0
     for task_id in task_ids:
         task = db.session.get(Task, task_id)
+        if task is not None and task.team_id != g.get('current_team_id'):
+            raise CrossTeamReferenceError()
         if task:
             db.session.delete(task)
             count += 1
@@ -1491,7 +1572,7 @@ def bulk_update_tasks():
     user_id = session.get('user_id')
     user = db.session.get(User, user_id)
 
-    if user.role != 'admin':
+    if g.get('current_role') not in ('manager', 'super_admin'):
         return jsonify({"error": "Tylko administrator może edytować masowo"}), 403
 
     data = request.get_json()
@@ -1504,7 +1585,7 @@ def bulk_update_tasks():
         if assignee_key in updates and len(updates.get(assignee_key) or []) > 1:
             return jsonify({"error": "Zadanie może mieć tylko jednego przypisanego użytkownika."}), 400
 
-    tasks = [task for task_id in task_ids if (task := db.session.get(Task, task_id))]
+    tasks = bulk_scoped_tasks_or_error(task_ids)
     marks_done = updates.get('completed') is True or updates.get('status') == 'done'
     blocked_tasks = [task for task in tasks if marks_done and not task_is_done(task) and task_blocks_completion(task)]
     if blocked_tasks:

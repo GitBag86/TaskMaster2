@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './store/AuthContext'
 import { ThemeProvider } from './store/ThemeContext'
 import { ToastProvider } from './store/ToastContext'
 import { SocketProvider } from './store/SocketContext'
+import RoleRoute, { defaultPathForRole } from './components/common/RoleRoute'
 const AuthPage = lazy(() => import('./components/Auth/AuthPage'))
 import DashboardLayout from './components/Layout/DashboardLayout'
 const TasksPage = lazy(() => import('./components/Tasks/TasksPage'))
@@ -13,7 +14,10 @@ const KanbanPage = lazy(() => import('./components/Kanban/KanbanPage'))
 const DashboardPage = lazy(() => import('./components/Dashboard/DashboardPage'))
 const CalendarPage = lazy(() => import('./components/Calendar/CalendarPage'))
 const ActivityPage = lazy(() => import('./components/Activity/ActivityPage'))
-const AdminPage = lazy(() => import('./components/Admin/AdminPage'))
+const TeamsAdminPage = lazy(() => import('./components/Admin/TeamsAdminPage'))
+const TeamDetailPage = lazy(() => import('./components/Admin/TeamDetailPage'))
+const AdminAuditPage = lazy(() => import('./components/Admin/AdminAuditPage'))
+const TeamMembersPage = lazy(() => import('./components/Team/TeamMembersPage'))
 import { Toaster } from './components/common/Toaster'
 import { CommandPalette } from './components/common/CommandPalette'
 
@@ -32,6 +36,11 @@ function LoadingScreen() {
   )
 }
 
+function AdminRedirect() {
+  const { user } = useAuth()
+  return <Navigate to={defaultPathForRole(user?.role)} replace />
+}
+
 function AppRoutes() {
   return (
     <Suspense fallback={<LoadingScreen />}>
@@ -47,14 +56,19 @@ function AppRoutes() {
             </PrivateRoute>
           }
         >
-          <Route index element={<TasksPage />} />
-          <Route path="today" element={<TodayPage />} />
-          <Route path="projects" element={<ProjectsPage />} />
-          <Route path="kanban" element={<KanbanPage />} />
-          <Route path="dashboard" element={<DashboardPage />} />
-          <Route path="calendar" element={<CalendarPage />} />
-          <Route path="activity" element={<ActivityPage />} />
-          <Route path="admin" element={<AdminPage />} />
+          <Route index element={<RoleRoute roles={['manager', 'user']}><TasksPage /></RoleRoute>} />
+          <Route path="today" element={<RoleRoute roles={['manager', 'user']}><TodayPage /></RoleRoute>} />
+          <Route path="projects" element={<RoleRoute roles={['manager', 'user']}><ProjectsPage /></RoleRoute>} />
+          <Route path="kanban" element={<RoleRoute roles={['manager', 'user']}><KanbanPage /></RoleRoute>} />
+          <Route path="dashboard" element={<RoleRoute roles={['manager', 'user']}><DashboardPage /></RoleRoute>} />
+          <Route path="calendar" element={<RoleRoute roles={['manager', 'user']}><CalendarPage /></RoleRoute>} />
+          <Route path="activity" element={<RoleRoute roles={['manager', 'user']}><ActivityPage /></RoleRoute>} />
+          <Route path="admin" element={<AdminRedirect />} />
+          <Route path="admin/teams" element={<RoleRoute roles={['super_admin']}><TeamsAdminPage /></RoleRoute>} />
+          <Route path="admin/teams/:id" element={<RoleRoute roles={['super_admin']}><TeamDetailPage /></RoleRoute>} />
+          <Route path="admin/audit" element={<RoleRoute roles={['super_admin']}><AdminAuditPage /></RoleRoute>} />
+          <Route path="team/members" element={<RoleRoute roles={['manager']}><TeamMembersPage /></RoleRoute>} />
+          <Route path="team/invites" element={<RoleRoute roles={['manager']}><TeamMembersPage /></RoleRoute>} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

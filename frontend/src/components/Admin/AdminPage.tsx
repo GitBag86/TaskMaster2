@@ -5,6 +5,8 @@ import { useToast } from '@/store/ToastContext'
 import { useAuth } from '@/store/AuthContext'
 import { AdminSkeleton } from '@/components/common/Skeletons'
 
+type ManageableRole = 'manager' | 'user';
+
 export default function AdminPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -12,7 +14,7 @@ export default function AdminPage() {
   const [newUsername, setNewUsername] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
-  const [newRole, setNewRole] = useState<'admin' | 'user'>('user');
+  const [newRole, setNewRole] = useState<ManageableRole>('user');
   const { addToast } = useToast();
   const { user: currentUser } = useAuth();
 
@@ -53,7 +55,7 @@ export default function AdminPage() {
     }
   };
 
-  const handleRoleChange = async (userId: number, role: 'admin' | 'user') => {
+  const handleRoleChange = async (userId: number, role: ManageableRole) => {
     try {
       await api.users.updateRole(userId, role);
       addToast('Rola zaktualizowana', 'success');
@@ -117,9 +119,9 @@ export default function AdminPage() {
             minLength={6}
             required
           />
-          <select value={newRole} onChange={e => setNewRole(e.target.value as 'admin' | 'user')} className="input">
+          <select value={newRole} onChange={e => setNewRole(e.target.value as ManageableRole)} className="input">
             <option value="user">Użytkownik</option>
-            <option value="admin">Administrator</option>
+            <option value="manager">Administrator</option>
           </select>
           <button type="submit" disabled={saving} className="btn btn-primary whitespace-nowrap">
             {saving ? 'Dodawanie...' : 'Dodaj'}
@@ -150,20 +152,26 @@ export default function AdminPage() {
                   </td>
                   <td className="px-4 py-3 text-sm text-muted-foreground">{u.email || '—'}</td>
                   <td className="px-4 py-3">
-                    <span className={`badge ${u.role === 'admin' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}>
-                      {u.role === 'admin' ? 'Administrator' : 'Użytkownik'}
+                    <span className={`badge ${
+                      u.role === 'super_admin' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                      : u.role === 'manager' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
+                      : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
+                    }`}>
+                      {u.role === 'super_admin' ? 'Super Admin'
+                        : u.role === 'manager' ? 'Administrator'
+                        : 'Użytkownik'}
                     </span>
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <select
                         value={u.role}
-                        onChange={e => handleRoleChange(u.id, e.target.value as 'admin' | 'user')}
+                        onChange={e => handleRoleChange(u.id, e.target.value as ManageableRole)}
                         disabled={u.id === currentUser?.id}
                         className="input h-8 w-40 text-xs"
                       >
                         <option value="user">Użytkownik</option>
-                        <option value="admin">Administrator</option>
+                        <option value="manager">Administrator</option>
                       </select>
                       <button
                         type="button"

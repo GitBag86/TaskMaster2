@@ -1,11 +1,20 @@
 from marshmallow import Schema, fields, validate, ValidationError
 from datetime import date
 
+# Team workspaces (R2): three valid roles in the new system.
+# 'admin' is kept as a transitional alias until the migration in Task 6
+# backfills 'admin' -> 'manager' globally; afterwards (Task 8) it can be removed.
+VALID_ROLES = ('super_admin', 'manager', 'user')
+LEGACY_ROLES = ('admin',)
+ALL_ROLES_TRANSITIONAL = VALID_ROLES + LEGACY_ROLES
+
+
 class UserSchema(Schema):
     id = fields.Int(dump_only=True)
     username = fields.Str(required=True, validate=validate.Length(min=3, max=100))
     email = fields.Email(required=True) # Now mandatory
-    role = fields.Str(dump_only=True)
+    role = fields.Str(dump_only=True, validate=validate.OneOf(ALL_ROLES_TRANSITIONAL))
+    team_id = fields.Int(dump_only=True, allow_none=True)
     terms_accepted = fields.Bool(dump_only=True)
     privacy_accepted = fields.Bool(dump_only=True)
     marketing_consent = fields.Bool(dump_only=True)
@@ -81,6 +90,7 @@ class SignupSchema(Schema):
         error_messages={"required": "Musisz zaakceptować politykę prywatności."},
     )
     accept_marketing = fields.Bool(load_default=False)
+    invite_token = fields.Str(load_default=None, allow_none=True)
 
 class AdminUserCreateSchema(Schema):
     username = fields.Str(
@@ -97,7 +107,7 @@ class AdminUserCreateSchema(Schema):
         required=True,
         error_messages={"required": "Podaj adres e-mail.", "invalid": "Podaj prawidłowy adres e-mail."},
     )
-    role = fields.Str(load_default="user", validate=validate.OneOf(["user", "admin"]))
+    role = fields.Str(load_default="user", validate=validate.OneOf(["user", "manager", "admin"]))
 
 class TagSchema(Schema):
     id = fields.Int(dump_only=True)

@@ -1,8 +1,11 @@
-from flask import request, jsonify, session
+import hashlib
+
+from flask import current_app, request, jsonify, session
 from marshmallow import ValidationError
 from routes import auth_bp
-from models import db, User
+from models import db, Team, TeamInvite, User
 from schemas import LoginSchema, SignupSchema
+from utils.errors import InviteTokenInvalidError, SignupDisabledError, TeamArchivedError
 import time
 import logging
 from collections import defaultdict
@@ -59,11 +62,30 @@ def signup():
     if not email:
         email = None
 
-    is_first_user = User.query.first() is None
+    target_team = None
+    target_role = 'user'
+    invite = None
+    mode = current_app.config.get('SIGNUP_MODE', 'invite_only')
+    if mode == 'disabled':
+        raise SignupDisabledError()
+    if mode == 'invite_only':
+        invite = resolve_invite_token(validated.get('invite_token'))
+        target_team = invite.team
+        target_role = invite.default_role
+    elif mode == 'default_team':
+        target_team = Team.query.filter_by(name='Default').first()
+        if target_team is None:
+            return jsonify({"error": "Default team not found"}), 503
+        if target_team.archived:
+            raise TeamArchivedError()
+    else:
+        return jsonify({"error": "Nieprawidłowy tryb rejestracji"}), 500
+
     user = User(
         username=username,
         email=email,
-        role='admin' if is_first_user else 'user',
+        role=target_role,
+        team_id=target_team.id,
         terms_accepted=validated.get('accept_terms', False),
         privacy_accepted=validated.get('accept_privacy', False),
         marketing_consent=validated.get('accept_marketing', False),
@@ -72,14 +94,34 @@ def signup():
     user.set_password(password)
     try:
         db.session.add(user)
+        db.session.flush()
+        if invite is not None:
+            invite.consumed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            invite.consumed_by_id = user.id
         db.session.commit()
     except Exception:
         db.session.rollback()
         logger.exception("Signup failed while saving user '%s'", username)
         return jsonify({"error": "Nie udało się zapisać użytkownika w bazie danych"}), 500
 
-    session['user_id'] = user.id
-    return jsonify({"message": "Rejestracja pomyślna", "user": user.to_dict()}), 201
+    _establish_session(user)
+    return jsonify({"message": "Rejestracja pomyślna", "user": user.to_dict(expand_team=True)}), 201
+
+
+@auth_bp.route('/signup-info', methods=['GET'])
+def signup_info():
+    mode = current_app.config.get('SIGNUP_MODE', 'invite_only')
+    payload = {"mode": mode}
+    raw_token = request.args.get('token')
+    if raw_token:
+        try:
+            invite = resolve_invite_token(raw_token)
+            payload["team_name"] = invite.team.name
+        except InviteTokenInvalidError:
+            payload["token_valid"] = False
+        else:
+            payload["token_valid"] = True
+    return jsonify(payload)
 
 @auth_bp.route('/login', methods=['POST'])
 @rate_limit
@@ -95,13 +137,15 @@ def login():
     if not user or not user.check_password(validated['password']):
         return jsonify({"error": "Błędne dane logowania"}), 401
 
-    session['user_id'] = user.id
+    _establish_session(user)
     session.permanent = True
-    return jsonify({"message": "Logowanie pomyślne", "user": user.to_dict()})
+    return jsonify({"message": "Logowanie pomyślne", "user": user.to_dict(expand_team=True)})
 
 @auth_bp.route('/logout', methods=['POST'])
 def logout():
-    session.pop('user_id', None)
+    # Atomically clear every key set by _establish_session.
+    for key in ('user_id', 'team_id', 'role', 'session_version'):
+        session.pop(key, None)
     return jsonify({"message": "Wylogowano"})
 
 @auth_bp.route('/me', methods=['GET'])
@@ -111,4 +155,32 @@ def get_current_user():
     user = db.session.get(User, user_id)
     if not user:
         return jsonify({"error": "Użytkownik nie znaleziony"}), 404
-    return jsonify(user.to_dict())
+    # expand_team=True so the SPA gets `team` populated for the sidebar (Task 15).
+    return jsonify(user.to_dict(expand_team=True))
+
+
+def _establish_session(user):
+    """Populate session keys consumed by the auth layer (utils/auth_layer.py).
+
+    Called by login and signup. Stores user_id, team_id, role and session_version
+    so the next request's before_request hook can validate them in O(1).
+    """
+    session['user_id'] = user.id
+    session['team_id'] = user.team_id  # may be None for super_admin
+    session['role'] = user.role
+    session['session_version'] = user.session_version
+
+
+def hash_invite_token(raw_token: str) -> str:
+    return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+
+
+def resolve_invite_token(raw_token):
+    if not raw_token:
+        raise InviteTokenInvalidError()
+    invite = TeamInvite.query.filter_by(token_hash=hash_invite_token(raw_token)).first()
+    if invite is None or not invite.is_active():
+        raise InviteTokenInvalidError()
+    if invite.team is None or invite.team.archived:
+        raise TeamArchivedError()
+    return invite

@@ -1,13 +1,56 @@
+export type Role = 'super_admin' | 'manager' | 'user';
+
+export interface Team {
+  id: number;
+  name: string;
+  slug: string;
+  description: string;
+  archived: boolean;
+  created_by_id?: number | null;
+  created_at: string | null;
+  stats?: {
+    members?: number;
+    resources?: Record<string, number>;
+  };
+}
+
 export interface User {
   id: number;
   username: string;
   email: string;
-  role: 'admin' | 'user';
+  role: Role;
+  team_id: number | null;
+  team?: Team;
   terms_accepted: boolean;
   privacy_accepted: boolean;
   marketing_consent: boolean;
   consented_at: string | null;
   created_at: string;
+}
+
+export interface InviteToken {
+  id: number;
+  team_id: number;
+  created_by_id: number | null;
+  created_at: string | null;
+  expires_at: string;
+  consumed_at: string | null;
+  consumed_by_id: number | null;
+  default_role: Role;
+  active?: boolean;
+  raw_token?: string;
+}
+
+export interface TeamAuditEntry {
+  id: number;
+  actor_id: number;
+  actor: string | null;
+  action: string;
+  target_team_id: number | null;
+  target_user_id: number | null;
+  source_team_id: number | null;
+  details: Record<string, unknown> | null;
+  created_at: string | null;
 }
 
 export interface Task {
@@ -136,7 +179,7 @@ export interface WeeklyReport {
 }
 
 export interface ProjectTemplate {
-  id: string;
+  id: number;
   name: string;
   description: string;
   color: string;
@@ -204,4 +247,16 @@ export interface Toast {
   id: string;
   message: string;
   type: 'success' | 'error' | 'warning' | 'info';
+}
+
+// Role helpers — use these instead of hardcoded string comparisons.
+
+/** True for any role that can create/edit/delete tasks and projects. */
+export function isAdminRole(role: Role | string | undefined): boolean {
+  return role === 'manager' || role === 'super_admin';
+}
+
+/** True only for the platform-wide super administrator. */
+export function isSuperAdmin(role: Role | string | undefined): boolean {
+  return role === 'super_admin';
 }

@@ -1,3 +1,10 @@
+"""
+TaskMaster2 — Flask application factory.
+
+Copyright © 2026 Krzysztof Graczyk. All rights reserved.
+This software is proprietary. See LICENSE for terms.
+"""
+
 import logging
 import os
 from datetime import datetime, timezone
@@ -16,7 +23,10 @@ from config import Config
 from extensions import mail, migrate, scheduler, socketio
 from jobs.deadline_notifier import check_deadlines
 from models import User, db
+from utils.errors import TaskMasterError
 from utils.logging_config import register_request_logging, setup_logging
+from utils.auth_layer import register_auth_layer
+from utils.realtime import register_socketio_handlers
 
 logger = logging.getLogger(__name__)
 
@@ -49,14 +59,16 @@ def _configure_app(app):
 
 
 def _register_blueprints(app):
-    from routes import auth_bp, filters_bp, notifications_bp, stats_bp, tasks_bp, users_bp
+    from routes import admin_bp, auth_bp, filters_bp, invites_bp, notifications_bp, stats_bp, tasks_bp, users_bp
 
+    app.register_blueprint(admin_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(users_bp)
     app.register_blueprint(tasks_bp)
     app.register_blueprint(stats_bp)
     app.register_blueprint(filters_bp)
     app.register_blueprint(notifications_bp)
+    app.register_blueprint(invites_bp)
 
 
 def _register_routes(app):
@@ -117,8 +129,8 @@ def _register_routes(app):
 
     @app.route("/<path:path>")
     def serve_spa(path):
+        # Pure-API prefixes — these are always JSON, never SPA routes.
         api_prefixes = (
-            "auth",
             "tasks",
             "projects",
             "users",
@@ -132,17 +144,47 @@ def _register_routes(app):
             "notifications",
             "socket.io",
             "version",
+            "project-templates",
         )
         if path.startswith(api_prefixes):
             return jsonify({"error": "Not found"}), 404
-        try:
+
+        # Mixed prefixes — used by both the SPA (e.g. /admin/teams page) and
+        # the JSON API (e.g. POST /admin/teams). Decide based on the request:
+        # - browser navigation / refresh → Accept includes text/html → serve SPA
+        # - fetch() from the SPA → no text/html in Accept → return JSON 404
+        mixed_prefixes = ("auth", "admin", "team")
+        if path.startswith(mixed_prefixes):
+            accept = request.headers.get("Accept", "")
+            if "text/html" not in accept:
+                return jsonify({"error": "Not found"}), 404
+
+        # Static asset (JS chunk, image, etc.) if it exists, otherwise fall
+        # through to index.html so React Router can handle the route.
+        # We avoid `send_from_directory` raising NotFound (which Flask would
+        # turn into a 404 via the errorhandler) by checking with os.path.isfile.
+        candidate = os.path.normpath(os.path.join(app.static_folder, path))
+        if candidate.startswith(os.path.abspath(app.static_folder)) and os.path.isfile(candidate):
             return send_from_directory(app.static_folder, path)
-        except Exception:
-            return send_from_directory(app.static_folder, "index.html")
+        return send_from_directory(app.static_folder, "index.html")
 
     @app.errorhandler(404)
     def not_found(_):
+        # Browser navigation that doesn't match any registered route should
+        # still receive the SPA shell so React Router can render the matching
+        # client-side route (e.g. /today, /admin/teams).
+        accept = request.headers.get("Accept", "")
+        if "text/html" in accept:
+            try:
+                return send_from_directory(app.static_folder, "index.html")
+            except Exception:
+                pass
         return jsonify({"error": "Not found"}), 404
+
+    @app.errorhandler(TaskMasterError)
+    def _handle_app_error(exc: TaskMasterError):
+        # Application-level errors with a stable code + HTTP status (R30, see utils/errors.py)
+        return jsonify({"error": exc.message, "code": exc.code}), exc.http_status
 
 
 def _register_scheduler(app):
@@ -164,14 +206,20 @@ def _ensure_default_admin(app):
     try:
         user = User.query.filter_by(username=username).first()
         if user is None:
-            user = User(username=username, email=email, role="admin")
+            # Brand-new database: create the bootstrap account directly as super_admin
+            # with team_id=None (R3.4).
+            user = User(username=username, email=email, role="super_admin", team_id=None)
             db.session.add(user)
         else:
-            user.role = "admin"
+            # Existing account: ensure it stays super_admin and detached from any team.
+            # The migration in 81d661ec5395 already promoted legacy 'admin' → 'super_admin'
+            # for the bootstrap user; this is just defensive idempotency.
+            user.role = "super_admin"
+            user.team_id = None
             user.email = user.email or email
         user.set_password(password)
         db.session.commit()
-        logger.info("Default admin account is ready: %s", username)
+        logger.info("Default super-admin account is ready: %s", username)
     except SQLAlchemyError:
         db.session.rollback()
         logger.info("Default admin bootstrap skipped until database schema is ready")
@@ -191,11 +239,13 @@ def create_app(config_object=Config):
     mail.init_app(app)
     migrate.init_app(app, db)
     socketio.init_app(app, cors_allowed_origins=app.config["CORS_ORIGINS"])
+    register_socketio_handlers()
     if app.config.get("ENABLE_SCHEDULER", True):
         scheduler.init_app(app)
 
     _register_blueprints(app)
     _register_routes(app)
+    register_auth_layer(app)
     register_request_logging(app)
 
     with app.app_context():

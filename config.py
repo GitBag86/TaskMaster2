@@ -35,6 +35,15 @@ class Config:
     DEFAULT_ADMIN_PASSWORD = os.environ.get("DEFAULT_ADMIN_PASSWORD", "dakos1admin2")
     DEFAULT_ADMIN_EMAIL = os.environ.get("DEFAULT_ADMIN_EMAIL", "admin@taskmaster.local")
 
+    # Team workspaces (multi-tenancy)
+    # SIGNUP_MODE: 'disabled' | 'invite_only' | 'default_team'
+    #   disabled    - public POST /auth/signup returns 403 signup_disabled
+    #   invite_only - signup requires a valid TeamInvite token (default)
+    #   default_team - new accounts land in the Default team with role=user
+    SIGNUP_MODE = os.environ.get("SIGNUP_MODE", "invite_only").strip().lower()
+    INVITE_TOKEN_TTL_DAYS = int(os.environ.get("INVITE_TOKEN_TTL_DAYS", 7))
+    SUPER_ADMIN_LANDING = os.environ.get("SUPER_ADMIN_LANDING", "/admin/teams")
+
     # Email configuration (optional)
     MAIL_SERVER = os.environ.get("MAIL_SERVER")
     MAIL_PORT = int(os.environ.get("MAIL_PORT", 587))
@@ -52,3 +61,8 @@ class TestingConfig(Config):
     SECRET_KEY = "test-secret-key"
     ENABLE_SCHEDULER = False
     MAIL_SUPPRESS_SEND = True
+    # Bootstrap admin defaults isolated from any .env values that may
+    # be loaded into the process. Tests assert against these constants.
+    DEFAULT_ADMIN_USERNAME = "admin"
+    DEFAULT_ADMIN_PASSWORD = "dakos1admin2"
+    DEFAULT_ADMIN_EMAIL = "admin@taskmaster.local"

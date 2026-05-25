@@ -3,50 +3,203 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Regulamin</title>
+    <title>Regulamin — TaskMaster2</title>
     <style>
-      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; line-height: 1.55; margin: 0; background: #f8fafc; color: #0f172a; }
-      main { max-width: 860px; margin: 0 auto; padding: 32px 16px; }
-      h1, h2 { line-height: 1.2; }
-      section { background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin-bottom: 14px; }
-      ul { padding-left: 18px; }
+      :root {
+        --bg: #f8fafc;
+        --card: #ffffff;
+        --text: #0f172a;
+        --muted: #475569;
+        --border: #e2e8f0;
+        --accent: #6366f1;
+      }
+      body {
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        line-height: 1.6;
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+      }
+      main { max-width: 880px; margin: 0 auto; padding: 32px 16px 80px; }
+      h1, h2, h3 { line-height: 1.25; }
+      h1 { font-size: 2rem; margin-bottom: 0.25em; }
+      h2 { margin-top: 0; color: var(--accent); }
+      .meta { color: var(--muted); font-size: 0.9rem; margin-bottom: 32px; }
+      section {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 24px;
+        margin-bottom: 16px;
+      }
+      ul, ol { padding-left: 22px; }
+      li { margin-bottom: 6px; }
+      strong { color: var(--text); }
+      footer {
+        margin-top: 40px;
+        padding-top: 20px;
+        border-top: 1px solid var(--border);
+        text-align: center;
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+      a { color: var(--accent); }
     </style>
   </head>
   <body>
     <main>
       <h1>Regulamin korzystania z aplikacji</h1>
-      <p>Data wejścia w życie: 17 maja 2026</p>
+      <p class="meta">Aplikacja: <strong>TaskMaster2</strong> · Data wejścia w życie: 25 maja 2026</p>
 
       <section>
-        <h2>1. Zakres usługi</h2>
-        <p>Aplikacja służy do zarządzania zadaniami, komentarzami oraz harmonogramem pracy.</p>
+        <h2>§1. Postanowienia ogólne</h2>
+        <ol>
+          <li>Niniejszy regulamin (dalej "Regulamin") określa zasady korzystania z aplikacji webowej <strong>TaskMaster2</strong> (dalej "Aplikacja").</li>
+          <li>Autorem i właścicielem Aplikacji jest <strong>Krzysztof Graczyk</strong> (dalej "Autor").</li>
+          <li>Korzystanie z Aplikacji oznacza akceptację niniejszego Regulaminu oraz <a href="/privacy.html">Polityki prywatności</a>.</li>
+          <li>Aplikacja jest dystrybuowana w modelu self-hosted. Administratorem konkretnej instancji może być Autor lub podmiot trzeci, który zainstalował Aplikację u siebie.</li>
+        </ol>
       </section>
 
       <section>
-        <h2>2. Konto użytkownika</h2>
+        <h2>§2. Definicje</h2>
         <ul>
-          <li>Użytkownik odpowiada za poufność danych logowania.</li>
-          <li>Podane dane powinny być prawdziwe i aktualne.</li>
+          <li><strong>Użytkownik</strong> — osoba korzystająca z Aplikacji po założeniu konta.</li>
+          <li><strong>Konto</strong> — zbiór danych identyfikujących użytkownika i pozwalających mu korzystać z Aplikacji.</li>
+          <li><strong>Zespół (Workspace)</strong> — wydzielona, izolowana przestrzeń robocza, w której użytkownicy współpracują nad zadaniami.</li>
+          <li><strong>Manager</strong> — użytkownik z uprawnieniami zarządzania zespołem.</li>
+          <li><strong>Super Admin</strong> — użytkownik z uprawnieniami zarządzania całą instancją Aplikacji.</li>
+          <li><strong>Administrator instancji</strong> — osoba lub podmiot, który wdrożył i utrzymuje konkretną instalację Aplikacji.</li>
         </ul>
       </section>
 
       <section>
-        <h2>3. Dozwolone użycie</h2>
+        <h2>§3. Zakres usługi</h2>
+        <ol>
+          <li>Aplikacja udostępnia narzędzia do zarządzania zadaniami, projektami, komentarzami, zaproszeniami zespołowymi i powiązanymi danymi.</li>
+          <li>Funkcjonalności obejmują m.in.: tworzenie zadań, podział na projekty, przypisywanie wykonawców, komentarze, podzadania, zależności, widok dzienny, Kanban, statystyki, powiadomienia, role i uprawnienia.</li>
+          <li>Aplikacja jest udostępniana w modelu self-hosted. Funkcjonalność może różnić się w zależności od wersji i konfiguracji konkretnej instancji.</li>
+        </ol>
+      </section>
+
+      <section>
+        <h2>§4. Konto użytkownika</h2>
+        <ol>
+          <li>Założenie konta wymaga podania prawdziwych i aktualnych danych: nazwy użytkownika, adresu e-mail i hasła.</li>
+          <li>W trybie <code>invite_only</code> rejestracja wymaga jednorazowego tokenu zaproszenia od Managera zespołu.</li>
+          <li>Użytkownik jest zobowiązany do zachowania w poufności swoich danych logowania i ponosi odpowiedzialność za działania wykonane z jego konta.</li>
+          <li>Hasło jest przechowywane w postaci skrótu kryptograficznego — Autor i administratorzy instancji nie mają dostępu do hasła w postaci jawnej.</li>
+          <li>Użytkownik może w każdej chwili zażądać usunięcia konta zgodnie z procedurą opisaną w Polityce prywatności.</li>
+        </ol>
+      </section>
+
+      <section>
+        <h2>§5. Dozwolone i niedozwolone użycie</h2>
+        <p>Użytkownik zobowiązuje się do <strong>nie podejmowania</strong> następujących działań:</p>
         <ul>
-          <li>Nie wolno używać aplikacji do działań niezgodnych z prawem.</li>
-          <li>Nie wolno podejmować prób zakłócania działania usługi.</li>
+          <li>korzystania z Aplikacji niezgodnie z prawem polskim, unijnym lub międzynarodowym;</li>
+          <li>prób uzyskania nieuprawnionego dostępu do kont innych użytkowników, do innych zespołów lub do danych administracyjnych;</li>
+          <li>prób zakłócenia działania Aplikacji (DDoS, exploit, malware, próby ominięcia rate limiting);</li>
+          <li>scrappingu, automatycznego pobierania lub indeksowania treści w sposób naruszający funkcjonowanie Aplikacji;</li>
+          <li>zamieszczania w treściach (zadaniach, komentarzach, opisach) materiałów obraźliwych, pornograficznych, dyskryminujących, naruszających prawa osób trzecich, mowy nienawiści lub treści naruszających prywatność innych osób;</li>
+          <li>wykorzystywania Aplikacji do spamowania, phishingu, oszustw lub jakiejkolwiek działalności przestępczej;</li>
+          <li>kopiowania, reverse-engineeringu lub modyfikowania kodu źródłowego Aplikacji bez wyraźnej, pisemnej zgody Autora.</li>
         </ul>
       </section>
 
       <section>
-        <h2>4. Odpowiedzialność</h2>
-        <p>Usługa jest dostarczana na zasadzie "as is". Administrator dokłada starań, by zapewnić ciągłość działania.</p>
+        <h2>§6. Prawa autorskie i własność intelektualna</h2>
+        <ol>
+          <li>
+            Aplikacja TaskMaster2 — w tym jej kod źródłowy, dokumentacja, projekt graficzny,
+            architektura, interfejs użytkownika i wszystkie powiązane materiały — stanowi
+            wyłączną własność intelektualną <strong>Krzysztofa Graczyka</strong>.
+          </li>
+          <li>
+            Wszelkie prawa autorskie, prawa do baz danych, znaki towarowe oraz inne prawa
+            własności intelektualnej do Aplikacji są zastrzeżone na rzecz Autora.
+          </li>
+          <li>
+            Bez uprzedniej, pisemnej zgody Autora <strong>zabrania się</strong>:
+            <ul>
+              <li>kopiowania, powielania ani odtwarzania Aplikacji w całości lub w części;</li>
+              <li>modyfikowania, adaptowania, tłumaczenia ani tworzenia utworów zależnych;</li>
+              <li>dystrybucji, sublicencjonowania, najmu, sprzedaży ani innego przekazywania Aplikacji;</li>
+              <li>udostępniania Aplikacji jako usługi (hosting, SaaS) osobom trzecim;</li>
+              <li>inżynierii wstecznej, dekompilacji lub dezasemblacji;</li>
+              <li>usuwania, ukrywania ani modyfikowania not o prawach autorskich;</li>
+              <li>wykorzystywania Aplikacji do tworzenia produktu konkurencyjnego.</li>
+            </ul>
+          </li>
+          <li>
+            Treści tworzone przez Użytkownika w ramach Aplikacji (zadania, komentarze, podzadania)
+            pozostają własnością Użytkownika. Użytkownik udziela Administratorowi instancji
+            niezbędnej, niewyłącznej licencji do przechowywania i wyświetlania tych treści
+            w celu świadczenia usługi.
+          </li>
+          <li>
+            Pełne warunki licencyjne zawiera plik <code>LICENSE</code> dystrybuowany wraz z
+            Aplikacją.
+          </li>
+        </ol>
       </section>
 
       <section>
-        <h2>5. Zmiany regulaminu</h2>
-        <p>Regulamin może być aktualizowany. Dalsze korzystanie z aplikacji oznacza akceptację zmian.</p>
+        <h2>§7. Odpowiedzialność</h2>
+        <ol>
+          <li>Aplikacja jest dostarczana <strong>"as is"</strong> ("tak jak jest"), bez żadnych dorozumianych ani wyrażonych gwarancji.</li>
+          <li>Autor i Administrator instancji dokładają starań, aby Aplikacja działała stabilnie i bezpiecznie, jednak nie gwarantują nieprzerwanej dostępności, braku błędów ani kompatybilności ze wszystkimi przeglądarkami.</li>
+          <li>Autor nie ponosi odpowiedzialności za:
+            <ul>
+              <li>utratę danych spowodowaną awarią infrastruktury Administratora instancji;</li>
+              <li>działania osób trzecich, które uzyskały nieuprawniony dostęp do konta na skutek nieostrożności Użytkownika;</li>
+              <li>szkody pośrednie, utracone korzyści ani szkody wynikłe z przerw w dostępie do usługi;</li>
+              <li>treści wprowadzane przez Użytkowników (Autor nie weryfikuje treści zadań i komentarzy).</li>
+            </ul>
+          </li>
+          <li>Maksymalna odpowiedzialność Autora wobec jakiegokolwiek Użytkownika jest ograniczona do kwoty 0 PLN, ponieważ Aplikacja jest udostępniana bezpłatnie.</li>
+        </ol>
       </section>
+
+      <section>
+        <h2>§8. Dostępność i zmiany usługi</h2>
+        <ol>
+          <li>Autor zastrzega sobie prawo do wprowadzania zmian w Aplikacji, w tym dodawania, modyfikowania lub usuwania funkcjonalności, w dowolnym czasie i bez uprzedniego powiadomienia.</li>
+          <li>Administrator instancji może wprowadzać przerwy techniczne w dostępie do Aplikacji w celu konserwacji lub aktualizacji.</li>
+          <li>Autor może zaprzestać rozwoju Aplikacji w dowolnym momencie. W takim przypadku Administrator instancji nadal może z niej korzystać na zasadach określonych w Licencji.</li>
+        </ol>
+      </section>
+
+      <section>
+        <h2>§9. Zakończenie korzystania</h2>
+        <ol>
+          <li>Użytkownik może w każdej chwili zaprzestać korzystania z Aplikacji i zażądać usunięcia konta.</li>
+          <li>Administrator instancji ma prawo zablokować lub usunąć konto Użytkownika w przypadku rażącego naruszenia Regulaminu, po uprzednim ostrzeżeniu (z wyjątkiem przypadków wymagających natychmiastowej reakcji ze względów bezpieczeństwa).</li>
+          <li>Po usunięciu konta dane Użytkownika są kasowane zgodnie z Polityką prywatności.</li>
+        </ol>
+      </section>
+
+      <section>
+        <h2>§10. Zmiany Regulaminu</h2>
+        <ol>
+          <li>Regulamin może być aktualizowany. O istotnych zmianach Użytkownicy zostaną poinformowani przy najbliższym logowaniu.</li>
+          <li>Dalsze korzystanie z Aplikacji po wejściu w życie zmian oznacza ich akceptację.</li>
+          <li>Jeśli Użytkownik nie akceptuje zmian, powinien zaprzestać korzystania z Aplikacji i zażądać usunięcia konta.</li>
+        </ol>
+      </section>
+
+      <section>
+        <h2>§11. Postanowienia końcowe</h2>
+        <ol>
+          <li>W sprawach nieuregulowanych Regulaminem stosuje się przepisy prawa polskiego, w szczególności Kodeks cywilny, ustawę o prawie autorskim i prawach pokrewnych oraz RODO.</li>
+          <li>Spory wynikłe z korzystania z Aplikacji rozstrzygane będą przez sąd właściwy dla miejsca zamieszkania Autora, chyba że bezwzględnie obowiązujące przepisy stanowią inaczej.</li>
+          <li>Jeżeli którekolwiek postanowienie Regulaminu zostanie uznane za nieważne, pozostałe postanowienia zachowują moc.</li>
+        </ol>
+      </section>
+
+      <footer>
+        © 2026 Krzysztof Graczyk. Wszelkie prawa zastrzeżone.
+      </footer>
     </main>
   </body>
 </html>

@@ -55,32 +55,59 @@ TaskMaster2 zawiera:
 
 ## Role i Uprawnienia
 
-### Admin
+TaskMaster2 obsługuje multi-tenancy (Team Workspaces) z trzema poziomami uprawnień. Każdy użytkownik z rolą `manager` lub `user` należy do dokładnie jednego zespołu (workspace), a `super_admin` operuje ponad zespołami.
 
-Admin moze:
+### Super Admin
 
-- tworzyc zadania,
-- edytowac zadania,
-- usuwac zadania,
-- przypisywac jednego wykonawce do zadania,
-- tworzyc projekty,
-- przypisywac czlonkow projektu,
+Super admin nie nalezy do zadnego zespolu (`team_id = NULL`) i nie pojawia sie w widokach team-scoped (np. /tasks, /projects). Sluzy wylacznie do administracji platforma.
+
+Super admin moze:
+
+- tworzyc i usuwac zespoly (`/admin/teams`),
+- zmieniac nazwe i opis zespolu,
+- archiwizowac zespoly (uniemozliwia logowanie czlonkom),
+- przenosic uzytkownikow miedzy zespolami,
+- zmieniac role uzytkownikow (super_admin / manager / user),
+- przegladac globalny audit log (`/admin/audit`),
+- przegladac audit log per zespol.
+
+Po zalogowaniu super admin laduje na `/admin/teams` (konfigurowalne przez `SUPER_ADMIN_LANDING`).
+
+### Manager (Menedżer Zespołu)
+
+Manager jest odpowiednikiem dawnego `admin` w obrebie jednego zespolu. Widzi tylko zasoby swojego zespolu.
+
+Manager moze:
+
+- tworzyc, edytowac i usuwac zadania w swoim zespole,
+- przypisywac wykonawcow do zadan (z czlonkow swojego zespolu),
+- tworzyc projekty i zarzadzac czlonkami projektu,
 - konczyc projekty,
 - tworzyc projekty z szablonow,
-- zarzadzac uzytkownikami,
-- wykonywac operacje masowe,
-- dodawac i usuwac zaleznosci.
+- generowac jednorazowe zaproszenia (invite tokens) dla nowych czlonkow zespolu,
+- usuwac uzytkownikow z zespolu,
+- wykonywac operacje masowe na zadaniach,
+- dodawac i usuwac zaleznosci miedzy zadaniami.
 
-### User
+Manager **nie moze** wystawiac zaproszen na role `manager` ani widziec zasobow innych zespolow.
 
-Zwykly uzytkownik moze:
+### User (Zwykly Uzytkownik)
 
-- widziec zadania przypisane do siebie,
-- konczyc swoje zadania, jesli nie sa zablokowane,
-- dodawac komentarze,
-- dodawac i zmieniac podzadania w przypisanych zadaniach,
-- widziec projekty, w ktorych jest czlonkiem albo ma przypisane zadania,
-- korzystac z widokow Dzis, Kanban, Dashboard, Aktywnosc w zakresie swoich zadan.
+Uzytkownik widzi:
+
+- zadania przypisane do siebie w swoim zespole,
+- projekty, w ktorych jest czlonkiem albo ma przypisane zadanie,
+- wlasne komentarze, podzadania, powiadomienia.
+
+Uzytkownik moze:
+
+- konczyc swoje zadania (jesli nie sa zablokowane przez zaleznosci),
+- dodawac komentarze i podzadania,
+- korzystac z widokow Dzis, Kanban, Dashboard, Aktywnosc, Kalendarz w zakresie wlasnych zadan.
+
+### Izolacja zespolow
+
+Kazdy zasob (zadanie, projekt, tag, filtr, szablon, powiadomienie, audit log) jest sztywno powiazany z jednym zespolem przez kolumne `team_id`. Manager A zwraca HTTP 404 przy probie dostepu do zasobu zespolu B; super admin nie widzi zasobow team-scoped przez standardowe endpointy (uzywa endpointow `/admin/...`).
 
 ## Jak Uruchomic
 
@@ -479,10 +506,17 @@ Najwazniejsze endpointy:
 
 ### Auth
 
-- `POST /auth/signup` - rejestracja,
+- `POST /auth/signup` - rejestracja (zaleznie od `SIGNUP_MODE`),
+- `GET /auth/signup-info?token=...` - tryb signupu i nazwa zespolu (publiczny endpoint),
 - `POST /auth/login` - logowanie,
 - `POST /auth/logout` - wylogowanie,
-- `GET /auth/me` - aktualny uzytkownik.
+- `GET /auth/me` - aktualny uzytkownik (zawiera `team_id`, `role`, opcjonalnie `team`).
+
+Tryb rejestracji ustawia zmienna `SIGNUP_MODE`:
+
+- `disabled` - rejestracja wylaczona,
+- `invite_only` (domyslne) - wymagany jednorazowy `invite_token` od menedzera,
+- `default_team` - nowe konta laduja w zespole "Default" jako `user`.
 
 ### Users
 
@@ -565,6 +599,27 @@ Payload projektu moze zawierac `member_ids`, czyli liste czlonkow projektu:
 - `GET /reports/weekly` - raport tygodniowy,
 - `GET /activity?limit=100` - aktywnosc,
 - `GET /tasks/export/csv` - eksport CSV.
+
+### Team Invites (manager)
+
+- `GET /team/invites` - lista nieskonsumowanych zaproszen w zespole,
+- `POST /team/invites` - wygenerowanie jednorazowego tokena (`raw_token` zwracany tylko raz),
+- `DELETE /team/invites/<id>` - revoke zaproszenia.
+
+Token wazny przez `INVITE_TOKEN_TTL_DAYS` (domyslnie 7 dni). Manager nie moze wystawiac zaproszen na role `manager` (tylko `user`).
+
+### Admin (super_admin)
+
+- `GET /admin/teams` - lista zespolow z statystykami,
+- `POST /admin/teams` - utworzenie zespolu (auto-seed szablonow projektow),
+- `PUT /admin/teams/<id>` - zmiana nazwy/opisu,
+- `POST /admin/teams/<id>/archive` - archiwizacja (zwraca 403 `team_archived` przy logowaniu czlonkom),
+- `DELETE /admin/teams/<id>` - usuniecie pustego zespolu (409 `team_not_empty` jesli ma zasoby),
+- `GET /admin/teams/<id>/members` - czlonkowie zespolu,
+- `GET /admin/teams/<id>/audit` - audit log per zespol,
+- `GET /admin/audit` - globalny audit log,
+- `POST /admin/users/<id>/team` - przeniesienie uzytkownika do innego zespolu (bump session_version, wyrzuca z assignees w starym zespole, przenosi powiadomienia/filtry/aktywnosc),
+- `POST /admin/users/<id>/role` - zmiana roli (super_admin -> team_id NULL, manager/user -> team_id wymagany).
 
 ### Health
 

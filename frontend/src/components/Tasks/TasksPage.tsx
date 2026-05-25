@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import type { Task } from '@/types'
+import { isAdminRole } from '@/types'
 import { api } from '@/api/client'
 import { useToast } from '@/store/ToastContext'
 import { useAuth } from '@/store/AuthContext'
@@ -315,7 +316,7 @@ export default function TasksPage() {
             {isSearchMode ? `Wyniki wyszukiwania: ${total}` : `Wszystkie zadania: ${total}`}
           </p>
         </div>
-        {user?.role === 'admin' && (
+        {isAdminRole(user?.role) && (
           <button onClick={() => setShowCreate(true)} className="btn btn-primary btn-sm">
             <svg className="mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
@@ -378,7 +379,7 @@ export default function TasksPage() {
         <button onClick={clearFilters} className="btn btn-ghost btn-sm">Wyczyść</button>
       </div>
 
-      {user?.role === 'admin' && (
+      {isAdminRole(user?.role) && (
         <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap items-center gap-3">
             <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -473,7 +474,7 @@ export default function TasksPage() {
           </svg>
           <p className="text-lg font-medium text-gray-500 dark:text-gray-400">Brak zadań</p>
           <p className="text-sm text-gray-400 dark:text-gray-500">
-            {user?.role === 'admin' ? 'Kliknij "Nowe zadanie" aby utworzyć' : 'Nie masz przypisanych zadań'}
+            {isAdminRole(user?.role) ? 'Kliknij "Nowe zadanie" aby utworzyć' : 'Nie masz przypisanych zadań'}
           </p>
         </div>
       ) : (
@@ -484,7 +485,7 @@ export default function TasksPage() {
               task={task}
               onClick={() => setSelectedTask(task)}
               onComplete={() => void handleComplete(task.id)}
-              selectable={user?.role === 'admin'}
+              selectable={isAdminRole(user?.role)}
               selected={selectedTaskIds.has(task.id)}
               onSelectionChange={selected => toggleTaskSelection(task.id, selected)}
             />

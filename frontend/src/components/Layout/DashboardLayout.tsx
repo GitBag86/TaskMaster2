@@ -7,7 +7,7 @@ import type { NotificationItem } from '@/types'
 import type { CSSProperties } from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-const navItems = [
+const standardNavItems = [
   { label: 'Zadania', path: '/', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' },
   { label: 'Dziś', path: '/today', icon: 'M8 7V3m8 4V3m-9 8h10m-8 4h4m-8 6h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z' },
   { label: 'Projekty', path: '/projects', icon: 'M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z' },
@@ -17,11 +17,27 @@ const navItems = [
   { label: 'Aktywność', path: '/activity', icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' },
 ];
 
+const superAdminNavItems = [
+  { label: 'Zespoły', path: '/admin/teams', icon: 'M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m10-3.13a4 4 0 10-8 0 4 4 0 008 0zM7 11a4 4 0 100-8 4 4 0 000 8z' },
+  { label: 'Audyt', path: '/admin/audit', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
+];
+
+const managerNavItems = [
+  { label: 'Członkowie zespołu', path: '/team/members', icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z' },
+  { label: 'Zaproszenia', path: '/team/invites', icon: 'M16 12H8m8 0l-4-4m4 4l-4 4m8 4H4a2 2 0 01-2-2V6a2 2 0 012-2h16a2 2 0 012 2v6' },
+];
+
 export default function DashboardLayout() {
   const { user, logout } = useAuth();
   const { dark, toggle } = useTheme();
   const { connected, lastNotification } = useSocket();
   const navigate = useNavigate();
+  const canUseNotifications = user?.role !== 'super_admin';
+  const navItems = user?.role === 'super_admin'
+    ? superAdminNavItems
+    : user?.role === 'manager'
+      ? [...standardNavItems, ...managerNavItems]
+      : standardNavItems;
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
@@ -39,6 +55,11 @@ export default function DashboardLayout() {
   };
 
   const loadNotifications = useCallback(async () => {
+    if (!canUseNotifications) {
+      setNotifications([])
+      setUnreadCount(0)
+      return
+    }
     try {
       const response = await api.notifications.getAll(20)
       setNotifications(response.notifications)
@@ -47,17 +68,17 @@ export default function DashboardLayout() {
       setNotifications([])
       setUnreadCount(0)
     }
-  }, [])
+  }, [canUseNotifications])
 
   useEffect(() => {
     void loadNotifications()
   }, [loadNotifications])
 
   useEffect(() => {
-    if (!lastNotification || lastNotification.user_id !== user?.id) return
+    if (!canUseNotifications || !lastNotification || lastNotification.user_id !== user?.id) return
     setNotifications(prev => [lastNotification, ...prev.filter(item => item.id !== lastNotification.id)].slice(0, 20))
     setUnreadCount(prev => prev + (lastNotification.read ? 0 : 1))
-  }, [lastNotification, user?.id])
+  }, [canUseNotifications, lastNotification, user?.id])
 
   const updateNotificationPanelPosition = useCallback(() => {
     const button = notificationButtonRef.current
@@ -121,7 +142,9 @@ export default function DashboardLayout() {
       >
         <div className="flex h-full flex-col">
           <div className="flex h-16 items-center border-b border-border px-6">
-            <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Zadania</h1>
+            <h1 className="text-lg font-semibold text-gray-900 dark:text-white">
+              {user?.role === 'super_admin' ? 'Administracja' : 'Zadania'}
+            </h1>
           </div>
 
           <nav className="flex-1 space-y-1 px-3 py-4">
@@ -145,25 +168,6 @@ export default function DashboardLayout() {
                 {item.label}
               </NavLink>
             ))}
-
-            {user?.role === 'admin' && (
-              <NavLink
-                to="/admin"
-                onClick={() => setSidebarOpen(false)}
-                className={({ isActive }) =>
-                  `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                    isActive
-                      ? 'bg-primary/10 text-primary'
-                      : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'
-                  }`
-                }
-              >
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                </svg>
-                Użytkownicy
-              </NavLink>
-            )}
           </nav>
 
           <div className="border-t border-border p-4">
@@ -173,7 +177,9 @@ export default function DashboardLayout() {
               </div>
               <div className="flex-1 overflow-hidden">
                 <p className="truncate text-sm font-medium text-gray-900 dark:text-white">{user?.username}</p>
-                <p className="truncate text-xs text-gray-500 dark:text-gray-400">{user?.role === 'admin' ? 'Administrator' : 'Użytkownik'}</p>
+                <p className="truncate text-xs text-gray-500 dark:text-gray-400">
+                  {roleLabel(user?.role)}
+                </p>
               </div>
             </div>
           </div>
@@ -205,6 +211,7 @@ export default function DashboardLayout() {
             {/* Connection indicator */}
             <div className={`h-2 w-2 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`} title={connected ? 'Połączono' : 'Rozłączono'} />
 
+            {canUseNotifications && (
             <div className="relative">
               <button
                 ref={notificationButtonRef}
@@ -272,6 +279,7 @@ export default function DashboardLayout() {
                 </div>
               )}
             </div>
+            )}
 
             {/* Theme toggle */}
             <button onClick={toggle} className="btn btn-ghost btn-sm" title="Przełącz motyw">
@@ -299,9 +307,24 @@ export default function DashboardLayout() {
         <main className="flex-1 overflow-auto p-4 sm:p-6">
           <Outlet />
         </main>
+
+        {/* Footer */}
+        <footer className="border-t border-gray-200 dark:border-gray-800 px-4 py-3 text-center text-xs text-gray-500 dark:text-gray-400">
+          © 2026 Krzysztof Graczyk. Wszelkie prawa zastrzeżone.
+          <span className="mx-2">·</span>
+          <a href="/privacy.html" target="_blank" rel="noreferrer" className="hover:text-teal-600 dark:hover:text-teal-400">Prywatność</a>
+          <span className="mx-2">·</span>
+          <a href="/terms.html" target="_blank" rel="noreferrer" className="hover:text-teal-600 dark:hover:text-teal-400">Regulamin</a>
+        </footer>
       </div>
     </div>
   );
+}
+
+function roleLabel(role: string | undefined) {
+  if (role === 'super_admin') return 'Super Admin'
+  if (role === 'manager') return 'Administrator'
+  return 'Użytkownik'
 }
 
 function notificationTitle(type: string) {

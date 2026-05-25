@@ -1,7 +1,14 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { api } from '@/api/client'
 import { useAuth } from '@/store/AuthContext'
 import { useToast } from '@/store/ToastContext'
+
+type SignupInfo = {
+  mode: 'disabled' | 'invite_only' | 'default_team';
+  team_name?: string;
+  token_valid?: boolean;
+};
 
 export default function AuthPage() {
   const [isSignup, setIsSignup] = useState(false);
@@ -12,29 +19,75 @@ export default function AuthPage() {
   const [acceptPrivacy, setAcceptPrivacy] = useState(false);
   const [acceptMarketing, setAcceptMarketing] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [signupInfoLoading, setSignupInfoLoading] = useState(true);
+  const [signupInfo, setSignupInfo] = useState<SignupInfo | null>(null);
+  const [signupInfoError, setSignupInfoError] = useState<string | null>(null);
   const { login, signup } = useAuth();
   const { addToast } = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
+  const inviteToken = useMemo(
+    () => new URLSearchParams(location.search).get('token'),
+    [location.search],
+  );
+
+  useEffect(() => {
+    if (inviteToken) {
+      setIsSignup(true);
+    }
+
+    let cancelled = false;
+    setSignupInfoLoading(true);
+    setSignupInfoError(null);
+
+    api.signup.info(inviteToken)
+      .then(info => {
+        if (!cancelled) setSignupInfo(info);
+      })
+      .catch(err => {
+        if (cancelled) return;
+        const message = err instanceof Error ? err.message : 'Nie udało się sprawdzić rejestracji';
+        setSignupInfoError(message);
+        setSignupInfo(null);
+      })
+      .finally(() => {
+        if (!cancelled) setSignupInfoLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [inviteToken]);
+
+  const canShowSignupForm = !isSignup || (
+    signupInfo?.mode === 'default_team' ||
+    (signupInfo?.mode === 'invite_only' && Boolean(inviteToken) && signupInfo.token_valid !== false)
+  );
+
+  const signupNotice = getSignupNotice(signupInfo, inviteToken, signupInfoError);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSignup && !canShowSignupForm) return;
     setLoading(true);
     try {
       if (isSignup) {
-        await signup({
+        const createdUser = await signup({
           username: username.trim(),
           password,
           email: email.trim(),
           accept_terms: acceptTerms,
           accept_privacy: acceptPrivacy,
           accept_marketing: acceptMarketing,
+          invite_token: inviteToken,
         });
         addToast('Rejestracja pomyślna', 'success');
+        navigate(createdUser.role === 'super_admin' ? '/admin/teams' : '/');
       } else {
-        await login(username, password);
+        const loggedUser = await login(username, password);
         addToast('Logowanie pomyślne', 'success');
+        navigate(loggedUser.role === 'super_admin' ? '/admin/teams' : '/');
       }
-      navigate('/');
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Błąd autoryzacji';
       addToast(message, 'error');
@@ -56,7 +109,24 @@ export default function AuthPage() {
             </p>
           </div>
 
+          {isSignup && signupInfoLoading ? (
+            <div className="rounded-lg border border-border bg-muted/30 p-4 text-center text-sm text-muted-foreground">
+              Sprawdzanie zaproszenia...
+            </div>
+          ) : isSignup && signupNotice ? (
+            <div className={`mb-4 rounded-lg border p-4 text-sm ${
+              canShowSignupForm
+                ? 'border-primary/30 bg-primary/5 text-gray-700 dark:text-gray-300'
+                : 'border-destructive/30 bg-destructive/5 text-destructive'
+            }`}>
+              {signupNotice}
+            </div>
+          ) : null}
+
+          {(!isSignup || !signupInfoLoading) && (
           <form onSubmit={handleSubmit} className="space-y-4">
+            {canShowSignupForm && (
+            <>
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
                 Nazwa użytkownika
@@ -142,7 +212,10 @@ export default function AuthPage() {
                 </div>
               </>
             )}
+            </>
+            )}
 
+            {canShowSignupForm && (
             <button
               type="submit"
               disabled={loading}
@@ -157,7 +230,9 @@ export default function AuthPage() {
                 isSignup ? 'Zarejestruj się' : 'Zaloguj się'
               )}
             </button>
+            )}
           </form>
+          )}
 
           <div className="mt-6 text-center">
             <button
@@ -168,7 +243,37 @@ export default function AuthPage() {
             </button>
           </div>
         </div>
+
+        <div className="mt-6 text-center text-xs text-gray-500 dark:text-gray-400">
+          © 2026 Krzysztof Graczyk. Wszelkie prawa zastrzeżone.
+          <span className="mx-2">·</span>
+          <a href="/privacy.html" target="_blank" rel="noreferrer" className="hover:text-teal-600 dark:hover:text-teal-400">Prywatność</a>
+          <span className="mx-2">·</span>
+          <a href="/terms.html" target="_blank" rel="noreferrer" className="hover:text-teal-600 dark:hover:text-teal-400">Regulamin</a>
+        </div>
       </div>
     </div>
   );
+}
+
+function getSignupNotice(
+  info: SignupInfo | null,
+  token: string | null,
+  error: string | null,
+) {
+  if (error) return error;
+  if (!info) return null;
+  if (info.mode === 'disabled') {
+    return 'Rejestracja wyłączona.';
+  }
+  if (info.mode === 'invite_only' && !token) {
+    return 'Aby się zarejestrować, poproś menedżera o link.';
+  }
+  if (info.mode === 'invite_only' && info.token_valid === false) {
+    return 'Link rejestracyjny jest nieprawidłowy albo wygasł.';
+  }
+  if (info.mode === 'invite_only' && token) {
+    return `Dołączasz do zespołu: ${info.team_name ?? 'wybrany zespół'}.`;
+  }
+  return null;
 }

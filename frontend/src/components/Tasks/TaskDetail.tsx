@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ActivityLog, Task, Subtask, TaskDependency, TaskSummary } from '@/types'
+import { isAdminRole } from '@/types'
 import { api } from '@/api/client'
 import { useToast } from '@/store/ToastContext'
 import { useAuth } from '@/store/AuthContext'
@@ -59,7 +60,7 @@ export default function TaskDetail({ task, onDelete, onComplete, onUpdate, onClo
   }, [task.id])
 
   useEffect(() => {
-    if (user?.role !== 'admin') return
+    if (!isAdminRole(user?.role)) return
 
     const loadAvailableTasks = async () => {
       try {
@@ -214,7 +215,7 @@ export default function TaskDetail({ task, onDelete, onComplete, onUpdate, onClo
             <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{task.project}</p>
             <h3 className="text-xl font-semibold text-gray-900 dark:text-white">{task.title}</h3>
           </div>
-          {user?.role === 'admin' && (
+          {isAdminRole(user?.role) && (
             <button onClick={() => setIsEditing(true)} className="btn btn-secondary btn-sm">Edytuj</button>
           )}
         </div>
@@ -270,7 +271,7 @@ export default function TaskDetail({ task, onDelete, onComplete, onUpdate, onClo
                       {dependency.depends_on_task ? summaryMeta(dependency.depends_on_task) : 'Szczegóły niedostępne'}
                     </p>
                   </div>
-                  {user?.role === 'admin' && (
+                  {isAdminRole(user?.role) && (
                     <button onClick={() => void handleRemoveDependency(dependency.id)} className="text-xs font-medium text-destructive hover:underline">
                       Usuń
                     </button>
@@ -280,7 +281,7 @@ export default function TaskDetail({ task, onDelete, onComplete, onUpdate, onClo
             )}
           </div>
 
-          {user?.role === 'admin' && (
+          {isAdminRole(user?.role) && (
             <div className="mt-3 flex flex-col gap-2 sm:flex-row">
               <select
                 value={selectedDependencyId}
@@ -426,7 +427,7 @@ export default function TaskDetail({ task, onDelete, onComplete, onUpdate, onClo
           >
             {task.completed ? 'Przywróć zadanie' : 'Oznacz jako zakończone'}
           </button>
-          {user?.role === 'admin' && (
+          {isAdminRole(user?.role) && (
             <div className="flex gap-2">
               <button onClick={() => onDelete(task.id)} className="btn btn-destructive btn-sm">Usuń zadanie</button>
             </div>

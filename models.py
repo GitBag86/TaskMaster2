@@ -1,3 +1,10 @@
+"""
+TaskMaster2 — SQLAlchemy data models.
+
+Copyright © 2026 Krzysztof Graczyk. All rights reserved.
+This software is proprietary. See LICENSE for terms.
+"""
+
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timezone
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -28,8 +35,22 @@ class User(db.Model):
     privacy_accepted = db.Column(db.Boolean, nullable=False, default=False)
     marketing_consent = db.Column(db.Boolean, nullable=False, default=False)
     consented_at = db.Column(db.DateTime, nullable=True)
+    # Team workspaces (R2-R3): super_admin has team_id NULL, manager/user must have one.
+    # NOT NULL constraint + CHECK come in a later migration (Task 7) once data is backfilled.
+    # use_alter=True breaks the User<->Team circular FK at table-drop time (Team.created_by_id
+    # also references user.id), important for clean test teardown on SQLite.
+    team_id = db.Column(
+        db.Integer,
+        db.ForeignKey('team.id', name='fk_user_team_id', use_alter=True),
+        nullable=True,
+    )
+    # Bumped on team move / team archival to invalidate active sessions (R7.7, R25.3).
+    session_version = db.Column(db.Integer, nullable=False, default=0, server_default='0')
     tasks = db.relationship('Task', backref='owner', lazy=True, cascade='all, delete-orphan')
     created_at = db.Column(db.DateTime, default=utcnow)
+
+    # Backref `team` on User; backref `members` on Team. Foreign keys on team_id.
+    team = db.relationship('Team', backref=db.backref('members', lazy=True), foreign_keys=[team_id])
 
     def set_password(self, password):
         self.password = generate_password_hash(password)
@@ -37,23 +58,39 @@ class User(db.Model):
     def check_password(self, password):
         return check_password_hash(self.password, password)
 
-    def to_dict(self):
-        return {
+    # Role helpers (R2: super_admin / manager / user)
+    def is_super_admin(self) -> bool:
+        return self.role == 'super_admin'
+
+    def is_manager(self) -> bool:
+        return self.role == 'manager'
+
+    def is_team_member(self) -> bool:
+        """Manager or user — anyone bound to exactly one team."""
+        return self.role in ('manager', 'user')
+
+    def to_dict(self, expand_team: bool = False):
+        data = {
             'id': self.id,
             'username': self.username,
             'email': self.email,
             'role': self.role,
+            'team_id': self.team_id,
             'terms_accepted': self.terms_accepted,
             'privacy_accepted': self.privacy_accepted,
             'marketing_consent': self.marketing_consent,
             'consented_at': self.consented_at.isoformat() if self.consented_at else None,
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
+        if expand_team and self.team is not None:
+            data['team'] = self.team.to_dict()
+        return data
 
 class Task(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=True)
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=True)
     assignees = db.relationship('User', secondary=task_assignees, lazy='subquery',
                                backref=db.backref('assigned_tasks', lazy=True)) # New relationship
     title = db.Column(db.String(200), nullable=False)
@@ -135,6 +172,7 @@ class Task(db.Model):
 class Comment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     task_id = db.Column(db.Integer, db.ForeignKey('task.id'), nullable=False)
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=True)
     author = db.Column(db.String(100), default='Anonimowy')
     text = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=utcnow)
@@ -150,6 +188,7 @@ class Comment(db.Model):
 class Subtask(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     task_id = db.Column(db.Integer, db.ForeignKey('task.id'), nullable=False)
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=True)
     title = db.Column(db.String(200), nullable=False)
     completed = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=utcnow)
@@ -165,6 +204,7 @@ class Subtask(db.Model):
 class Tag(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=True)
     name = db.Column(db.String(50), nullable=False)
     color = db.Column(db.String(7), default='#667eea')
     created_at = db.Column(db.DateTime, default=utcnow)
@@ -183,6 +223,7 @@ Task.tags = db.relationship('Tag', secondary=task_tags, lazy='subquery',
 class SavedFilter(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=True)
     name = db.Column(db.String(100), nullable=False)
     filters = db.Column(db.JSON, nullable=False)
     created_at = db.Column(db.DateTime, default=utcnow)
@@ -194,6 +235,7 @@ class ActivityLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     task_id = db.Column(db.Integer, db.ForeignKey('task.id'))
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=True)
     action = db.Column(db.String(50), nullable=False)
     details = db.Column(db.JSON)
     created_at = db.Column(db.DateTime, default=utcnow)
@@ -211,6 +253,7 @@ class ActivityLog(db.Model):
 class RecurringTask(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     task_id = db.Column(db.Integer, db.ForeignKey('task.id'), nullable=False)
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=True)
     frequency = db.Column(db.String(20), nullable=False)
     interval = db.Column(db.Integer, default=1)
     end_date = db.Column(db.Date, nullable=True)
@@ -229,6 +272,7 @@ class RecurringTask(db.Model):
 class TaskTemplate(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=True)
     name = db.Column(db.String(200), nullable=False)
     description = db.Column(db.String(500))
     template_data = db.Column(db.JSON, nullable=False)
@@ -246,6 +290,7 @@ class TaskDependency(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     task_id = db.Column(db.Integer, db.ForeignKey('task.id'), nullable=False)
     depends_on_task_id = db.Column(db.Integer, db.ForeignKey('task.id'), nullable=False)
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=True)
     created_at = db.Column(db.DateTime, default=utcnow)
     task = db.relationship('Task', foreign_keys=[task_id], back_populates='dependencies')
     depends_on_task = db.relationship('Task', foreign_keys=[depends_on_task_id], back_populates='dependent_links')
@@ -263,6 +308,7 @@ class CustomField(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     task_id = db.Column(db.Integer, db.ForeignKey('task.id'), nullable=False)
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=True)
     field_name = db.Column(db.String(100), nullable=False)
     field_value = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=utcnow)
@@ -279,6 +325,7 @@ class Notification(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     task_id = db.Column(db.Integer, db.ForeignKey('task.id'), nullable=True)
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=True)
     actor = db.Column(db.String(100), nullable=True)
     type = db.Column(db.String(50), nullable=False)
     message = db.Column(db.String(300), nullable=False)
@@ -302,11 +349,16 @@ class Notification(db.Model):
 
 class Project(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), unique=True, nullable=False)
+    # Pre-team-workspaces: name was globally unique. Post Task 7 (migration 002):
+    # uniqueness is per-team via the partial functional index uq_project_team_name_lower.
+    # The Python-side unique=True is removed so create_all() in tests doesn't
+    # build the now-incorrect global UNIQUE.
+    name = db.Column(db.String(100), nullable=False)
     description = db.Column(db.String(500), default='')
     color = db.Column(db.String(7), default='#3b82f6')
     archived = db.Column(db.Boolean, nullable=False, default=False)
     created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=True)
     created_at = db.Column(db.DateTime, default=utcnow)
     members = db.relationship('User', secondary=project_members, lazy='subquery',
                               backref=db.backref('member_projects', lazy=True))
@@ -326,3 +378,182 @@ class Project(db.Model):
         if include_tasks:
             data['tasks'] = [task.to_dict() for task in self.tasks]
         return data
+
+
+
+# ============================================================
+# Team workspaces (multi-tenancy)
+# Wprowadzone w ramach feature/team-workspaces.
+# Zobacz .kiro/specs/team-workspaces/ dla pełnego kontekstu.
+# ============================================================
+
+class Team(db.Model):
+    """Workspace owning a disjoint set of users, tasks, projects, etc.
+
+    Identified by a unique non-archived name (case-insensitive).
+    See requirements R1, design 3.1.
+    """
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(80), nullable=False)
+    slug = db.Column(db.String(80), unique=True, nullable=False)
+    description = db.Column(db.String(500), nullable=False, default='', server_default='')
+    archived = db.Column(db.Boolean, nullable=False, default=False, server_default=db.text('false'))
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=utcnow)
+
+    def to_dict(self, include_stats: bool = False) -> dict:
+        data = {
+            'id': self.id,
+            'name': self.name,
+            'slug': self.slug,
+            'description': self.description or '',
+            'archived': self.archived,
+            'created_by_id': self.created_by_id,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+        if include_stats:
+            # Counts loaded on demand. The `members` relationship is added later
+            # via User.team backref (Task 3). Until then count returns 0 (no
+            # team_id column on User yet). After Task 3 the same code keeps working
+            # because `members` will exist as a relationship attribute.
+            members = getattr(self, 'members', None)
+            data['stats'] = {
+                'members': len(members) if members else 0,
+            }
+        return data
+
+
+class TeamInvite(db.Model):
+    """Single-use invite token issued by a manager to onboard a team member.
+
+    Stored as SHA-256 hash; raw token returned only once at creation time.
+    See requirements R8, design 8.1.
+    """
+
+    __tablename__ = 'team_invite'
+
+    id = db.Column(db.Integer, primary_key=True)
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id', ondelete='CASCADE'), nullable=False)
+    token_hash = db.Column(db.String(64), unique=True, nullable=False)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=utcnow)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    consumed_at = db.Column(db.DateTime, nullable=True)
+    consumed_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    default_role = db.Column(db.String(20), nullable=False, default='user', server_default='user')
+
+    team = db.relationship('Team', backref=db.backref('invites', lazy=True, cascade='all, delete-orphan'))
+
+    def is_active(self) -> bool:
+        """True only if not consumed and not expired.
+
+        Compares in naive UTC because SQLite strips timezone info on read;
+        Postgres stores TIMESTAMPTZ but Flask-SQLAlchemy's default Python type
+        also gives naive on read for plain DateTime columns.
+        """
+        if self.consumed_at is not None:
+            return False
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        expires = self.expires_at
+        if expires.tzinfo is not None:
+            expires = expires.astimezone(timezone.utc).replace(tzinfo=None)
+        return expires > now
+
+    def to_dict(self, include_token: str | None = None) -> dict:
+        """Serialize. `include_token` (raw, plain) only passed at creation time."""
+        data = {
+            'id': self.id,
+            'team_id': self.team_id,
+            'created_by_id': self.created_by_id,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'expires_at': self.expires_at.isoformat() if self.expires_at else None,
+            'consumed_at': self.consumed_at.isoformat() if self.consumed_at else None,
+            'consumed_by_id': self.consumed_by_id,
+            'default_role': self.default_role,
+            'active': self.is_active(),
+        }
+        if include_token is not None:
+            data['token'] = include_token  # raw, plaintext - never persisted
+        return data
+
+
+class TeamAuditLog(db.Model):
+    """Audit trail for super-admin team-management operations.
+
+    Visible only to super-admin (R26.3); not part of any team-scoped feed.
+    Actions follow `<entity>.<verb>` convention: 'team.create', 'team.archive',
+    'user.move', 'user.role_change', 'invite.generate', 'invite.revoke', etc.
+    """
+
+    __tablename__ = 'team_audit_log'
+
+    id = db.Column(db.Integer, primary_key=True)
+    actor_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    action = db.Column(db.String(50), nullable=False)
+    target_team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=True)
+    target_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    source_team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=True)
+    details = db.Column(db.JSON, nullable=True)
+    created_at = db.Column(db.DateTime, default=utcnow)
+
+    actor = db.relationship('User', foreign_keys=[actor_id])
+    target_user = db.relationship('User', foreign_keys=[target_user_id])
+    target_team = db.relationship('Team', foreign_keys=[target_team_id])
+    source_team = db.relationship('Team', foreign_keys=[source_team_id])
+
+    def to_dict(self) -> dict:
+        return {
+            'id': self.id,
+            'actor_id': self.actor_id,
+            'actor': self.actor.username if self.actor else None,
+            'action': self.action,
+            'target_team_id': self.target_team_id,
+            'target_user_id': self.target_user_id,
+            'source_team_id': self.source_team_id,
+            'details': self.details,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+
+class ProjectTemplate(db.Model):
+    """Per-team copy of a project template, seeded from PROJECT_TEMPLATE_CATALOGUE.
+
+    See requirements R17, design 7. Different from `TaskTemplate` (per-user
+    snippets for individual tasks). Managers may edit/delete their team's copies
+    independently — edits do not propagate to other teams or to the catalogue.
+
+    `source_catalogue_key` keeps a link to the original entry so we can later
+    detect "team-customized vs pristine seed". NULL when a manager creates a
+    template from scratch.
+    """
+
+    __tablename__ = 'project_template'
+
+    id = db.Column(db.Integer, primary_key=True)
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=False)
+    source_catalogue_key = db.Column(db.String(50), nullable=True)
+    name = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.String(500), nullable=False, default='', server_default='')
+    color = db.Column(db.String(7), nullable=False, default='#3b82f6', server_default='#3b82f6')
+    payload = db.Column(db.JSON, nullable=False)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=utcnow)
+    updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow)
+
+    team = db.relationship('Team', backref=db.backref('project_templates', lazy=True, cascade='all, delete-orphan'))
+
+    def to_dict(self) -> dict:
+        return {
+            'id': self.id,
+            'team_id': self.team_id,
+            'source_catalogue_key': self.source_catalogue_key,
+            'name': self.name,
+            'description': self.description or '',
+            'color': self.color,
+            'payload': self.payload,
+            'created_by_id': self.created_by_id,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
