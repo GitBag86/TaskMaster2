@@ -11,6 +11,7 @@ from models import (
     Notification,
     Project,
     ProjectTemplate,
+    RecurringTask,
     SavedFilter,
     Subtask,
     Tag,
@@ -24,10 +25,12 @@ from models import (
     db,
     project_members,
     task_assignees,
+    task_tags,
 )
 from routes import admin_bp
 from schemas import AdminUserCreateSchema
 from utils.auth_decorators import require_super_admin
+from utils.delete_helpers import prepare_task_for_delete
 from utils.errors import TeamNotEmptyError
 
 
@@ -181,6 +184,11 @@ def _purge_user_data(user):
     Mirrors routes.users.delete_user but works for super_admin (no team scope)
     and is shared between user-delete and team cascade-delete.
     """
+    owned_tasks = Task.query.filter_by(user_id=user.id).all()
+    for task in owned_tasks:
+        prepare_task_for_delete(task)
+        db.session.delete(task)
+
     db.session.execute(
         task_assignees.delete().where(task_assignees.c.user_id == user.id)
     )
@@ -201,6 +209,8 @@ def _cascade_purge_team(team):
     Order matters because of FK constraints: child rows go before their parents.
     """
     user_ids = [user.id for user in User.query.filter_by(team_id=team.id).all()]
+    task_ids = [task.id for task in Task.query.filter_by(team_id=team.id).all()]
+    tag_ids = [tag.id for tag in Tag.query.filter_by(team_id=team.id).all()]
 
     # Detach m2m rows tied to team users so user deletes don't trip on FK.
     if user_ids:
@@ -210,10 +220,22 @@ def _cascade_purge_team(team):
         db.session.execute(
             project_members.delete().where(project_members.c.user_id.in_(user_ids))
         )
+    if task_ids:
+        db.session.execute(
+            task_assignees.delete().where(task_assignees.c.task_id.in_(task_ids))
+        )
+        db.session.execute(
+            task_tags.delete().where(task_tags.c.task_id.in_(task_ids))
+        )
+    if tag_ids:
+        db.session.execute(
+            task_tags.delete().where(task_tags.c.tag_id.in_(tag_ids))
+        )
 
     Notification.query.filter_by(team_id=team.id).delete(synchronize_session=False)
     ActivityLog.query.filter_by(team_id=team.id).delete(synchronize_session=False)
     CustomField.query.filter_by(team_id=team.id).delete(synchronize_session=False)
+    RecurringTask.query.filter_by(team_id=team.id).delete(synchronize_session=False)
     TaskDependency.query.filter_by(team_id=team.id).delete(synchronize_session=False)
     Comment.query.filter_by(team_id=team.id).delete(synchronize_session=False)
     Subtask.query.filter_by(team_id=team.id).delete(synchronize_session=False)
@@ -271,10 +293,11 @@ def delete_team(team_id):
     if cascade:
         _cascade_purge_team(team)
 
+    TeamAuditLog.query.filter_by(target_team_id=team.id).update({"target_team_id": None})
+    TeamAuditLog.query.filter_by(source_team_id=team.id).update({"source_team_id": None})
     add_audit(
         "team.delete",
-        target_team_id=team.id,
-        details={"name": team.name, "cascade": cascade, "removed": counts if cascade else {}},
+        details={"team_id": team.id, "name": team.name, "cascade": cascade, "removed": counts if cascade else {}},
     )
     db.session.delete(team)
     db.session.commit()

@@ -322,5 +322,7 @@ def test_super_admin_cascade_deletes_team_with_resources(client, app):
         assert db.session.get(User, member_id) is None
         assert Task.query.filter_by(team_id=team_id).count() == 0
         assert Notification.query.filter_by(team_id=team_id).count() == 0
-        audit = TeamAuditLog.query.filter_by(action="team.delete", target_team_id=team_id).one()
+        audit = TeamAuditLog.query.filter_by(action="team.delete").one()
+        assert audit.target_team_id is None
+        assert audit.details.get("team_id") == team_id
         assert audit.details.get("cascade") is True

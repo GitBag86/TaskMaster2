@@ -4,15 +4,24 @@ from routes import users_bp
 from models import (
     ActivityLog,
     CustomField,
+    Project,
+    ProjectTemplate,
+    Notification,
     SavedFilter,
     Tag,
+    Task,
+    TeamAuditLog,
+    TeamInvite,
     TaskTemplate,
     User,
     db,
+    project_members,
     task_assignees,
+    task_tags,
 )
 from routes.auth import login_required
 from schemas import AdminUserCreateSchema
+from utils.delete_helpers import prepare_task_for_delete
 
 
 def current_admin_or_error(action):
@@ -121,10 +130,31 @@ def delete_user(target_user_id):
         return jsonify({"error": "Nie można usunąć ostatniego administratora"}), 400
 
     username = target_user.username
+    owned_tasks = Task.query.filter_by(user_id=target_user.id).all()
+    for task in owned_tasks:
+        prepare_task_for_delete(task)
+        db.session.delete(task)
+
     db.session.execute(
         task_assignees.delete().where(task_assignees.c.user_id == target_user.id)
     )
+    db.session.execute(
+        project_members.delete().where(project_members.c.user_id == target_user.id)
+    )
+    db.session.execute(
+        task_tags.delete().where(
+            task_tags.c.tag_id.in_(
+                db.session.query(Tag.id).filter(Tag.user_id == target_user.id)
+            )
+        )
+    )
     ActivityLog.query.filter_by(user_id=target_user.id).update({"user_id": None})
+    Notification.query.filter_by(user_id=target_user.id).delete()
+    Project.query.filter_by(created_by_id=target_user.id).update({"created_by_id": None})
+    ProjectTemplate.query.filter_by(created_by_id=target_user.id).update({"created_by_id": None})
+    TeamInvite.query.filter_by(created_by_id=target_user.id).update({"created_by_id": None})
+    TeamInvite.query.filter_by(consumed_by_id=target_user.id).update({"consumed_by_id": None})
+    TeamAuditLog.query.filter_by(target_user_id=target_user.id).update({"target_user_id": None})
     SavedFilter.query.filter_by(user_id=target_user.id).delete()
     Tag.query.filter_by(user_id=target_user.id).delete()
     TaskTemplate.query.filter_by(user_id=target_user.id).delete()

@@ -6,7 +6,18 @@ from marshmallow import ValidationError
 from sqlalchemy.orm import selectinload, joinedload
 from extensions import socketio
 from routes import tasks_bp
-from models import db, User, Task, Comment, Subtask, ActivityLog, Tag, Project, ProjectTemplate, TaskDependency
+from models import (
+    db,
+    User,
+    Task,
+    Comment,
+    Subtask,
+    ActivityLog,
+    Tag,
+    Project,
+    ProjectTemplate,
+    TaskDependency,
+)
 from schemas import TaskSchema, CommentSchema, SubtaskSchema, ProjectSchema, DependencySchema
 from routes.auth import login_required
 from utils.email_sender import (
@@ -19,6 +30,7 @@ from utils.email_sender import (
 )
 from utils.notifications import create_notification, emit_notifications
 from utils.project_template_catalogue import PROJECT_TEMPLATE_CATALOGUE
+from utils.delete_helpers import prepare_task_for_delete
 from utils.errors import CrossTeamReferenceError
 from utils.scoping import get_team_resource_or_404, team_scoped
 
@@ -959,6 +971,7 @@ def delete_task(task_id):
     project = task.project_record
     task_recipients = task_email_users(task)
     task_snapshot = task.to_dict()
+    prepare_task_for_delete(task)
     db.session.delete(task)
     db.session.commit()
 
@@ -1559,6 +1572,7 @@ def bulk_delete_tasks():
         if task is not None and task.team_id != g.get('current_team_id'):
             raise CrossTeamReferenceError()
         if task:
+            prepare_task_for_delete(task)
             db.session.delete(task)
             count += 1
 

@@ -1,7 +1,19 @@
 import sqlite3
 from datetime import date, timedelta
 
-from models import db, Team, User, Task, Project, Tag, TaskDependency, ActivityLog, Notification
+from models import (
+    ActivityLog,
+    CustomField,
+    Notification,
+    Project,
+    RecurringTask,
+    Tag,
+    Task,
+    TaskDependency,
+    Team,
+    User,
+    db,
+)
 from utils.email_sender import get_task_assignment_body, send_email
 
 
@@ -810,6 +822,45 @@ def test_admin_can_delete_user(auth_client, app):
     with app.app_context():
         assert db.session.get(User, target_id) is None
 
+def test_admin_can_delete_user_with_owned_task_and_related_rows(auth_client, app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").first()
+        target = User(
+            username="delete_related",
+            email="delete_related@example.com",
+            role="user",
+            team_id=admin.team_id,
+        )
+        target.set_password("password")
+        db.session.add(target)
+        db.session.flush()
+        task = Task(user_id=target.id, title="Owned by deleted user", team_id=admin.team_id)
+        tag = Tag(user_id=target.id, team_id=admin.team_id, name="User tag")
+        db.session.add_all([task, tag])
+        db.session.flush()
+        task.tags.append(tag)
+        db.session.add_all([
+            ActivityLog(user_id=target.id, task_id=task.id, team_id=admin.team_id, action="created"),
+            CustomField(user_id=target.id, task_id=task.id, team_id=admin.team_id, field_name="x"),
+            Notification(user_id=target.id, task_id=task.id, team_id=admin.team_id, type="info", message="Hi"),
+            RecurringTask(task_id=task.id, team_id=admin.team_id, frequency="daily"),
+        ])
+        db.session.commit()
+        target_id = target.id
+        task_id = task.id
+
+    response = auth_client.delete(f'/users/{target_id}')
+
+    assert response.status_code == 200
+    with app.app_context():
+        assert db.session.get(User, target_id) is None
+        assert db.session.get(Task, task_id) is None
+        assert ActivityLog.query.filter_by(user_id=target_id).count() == 0
+        assert ActivityLog.query.filter_by(task_id=task_id).count() == 0
+        assert Notification.query.filter_by(user_id=target_id).count() == 0
+        assert CustomField.query.filter_by(user_id=target_id).count() == 0
+        assert RecurringTask.query.filter_by(task_id=task_id).count() == 0
+
 def test_admin_cannot_delete_self_or_last_admin(auth_client, app):
     with app.app_context():
         admin = User.query.filter_by(username="admin").first()
@@ -1062,6 +1113,30 @@ def test_delete_task_emits_snapshot_event(auth_client, monkeypatch):
     assert emitted["payload"]["action"] == "deleted"
     assert emitted["payload"]["task_id"] == task_id
     assert emitted["payload"]["task"]["title"] == "Delete me"
+
+def test_delete_task_clears_postgres_fk_dependents(auth_client, app):
+    created = auth_client.post('/tasks', json={"title": "Delete with dependents"})
+    task_id = created.get_json()["id"]
+
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").first()
+        db.session.add_all([
+            ActivityLog(user_id=admin.id, task_id=task_id, team_id=admin.team_id, action="created"),
+            CustomField(user_id=admin.id, task_id=task_id, team_id=admin.team_id, field_name="x"),
+            Notification(user_id=admin.id, task_id=task_id, team_id=admin.team_id, type="info", message="Hi"),
+            RecurringTask(task_id=task_id, team_id=admin.team_id, frequency="daily"),
+        ])
+        db.session.commit()
+
+    deleted = auth_client.delete(f'/tasks/{task_id}')
+
+    assert deleted.status_code == 200
+    with app.app_context():
+        assert db.session.get(Task, task_id) is None
+        assert CustomField.query.filter_by(task_id=task_id).count() == 0
+        assert RecurringTask.query.filter_by(task_id=task_id).count() == 0
+        assert ActivityLog.query.filter_by(task_id=task_id).count() == 0
+        assert Notification.query.filter_by(task_id=task_id).count() == 0
 
 def test_bulk_complete_emits_socket_event(auth_client, monkeypatch):
     first = auth_client.post('/tasks', json={"title": "Bulk complete 1"}).get_json()
