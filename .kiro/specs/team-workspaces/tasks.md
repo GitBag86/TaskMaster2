@@ -270,7 +270,7 @@ Estymacja: ~8.5 dnia roboczego, +30% rezerwy = ~11 dni.
   - Done: manager flow zaproszeń kompletny.
   - _Refs: R7, R8, design 8, 11.4_
 
-- [ ] 19. Signup z tokenem (rozszerzenie AuthPage)
+- [x] 19. Signup z tokenem (rozszerzenie AuthPage)
   - `frontend/src/components/Auth/AuthPage.tsx`:
     - On mount: parse `?token=...`. Call `api.signup.info(token)`.
     - `mode='disabled'` → "Rejestracja wyłączona", ukryj formularz.
