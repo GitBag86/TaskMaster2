@@ -15,6 +15,11 @@ export default function TeamDetailPage() {
   const [loading, setLoading] = useState(true);
   const [actionKey, setActionKey] = useState<string | null>(null);
   const [moveTargets, setMoveTargets] = useState<Record<number, string>>({});
+  const [newUsername, setNewUsername] = useState('');
+  const [newEmail, setNewEmail] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [newRole, setNewRole] = useState<'user' | 'manager'>('user');
+  const [creating, setCreating] = useState(false);
   const { addToast } = useToast();
 
   const moveOptions = useMemo(
@@ -100,6 +105,30 @@ export default function TeamDetailPage() {
     }
   };
 
+  const handleCreateMember = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!team || team.archived) return;
+    setCreating(true);
+    try {
+      await api.teams.addMember(team.id, {
+        username: newUsername.trim(),
+        email: newEmail.trim(),
+        password: newPassword,
+        role: newRole,
+      });
+      addToast('Użytkownik dodany do zespołu', 'success');
+      setNewUsername('');
+      setNewEmail('');
+      setNewPassword('');
+      setNewRole('user');
+      await loadTeam();
+    } catch (err: unknown) {
+      addToast(err instanceof Error ? err.message : 'Błąd dodawania użytkownika', 'error');
+    } finally {
+      setCreating(false);
+    }
+  };
+
   if (loading) return <AdminSkeleton />;
 
   return (
@@ -126,6 +155,57 @@ export default function TeamDetailPage() {
           </div>
         )}
       </div>
+
+      <section className="card overflow-hidden">
+        <div className="border-b border-border p-4">
+          <h3 className="font-semibold text-gray-900 dark:text-white">Dodaj członka</h3>
+          <p className="text-sm text-muted-foreground">Utwórz konto i przypisz je do tego zespołu.</p>
+        </div>
+        <form onSubmit={handleCreateMember} className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-[1fr_1fr_1fr_180px_auto]">
+          <input
+            type="text"
+            value={newUsername}
+            onChange={e => setNewUsername(e.target.value)}
+            className="input"
+            placeholder="Nazwa użytkownika"
+            minLength={3}
+            required
+          />
+          <input
+            type="email"
+            value={newEmail}
+            onChange={e => setNewEmail(e.target.value)}
+            className="input"
+            placeholder="E-mail"
+            required
+          />
+          <input
+            type="password"
+            value={newPassword}
+            onChange={e => setNewPassword(e.target.value)}
+            className="input"
+            placeholder="Hasło"
+            minLength={6}
+            required
+          />
+          <select value={newRole} onChange={e => setNewRole(e.target.value as 'user' | 'manager')} className="input">
+            <option value="user">Użytkownik</option>
+            <option value="manager">Manager</option>
+          </select>
+          <button
+            type="submit"
+            disabled={creating || (team?.archived ?? false)}
+            className="btn btn-primary whitespace-nowrap"
+          >
+            {creating ? 'Dodawanie...' : 'Dodaj'}
+          </button>
+        </form>
+        {team?.archived && (
+          <p className="px-4 pb-4 text-sm text-amber-600 dark:text-amber-400">
+            Nie można dodawać członków do zarchiwizowanego zespołu.
+          </p>
+        )}
+      </section>
 
       <section className="card overflow-hidden">
         <div className="border-b border-border p-4">

@@ -46,6 +46,12 @@ def create_user():
     if error:
         return error, status
 
+    if g.get('current_role') == 'super_admin':
+        return jsonify({
+            "error": "Super admin nie tworzy użytkowników bezpośrednio. Użyj /admin/teams/<id>/members.",
+            "code": "use_admin_endpoint",
+        }), 400
+
     schema = AdminUserCreateSchema()
     try:
         validated = schema.load(request.get_json() or {})

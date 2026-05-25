@@ -134,3 +134,96 @@ def test_super_admin_changes_user_role_with_validation(client, app):
 
     invalid = client.post(f"/admin/users/{user_id}/role", json={"role": "owner"})
     assert invalid.status_code == 400
+
+
+def test_super_admin_creates_team_member(client, app):
+    with app.app_context():
+        team = make_team("People")
+        super_admin = make_user("create_root", role="super_admin")
+        db.session.commit()
+        login_as(client, super_admin)
+        team_id = team.id
+
+    response = client.post(
+        f"/admin/teams/{team_id}/members",
+        json={
+            "username": "new_member",
+            "email": "new_member@example.com",
+            "password": "haslo123",
+            "role": "user",
+        },
+    )
+    assert response.status_code == 201
+    payload = response.get_json()["user"]
+    assert payload["username"] == "new_member"
+    assert payload["role"] == "user"
+    assert payload["team_id"] == team_id
+
+    with app.app_context():
+        created = User.query.filter_by(username="new_member").one()
+        assert created.team_id == team_id
+        assert created.role == "user"
+        audit = TeamAuditLog.query.filter_by(action="user.create", target_user_id=created.id).one()
+        assert audit.target_team_id == team_id
+
+
+def test_super_admin_create_member_rejects_duplicate_username(client, app):
+    with app.app_context():
+        team = make_team("Dupes")
+        super_admin = make_user("dup_root", role="super_admin")
+        make_user("existing", team_id=team.id)
+        db.session.commit()
+        login_as(client, super_admin)
+        team_id = team.id
+
+    response = client.post(
+        f"/admin/teams/{team_id}/members",
+        json={
+            "username": "existing",
+            "email": "other@example.com",
+            "password": "haslo123",
+            "role": "user",
+        },
+    )
+    assert response.status_code == 400
+
+
+def test_super_admin_create_member_rejects_archived_team(client, app):
+    with app.app_context():
+        team = make_team("Archived")
+        team.archived = True
+        super_admin = make_user("arch_root", role="super_admin")
+        db.session.commit()
+        login_as(client, super_admin)
+        team_id = team.id
+
+    response = client.post(
+        f"/admin/teams/{team_id}/members",
+        json={
+            "username": "no_one",
+            "email": "no_one@example.com",
+            "password": "haslo123",
+            "role": "user",
+        },
+    )
+    assert response.status_code == 403
+    assert response.get_json().get("code") == "team_archived"
+
+
+def test_super_admin_post_users_redirects_to_admin_endpoint(client, app):
+    with app.app_context():
+        super_admin = make_user("legacy_root", role="super_admin")
+        db.session.commit()
+        login_as(client, super_admin)
+
+    response = client.post(
+        "/users",
+        json={
+            "username": "should_fail",
+            "email": "should_fail@example.com",
+            "password": "haslo123",
+            "role": "user",
+        },
+    )
+    assert response.status_code == 400
+    assert response.get_json().get("code") == "use_admin_endpoint"

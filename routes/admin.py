@@ -1,6 +1,7 @@
 import re
 
 from flask import g, jsonify, request
+from marshmallow import ValidationError
 from sqlalchemy import func
 
 from models import (
@@ -25,6 +26,7 @@ from models import (
     task_assignees,
 )
 from routes import admin_bp
+from schemas import AdminUserCreateSchema
 from utils.auth_decorators import require_super_admin
 from utils.errors import TeamNotEmptyError
 
@@ -198,6 +200,54 @@ def team_members(team_id):
         return jsonify({"error": "Zespół nie znaleziony"}), 404
     users = User.query.filter_by(team_id=team.id).order_by(User.username.asc()).all()
     return jsonify({"team": team.to_dict(), "members": [user.to_dict() for user in users]})
+
+
+@admin_bp.route("/admin/teams/<int:team_id>/members", methods=["POST"])
+@require_super_admin
+def create_team_member(team_id):
+    team = db.session.get(Team, team_id)
+    if not team:
+        return jsonify({"error": "Zespół nie znaleziony"}), 404
+    if team.archived:
+        return jsonify({"error": "Zespół jest zarchiwizowany", "code": "team_archived"}), 403
+
+    schema = AdminUserCreateSchema()
+    try:
+        validated = schema.load(request.get_json() or {})
+    except ValidationError as err:
+        return jsonify({"error": err.messages}), 400
+
+    username = validated["username"].strip()
+    email = validated["email"].strip().lower()
+
+    if User.query.filter_by(username=username).first():
+        return jsonify({"error": "Użytkownik o tej nazwie już istnieje"}), 400
+    if User.query.filter_by(email=email).first():
+        return jsonify({"error": "Użytkownik z tym adresem e-mail już istnieje"}), 400
+
+    role = "manager" if validated["role"] == "admin" else validated["role"]
+    if role == "super_admin":
+        return jsonify({"error": "Super admin nie może być przypisany do zespołu"}), 400
+
+    new_user = User(
+        username=username,
+        email=email,
+        role=role,
+        team_id=team.id,
+    )
+    new_user.set_password(validated["password"])
+    db.session.add(new_user)
+    db.session.flush()
+
+    add_audit(
+        "user.create",
+        target_team_id=team.id,
+        target_user_id=new_user.id,
+        details={"username": new_user.username, "role": new_user.role},
+    )
+    db.session.commit()
+
+    return jsonify({"user": new_user.to_dict(expand_team=True)}), 201
 
 
 @admin_bp.route("/admin/teams/<int:team_id>/audit", methods=["GET"])

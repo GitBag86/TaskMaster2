@@ -256,6 +256,14 @@ export const api = {
       request<void>(`/admin/teams/${id}`, { method: 'DELETE' }),
     members: (id: number) =>
       request<{ team: Team; members: User[] }>(`/admin/teams/${id}/members`),
+    addMember: (
+      id: number,
+      data: { username: string; email: string; password: string; role: 'user' | 'manager' },
+    ) =>
+      request<{ user: User }>(`/admin/teams/${id}/members`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
     audit: (id: number) =>
       request<{ audit: TeamAuditEntry[] }>(`/admin/teams/${id}/audit`),
     globalAudit: () =>
