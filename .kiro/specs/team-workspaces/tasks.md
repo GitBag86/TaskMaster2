@@ -217,7 +217,7 @@ Estymacja: ~8.5 dnia roboczego, +30% rezerwy = ~11 dni.
   - Done: emit używa room arg, manualny test (dwie przeglądarki, różne teamy, brak cross-leak).
   - _Refs: R22, design 5_
 
-- [ ] 14. Cross-team isolation parametrized tests
+- [x] 14. Cross-team isolation parametrized tests
   - Stwórz `tests/test_cross_team_isolation.py`.
   - Fixtures: `team_a`, `team_b`, `manager_a_client`, `user_a_client`, `manager_b_client`, `super_admin_client` zgodnie z design 14.1.
   - Seed factory: `seed_team_resources(team)` tworzy 1 task, 1 project, 1 tag, 1 saved_filter, 1 task_template, 1 notification, 1 activity entry, 1 custom_field, 1 task_dependency.
@@ -282,7 +282,7 @@ Estymacja: ~8.5 dnia roboczego, +30% rezerwy = ~11 dni.
   - Done: signup z linkiem od managera kończy się utworzeniem usera w odpowiednim teamie.
   - _Refs: R8, design 8.4_
 
-- [ ] 20. Audit endpoints + super_admin admin endpoints
+- [x] 20. Audit endpoints + super_admin admin endpoints
   - Stwórz `routes/admin.py` z endpointami z design 12.1:
     - `GET/POST /admin/teams`, `PUT /admin/teams/{id}`, `POST /admin/teams/{id}/archive`, `DELETE /admin/teams/{id}` (sprawdza `team_not_empty` — count członków + count team-scoped resources, jeśli > 0 → 409).
     - `GET /admin/teams/{id}/members`, `GET /admin/teams/{id}/audit`.

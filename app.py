@@ -52,8 +52,9 @@ def _configure_app(app):
 
 
 def _register_blueprints(app):
-    from routes import auth_bp, filters_bp, invites_bp, notifications_bp, stats_bp, tasks_bp, users_bp
+    from routes import admin_bp, auth_bp, filters_bp, invites_bp, notifications_bp, stats_bp, tasks_bp, users_bp
 
+    app.register_blueprint(admin_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(users_bp)
     app.register_blueprint(tasks_bp)
@@ -134,6 +135,7 @@ def _register_routes(app):
             "dependencies",
             "subtasks",
             "notifications",
+            "admin",
             "team",
             "socket.io",
             "version",

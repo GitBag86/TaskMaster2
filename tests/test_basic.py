@@ -792,7 +792,13 @@ def test_regular_user_cannot_manage_users(user_client):
 def test_admin_can_delete_user(auth_client, app):
     with app.app_context():
         from models import db
-        target = User(username="delete_me", email="delete_me@example.com", role="user")
+        admin = User.query.filter_by(username="admin").first()
+        target = User(
+            username="delete_me",
+            email="delete_me@example.com",
+            role="user",
+            team_id=admin.team_id,
+        )
         target.set_password("password")
         db.session.add(target)
         db.session.commit()

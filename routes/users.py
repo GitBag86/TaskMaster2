@@ -32,7 +32,10 @@ def get_users():
     if error:
         return error, status
 
-    users = User.query.all()
+    if g.get('current_role') == 'super_admin':
+        users = []
+    else:
+        users = User.query.filter_by(team_id=g.get('current_team_id')).all()
     return jsonify({"users": [u.to_dict() for u in users]})
 
 
@@ -73,7 +76,7 @@ def update_user_role(target_user_id):
         return error, status
 
     target_user = db.session.get(User, target_user_id)
-    if not target_user:
+    if not target_user or target_user.team_id != g.get('current_team_id'):
         return jsonify({"error": "Użytkownik nie znaleziony"}), 404
 
     data = request.get_json() or {}
@@ -102,7 +105,7 @@ def delete_user(target_user_id):
         return error, status
 
     target_user = db.session.get(User, target_user_id)
-    if not target_user:
+    if not target_user or target_user.team_id != g.get('current_team_id'):
         return jsonify({"error": "Użytkownik nie znaleziony"}), 404
 
     if target_user.id == user.id:
