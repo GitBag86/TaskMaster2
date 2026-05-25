@@ -254,7 +254,7 @@ Estymacja: ~8.5 dnia roboczego, +30% rezerwy = ~11 dni.
   - Done: każda rola widzi swój widok, brak linków do nieautoryzowanych.
   - _Refs: R2, design 11.4, 11.5_
 
-- [ ] 17. TeamsAdminPage + TeamDetailPage (super_admin)
+- [x] 17. TeamsAdminPage + TeamDetailPage (super_admin)
   - `frontend/src/components/Admin/TeamsAdminPage.tsx`: lista zespołów (api.teams.list()), kolumny name/members/archived/created_at. Akcje: Create, Rename, Archive, Delete (handluje 409 `team_not_empty`).
   - `frontend/src/components/Admin/TeamDetailPage.tsx`: header z archive toggle. Lista członków (api.teams.members(id)). Akcje per user: promote/demote (PUT /admin/users/{id}/role), move to team (POST /admin/users/{id}/team). Sekcja audit log.
   - Routing: `/admin/teams`, `/admin/teams/:id`.
