@@ -175,6 +175,86 @@ def archive_team(team_id):
     return jsonify({"team": serialize_team(team)})
 
 
+def _purge_user_data(user):
+    """Remove all data owned by a user before deleting the user row.
+
+    Mirrors routes.users.delete_user but works for super_admin (no team scope)
+    and is shared between user-delete and team cascade-delete.
+    """
+    db.session.execute(
+        task_assignees.delete().where(task_assignees.c.user_id == user.id)
+    )
+    db.session.execute(
+        project_members.delete().where(project_members.c.user_id == user.id)
+    )
+    ActivityLog.query.filter_by(user_id=user.id).update({"user_id": None})
+    SavedFilter.query.filter_by(user_id=user.id).delete()
+    Tag.query.filter_by(user_id=user.id).delete()
+    TaskTemplate.query.filter_by(user_id=user.id).delete()
+    CustomField.query.filter_by(user_id=user.id).delete()
+    # Notifications cascade via the User.notifications relationship.
+
+
+def _cascade_purge_team(team):
+    """Hard-delete every resource bound to a team prior to deleting the team itself.
+
+    Order matters because of FK constraints: child rows go before their parents.
+    """
+    user_ids = [user.id for user in User.query.filter_by(team_id=team.id).all()]
+
+    # Detach m2m rows tied to team users so user deletes don't trip on FK.
+    if user_ids:
+        db.session.execute(
+            task_assignees.delete().where(task_assignees.c.user_id.in_(user_ids))
+        )
+        db.session.execute(
+            project_members.delete().where(project_members.c.user_id.in_(user_ids))
+        )
+
+    Notification.query.filter_by(team_id=team.id).delete(synchronize_session=False)
+    ActivityLog.query.filter_by(team_id=team.id).delete(synchronize_session=False)
+    CustomField.query.filter_by(team_id=team.id).delete(synchronize_session=False)
+    TaskDependency.query.filter_by(team_id=team.id).delete(synchronize_session=False)
+    Comment.query.filter_by(team_id=team.id).delete(synchronize_session=False)
+    Subtask.query.filter_by(team_id=team.id).delete(synchronize_session=False)
+    SavedFilter.query.filter_by(team_id=team.id).delete(synchronize_session=False)
+    TaskTemplate.query.filter_by(team_id=team.id).delete(synchronize_session=False)
+    Tag.query.filter_by(team_id=team.id).delete(synchronize_session=False)
+
+    # Tasks have cascade='all, delete-orphan' for comments/subtasks/dependencies via ORM,
+    # but we already wiped those above; this just removes the parent rows safely.
+    Task.query.filter_by(team_id=team.id).delete(synchronize_session=False)
+    Project.query.filter_by(team_id=team.id).delete(synchronize_session=False)
+    ProjectTemplate.query.filter_by(team_id=team.id).delete(synchronize_session=False)
+    TeamInvite.query.filter_by(team_id=team.id).delete(synchronize_session=False)
+
+    if user_ids:
+        # Clean per-user side data that does not carry team_id.
+        ActivityLog.query.filter(ActivityLog.user_id.in_(user_ids)).update(
+            {"user_id": None}, synchronize_session=False
+        )
+        Notification.query.filter(Notification.user_id.in_(user_ids)).delete(synchronize_session=False)
+        SavedFilter.query.filter(SavedFilter.user_id.in_(user_ids)).delete(synchronize_session=False)
+        Tag.query.filter(Tag.user_id.in_(user_ids)).delete(synchronize_session=False)
+        TaskTemplate.query.filter(TaskTemplate.user_id.in_(user_ids)).delete(synchronize_session=False)
+        CustomField.query.filter(CustomField.user_id.in_(user_ids)).delete(synchronize_session=False)
+        # Tasks owned by these users (in any team) — should be none after the team-scoped delete,
+        # but cover the edge case.
+        Task.query.filter(Task.user_id.in_(user_ids)).delete(synchronize_session=False)
+        # Detach project ownership references so the user row can go.
+        Project.query.filter(Project.created_by_id.in_(user_ids)).update(
+            {"created_by_id": None}, synchronize_session=False
+        )
+        ProjectTemplate.query.filter(ProjectTemplate.created_by_id.in_(user_ids)).update(
+            {"created_by_id": None}, synchronize_session=False
+        )
+        TeamInvite.query.filter(TeamInvite.created_by_id.in_(user_ids)).update(
+            {"created_by_id": None}, synchronize_session=False
+        )
+
+        User.query.filter(User.id.in_(user_ids)).delete(synchronize_session=False)
+
+
 @admin_bp.route("/admin/teams/<int:team_id>", methods=["DELETE"])
 @require_super_admin
 def delete_team(team_id):
@@ -182,12 +262,50 @@ def delete_team(team_id):
     if not team:
         return jsonify({"error": "Zespół nie znaleziony"}), 404
 
+    cascade = request.args.get("cascade", "").lower() in {"1", "true", "yes"}
     counts = team_resource_counts(team.id)
-    if any(counts.values()):
+
+    if any(counts.values()) and not cascade:
         raise TeamNotEmptyError()
 
-    add_audit("team.delete", target_team_id=team.id, details={"name": team.name})
+    if cascade:
+        _cascade_purge_team(team)
+
+    add_audit(
+        "team.delete",
+        target_team_id=team.id,
+        details={"name": team.name, "cascade": cascade, "removed": counts if cascade else {}},
+    )
     db.session.delete(team)
+    db.session.commit()
+    return "", 204
+
+
+@admin_bp.route("/admin/users/<int:user_id>", methods=["DELETE"])
+@require_super_admin
+def delete_user(user_id):
+    target = db.session.get(User, user_id)
+    if not target:
+        return jsonify({"error": "Użytkownik nie znaleziony"}), 404
+    if target.id == g.current_user.id:
+        return jsonify({"error": "Nie możesz usunąć własnego konta"}), 400
+    if target.role == "super_admin":
+        active_admins = User.query.filter_by(role="super_admin").count()
+        if active_admins <= 1:
+            return jsonify({"error": "Nie można usunąć ostatniego super admina"}), 400
+
+    username = target.username
+    source_team_id = target.team_id
+
+    _purge_user_data(target)
+    db.session.delete(target)
+
+    add_audit(
+        "user.delete",
+        target_team_id=source_team_id,
+        target_user_id=user_id,
+        details={"username": username, "role": target.role},
+    )
     db.session.commit()
     return "", 204
 

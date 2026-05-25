@@ -105,6 +105,24 @@ export default function TeamDetailPage() {
     }
   };
 
+  const deleteMember = async (member: User) => {
+    const confirmed = window.confirm(
+      `Usunąć użytkownika ${member.username} wraz ze wszystkimi jego danymi (zadaniami, komentarzami, ustawieniami)? Tej operacji nie można cofnąć.`,
+    );
+    if (!confirmed) return;
+
+    setActionKey(`delete:${member.id}`);
+    try {
+      await api.teams.deleteUser(member.id);
+      await loadTeam();
+      addToast('Użytkownik usunięty', 'success');
+    } catch (err: unknown) {
+      addToast(err instanceof Error ? err.message : 'Błąd usuwania użytkownika', 'error');
+    } finally {
+      setActionKey(null);
+    }
+  };
+
   const handleCreateMember = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!team || team.archived) return;
@@ -225,6 +243,7 @@ export default function TeamDetailPage() {
               {members.map(member => {
                 const roleBusy = actionKey === `role:${member.id}`;
                 const moveBusy = actionKey === `move:${member.id}`;
+                const deleteBusy = actionKey === `delete:${member.id}`;
                 const selectedTarget = moveTargets[member.id] ?? (moveOptions[0] ? String(moveOptions[0].id) : '');
 
                 return (
@@ -275,6 +294,14 @@ export default function TeamDetailPage() {
                           className="btn btn-primary btn-sm"
                         >
                           Przenieś
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void deleteMember(member)}
+                          disabled={deleteBusy}
+                          className="btn btn-destructive btn-sm"
+                        >
+                          Usuń
                         </button>
                       </div>
                     </td>

@@ -227,3 +227,100 @@ def test_super_admin_post_users_redirects_to_admin_endpoint(client, app):
     )
     assert response.status_code == 400
     assert response.get_json().get("code") == "use_admin_endpoint"
+
+
+def test_super_admin_deletes_user_and_their_data(client, app):
+    with app.app_context():
+        team = make_team("UserDelete")
+        super_admin = make_user("delroot", role="super_admin")
+        target = make_user("doomed", team_id=team.id)
+        task = Task(user_id=target.id, title="To be wiped", team_id=team.id)
+        task.assignees.append(target)
+        saved_filter = SavedFilter(user_id=target.id, team_id=team.id, name="x", filters={})
+        notif = Notification(user_id=target.id, team_id=team.id, type="info", message="hi")
+        activity = ActivityLog(user_id=target.id, team_id=team.id, action="created", details={})
+        db.session.add_all([task, saved_filter, notif, activity])
+        db.session.commit()
+        login_as(client, super_admin)
+        target_id = target.id
+
+    response = client.delete(f"/admin/users/{target_id}")
+    assert response.status_code == 204
+
+    with app.app_context():
+        assert db.session.get(User, target_id) is None
+        assert SavedFilter.query.filter_by(user_id=target_id).count() == 0
+        assert Notification.query.filter_by(user_id=target_id).count() == 0
+        # ActivityLog rows are kept but user_id is null'd out (audit trail).
+        remaining = ActivityLog.query.filter_by(user_id=target_id).all()
+        assert remaining == []
+        # The team itself remains.
+        assert Team.query.filter_by(name="UserDelete").count() == 1
+        audit = TeamAuditLog.query.filter_by(action="user.delete", target_user_id=target_id).one()
+        assert audit.details["username"] == "doomed"
+
+
+def test_super_admin_cannot_delete_self(client, app):
+    with app.app_context():
+        super_admin = make_user("self_delete", role="super_admin")
+        db.session.commit()
+        login_as(client, super_admin)
+        sa_id = super_admin.id
+
+    response = client.delete(f"/admin/users/{sa_id}")
+    assert response.status_code == 400
+
+
+def test_super_admin_cannot_delete_last_super_admin(client, app):
+    with app.app_context():
+        super_admin = make_user("last_root", role="super_admin")
+        another = make_user("other", role="super_admin")
+        db.session.commit()
+        login_as(client, super_admin)
+        another_id = another.id
+
+    # First removal works because two super_admins exist.
+    response = client.delete(f"/admin/users/{another_id}")
+    assert response.status_code == 204
+
+    with app.app_context():
+        only_super = User.query.filter_by(role="super_admin").one()
+        assert only_super.username == "last_root"
+
+    # Now super_admin tries to remove herself when she is the only one left.
+    response = client.delete(f"/admin/users/{super_admin.id}")
+    # This is blocked by the self-delete guard, not the last-super-admin guard,
+    # but either way the operation must fail.
+    assert response.status_code == 400
+
+
+def test_super_admin_cascade_deletes_team_with_resources(client, app):
+    with app.app_context():
+        team = make_team("ToWipe")
+        super_admin = make_user("cascade_root", role="super_admin")
+        member = make_user("doomed_member", team_id=team.id)
+        task = Task(user_id=member.id, title="Bye", team_id=team.id)
+        task.assignees.append(member)
+        notif = Notification(user_id=member.id, team_id=team.id, type="info", message="bye")
+        activity = ActivityLog(user_id=member.id, team_id=team.id, action="created", details={})
+        db.session.add_all([task, notif, activity])
+        db.session.commit()
+        login_as(client, super_admin)
+        team_id = team.id
+        member_id = member.id
+
+    # Without cascade, server still rejects.
+    rejected = client.delete(f"/admin/teams/{team_id}")
+    assert rejected.status_code == 409
+
+    # With cascade=true, everything goes.
+    response = client.delete(f"/admin/teams/{team_id}?cascade=true")
+    assert response.status_code == 204
+
+    with app.app_context():
+        assert db.session.get(Team, team_id) is None
+        assert db.session.get(User, member_id) is None
+        assert Task.query.filter_by(team_id=team_id).count() == 0
+        assert Notification.query.filter_by(team_id=team_id).count() == 0
+        audit = TeamAuditLog.query.filter_by(action="team.delete", target_team_id=team_id).one()
+        assert audit.details.get("cascade") is True

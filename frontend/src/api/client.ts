@@ -252,8 +252,10 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ archived }),
       }),
-    delete: (id: number) =>
-      request<void>(`/admin/teams/${id}`, { method: 'DELETE' }),
+    delete: (id: number, cascade = false) =>
+      request<void>(`/admin/teams/${id}${cascade ? '?cascade=true' : ''}`, { method: 'DELETE' }),
+    deleteUser: (userId: number) =>
+      request<void>(`/admin/users/${userId}`, { method: 'DELETE' }),
     members: (id: number) =>
       request<{ team: Team; members: User[] }>(`/admin/teams/${id}/members`),
     addMember: (

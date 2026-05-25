@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api } from '@/api/client'
+import { api, ApiError } from '@/api/client'
 import type { Team } from '@/types'
 import { useToast } from '@/store/ToastContext'
 import { AdminSkeleton } from '@/components/common/Skeletons'
@@ -108,7 +108,27 @@ export default function TeamsAdminPage() {
       await loadTeams();
       addToast('Zespół usunięty', 'success');
     } catch (err: unknown) {
-      addToast(err instanceof Error ? err.message : 'Nie można usunąć zespołu', 'error');
+      if (err instanceof ApiError && err.code === 'team_not_empty') {
+        const cascadeConfirmed = window.confirm(
+          `Zespół ${team.name} zawiera członków lub zasoby. Usunąć zespół wraz ze wszystkimi danymi (użytkownicy, zadania, projekty, komentarze, audyt)? Tej operacji NIE można cofnąć.`,
+        );
+        if (!cascadeConfirmed) {
+          setActionTeamId(null);
+          return;
+        }
+        try {
+          await api.teams.delete(team.id, true);
+          await loadTeams();
+          addToast('Zespół usunięty wraz z zawartością', 'success');
+        } catch (cascadeErr: unknown) {
+          addToast(
+            cascadeErr instanceof Error ? cascadeErr.message : 'Nie udało się usunąć zespołu z zawartością',
+            'error',
+          );
+        }
+      } else {
+        addToast(err instanceof Error ? err.message : 'Nie można usunąć zespołu', 'error');
+      }
     } finally {
       setActionTeamId(null);
     }
