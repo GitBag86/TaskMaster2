@@ -263,7 +263,7 @@ Estymacja: ~8.5 dnia roboczego, +30% rezerwy = ~11 dni.
   - Done: super_admin może zarządzać zespołami przez UI.
   - _Refs: R5, R6, R7.5, design 11.4, 12.1_
 
-- [ ] 18. TeamMembersPage + InviteForm (manager)
+- [x] 18. TeamMembersPage + InviteForm (manager)
   - `frontend/src/components/Team/TeamMembersPage.tsx`: tab "Członkowie" (lista users w teamie z `api.users.getAll()` po refaktorze), tab "Zaproszenia" (`api.invites.list()`). Akcje: Generate invite, Revoke, Remove user.
   - `frontend/src/components/Team/InviteForm.tsx`: form z opcjonalnym email, role hardcoded `user`. Po submit pokazuje raw token (kopiuj-do-schowka) i link `https://app/signup?token={raw}`. Token widoczny tylko raz.
   - Test: manualny — manager generuje invite, kopiuje link, anon user otwiera, signup działa.

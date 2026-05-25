@@ -14,11 +14,10 @@ const KanbanPage = lazy(() => import('./components/Kanban/KanbanPage'))
 const DashboardPage = lazy(() => import('./components/Dashboard/DashboardPage'))
 const CalendarPage = lazy(() => import('./components/Calendar/CalendarPage'))
 const ActivityPage = lazy(() => import('./components/Activity/ActivityPage'))
-const AdminPage = lazy(() => import('./components/Admin/AdminPage'))
 const TeamsAdminPage = lazy(() => import('./components/Admin/TeamsAdminPage'))
 const TeamDetailPage = lazy(() => import('./components/Admin/TeamDetailPage'))
 const AdminAuditPage = lazy(() => import('./components/Admin/AdminAuditPage'))
-const TeamInvitesPage = lazy(() => import('./components/Team/TeamInvitesPage'))
+const TeamMembersPage = lazy(() => import('./components/Team/TeamMembersPage'))
 import { Toaster } from './components/common/Toaster'
 import { CommandPalette } from './components/common/CommandPalette'
 
@@ -68,8 +67,8 @@ function AppRoutes() {
           <Route path="admin/teams" element={<RoleRoute roles={['super_admin']}><TeamsAdminPage /></RoleRoute>} />
           <Route path="admin/teams/:id" element={<RoleRoute roles={['super_admin']}><TeamDetailPage /></RoleRoute>} />
           <Route path="admin/audit" element={<RoleRoute roles={['super_admin']}><AdminAuditPage /></RoleRoute>} />
-          <Route path="team/members" element={<RoleRoute roles={['manager']}><AdminPage /></RoleRoute>} />
-          <Route path="team/invites" element={<RoleRoute roles={['manager']}><TeamInvitesPage /></RoleRoute>} />
+          <Route path="team/members" element={<RoleRoute roles={['manager']}><TeamMembersPage /></RoleRoute>} />
+          <Route path="team/invites" element={<RoleRoute roles={['manager']}><TeamMembersPage /></RoleRoute>} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

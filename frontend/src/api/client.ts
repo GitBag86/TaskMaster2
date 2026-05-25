@@ -274,10 +274,10 @@ export const api = {
 
   invites: {
     list: () => request<{ invites: InviteToken[] }>('/team/invites'),
-    create: () =>
+    create: (email?: string) =>
       request<InviteToken>('/team/invites', {
         method: 'POST',
-        body: JSON.stringify({ default_role: 'user' }),
+        body: JSON.stringify({ default_role: 'user', email: email || undefined }),
       }),
     revoke: (id: number) =>
       request<void>(`/team/invites/${id}`, { method: 'DELETE' }),
