@@ -138,6 +138,36 @@ def test_default_admin_bootstrap(app):
         assert admin.password != "dakos1admin2"
         assert admin.check_password("dakos1admin2")
 
+def test_default_admin_bootstrap_does_not_reset_existing_password_by_default(app):
+    from app import _ensure_default_admin
+
+    with app.app_context():
+        admin = User(username="admin", email="admin@example.com", role="admin")
+        admin.set_password("custom-password")
+        db.session.add(admin)
+        db.session.commit()
+
+        _ensure_default_admin(app)
+
+        saved_admin = User.query.filter_by(username="admin").first()
+        assert saved_admin.check_password("custom-password")
+        assert not saved_admin.check_password("dakos1admin2")
+
+def test_default_admin_bootstrap_can_reset_existing_password_when_enabled(app):
+    from app import _ensure_default_admin
+
+    with app.app_context():
+        app.config["DEFAULT_ADMIN_RESET_PASSWORD"] = True
+        admin = User(username="admin", email="admin@example.com", role="admin")
+        admin.set_password("custom-password")
+        db.session.add(admin)
+        db.session.commit()
+
+        _ensure_default_admin(app)
+
+        saved_admin = User.query.filter_by(username="admin").first()
+        assert saved_admin.check_password("dakos1admin2")
+
 def test_login(client, app):
     with app.app_context():
         user = User(username="testlogin", email="testlogin@example.com")

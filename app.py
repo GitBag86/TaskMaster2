@@ -158,6 +158,7 @@ def _ensure_default_admin(app):
     username = app.config.get("DEFAULT_ADMIN_USERNAME")
     password = app.config.get("DEFAULT_ADMIN_PASSWORD")
     email = app.config.get("DEFAULT_ADMIN_EMAIL")
+    reset_password = app.config.get("DEFAULT_ADMIN_RESET_PASSWORD", False)
     if not username or not password or not email:
         return
 
@@ -165,13 +166,18 @@ def _ensure_default_admin(app):
         user = User.query.filter_by(username=username).first()
         if user is None:
             user = User(username=username, email=email, role="admin")
+            user.set_password(password)
             db.session.add(user)
+            logger.info("Default admin account created: %s", username)
         else:
             user.role = "admin"
             user.email = user.email or email
-        user.set_password(password)
+            if reset_password:
+                user.set_password(password)
+                logger.info("Default admin password reset: %s", username)
+            else:
+                logger.info("Default admin account is ready without password reset: %s", username)
         db.session.commit()
-        logger.info("Default admin account is ready: %s", username)
     except SQLAlchemyError:
         db.session.rollback()
         logger.info("Default admin bootstrap skipped until database schema is ready")

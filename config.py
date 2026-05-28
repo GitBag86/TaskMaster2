@@ -35,6 +35,7 @@ class Config:
     DEFAULT_ADMIN_USERNAME = os.environ.get("DEFAULT_ADMIN_USERNAME", "admin")
     DEFAULT_ADMIN_PASSWORD = os.environ.get("DEFAULT_ADMIN_PASSWORD", "dakos1admin2")
     DEFAULT_ADMIN_EMAIL = os.environ.get("DEFAULT_ADMIN_EMAIL", "admin@taskmaster.local")
+    DEFAULT_ADMIN_RESET_PASSWORD = os.environ.get("DEFAULT_ADMIN_RESET_PASSWORD", "false").lower() == "true"
 
     # Email configuration (optional)
     MAIL_SERVER = os.environ.get("MAIL_SERVER")
@@ -56,4 +57,5 @@ class TestingConfig(Config):
     DEFAULT_ADMIN_USERNAME = "admin"
     DEFAULT_ADMIN_PASSWORD = "dakos1admin2"
     DEFAULT_ADMIN_EMAIL = "admin@taskmaster.local"
+    DEFAULT_ADMIN_RESET_PASSWORD = False
     MAIL_SUPPRESS_SEND = True
