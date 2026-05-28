@@ -1,6 +1,6 @@
 import re
 
-from flask import request, jsonify, session, url_for
+from flask import current_app, request, jsonify, session, url_for
 from datetime import date, datetime, timedelta, timezone
 from marshmallow import ValidationError
 from extensions import socketio
@@ -19,6 +19,7 @@ from utils.email_sender import (
 from utils.notifications import create_notification, emit_notifications
 
 TASK_ALLOWED_FIELDS = {'title', 'priority', 'project', 'project_id', 'due_date', 'notes', 'completed', 'status'}
+USER_START_TASK_FIELDS = {'status', 'completed'}
 BULK_MAX_TASKS = 100
 
 PROJECT_TEMPLATES = {
@@ -79,6 +80,9 @@ def emit_task_event(action, user, task=None, task_ids=None, task_id=None, task_p
     socketio.emit("task_action", payload)
 
 def app_url(path=''):
+    base_url = current_app.config.get("PUBLIC_BASE_URL")
+    if base_url:
+        return f"{base_url.rstrip('/')}/{path.lstrip('/')}"
     return url_for('index', _external=True) + path.lstrip('/')
 
 def task_url(task):
@@ -166,6 +170,13 @@ def parse_due_date(value):
 
 def user_can_access_task(user, task):
     return user.role == 'admin' or user in task.assignees
+
+def is_user_start_task_update(data):
+    if not isinstance(data, dict) or not data:
+        return False
+    if set(data) - USER_START_TASK_FIELDS:
+        return False
+    return data.get('status') == 'in_progress' and data.get('completed', False) is False
 
 def task_is_done(task):
     return task.completed or task.status == 'done'
@@ -742,8 +753,12 @@ def update_task(task_id):
     if not task:
         return jsonify({"error": "Task not found"}), 404
 
+    data = request.get_json() or {}
     if user.role != 'admin':
-        return jsonify({"error": "Only admins can update tasks"}), 403
+        if not user_can_access_task(user, task) or not is_user_start_task_update(data):
+            return jsonify({"error": "Only admins can update tasks"}), 403
+        if task_is_done(task):
+            return jsonify({"error": "Nie można rozpocząć zakończonego zadania"}), 409
 
     old_values = {
         'title': task.title,
@@ -760,7 +775,6 @@ def update_task(task_id):
     was_done = task_is_done(task)
     old_assignee_ids = {assignee.id for assignee in task.assignees}
 
-    data = request.get_json()
     for key, value in data.items():
         if key in ('assignee_ids', 'assignees'):
             if len(value or []) > 1:
@@ -1001,6 +1015,8 @@ def add_subtask(task_id):
 
     if not user_can_access_task(user, task):
         return jsonify({"error": "Permission denied"}), 403
+    if user.role != 'admin':
+        return jsonify({"error": "Tylko administrator może zarządzać podzadaniami"}), 403
 
     data = request.get_json()
     schema = SubtaskSchema()
@@ -1037,6 +1053,8 @@ def complete_subtask(subtask_id):
     task = db.session.get(Task, subtask.task_id)
     if not user_can_access_task(user, task):
         return jsonify({"error": "Permission denied"}), 403
+    if user.role != 'admin':
+        return jsonify({"error": "Tylko administrator może zarządzać podzadaniami"}), 403
 
     subtask.completed = not subtask.completed
 
@@ -1067,6 +1085,8 @@ def delete_subtask(subtask_id):
     task = db.session.get(Task, subtask.task_id)
     if not user_can_access_task(user, task):
         return jsonify({"error": "Permission denied"}), 403
+    if user.role != 'admin':
+        return jsonify({"error": "Tylko administrator może zarządzać podzadaniami"}), 403
 
     db.session.delete(subtask)
     db.session.commit()

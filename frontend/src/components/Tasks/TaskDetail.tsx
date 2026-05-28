@@ -36,6 +36,7 @@ export default function TaskDetail({ task, onDelete, onComplete, onUpdate, onClo
   const [selectedDependencyId, setSelectedDependencyId] = useState('')
   const { addToast } = useToast()
   const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
 
   useEffect(() => {
     setSubtasks(task.subtasks)
@@ -59,7 +60,7 @@ export default function TaskDetail({ task, onDelete, onComplete, onUpdate, onClo
   }, [task.id])
 
   useEffect(() => {
-    if (user?.role !== 'admin') return
+    if (!isAdmin) return
 
     const loadAvailableTasks = async () => {
       try {
@@ -78,7 +79,7 @@ export default function TaskDetail({ task, onDelete, onComplete, onUpdate, onClo
     }
 
     void loadAvailableTasks()
-  }, [user?.role])
+  }, [isAdmin])
 
   const completedSubtasks = useMemo(
     () => subtasks.filter(subtask => subtask.completed).length,
@@ -115,6 +116,26 @@ export default function TaskDetail({ task, onDelete, onComplete, onUpdate, onClo
       void reloadActivity(task.id, setActivity)
     } catch {
       addToast('Błąd usuwania', 'error')
+    }
+  }
+
+  const handleStartTask = async () => {
+    try {
+      const updatedTask = await api.tasks.update(task.id, { status: 'in_progress', completed: false })
+      onUpdate(updatedTask)
+      addToast('Zadanie ustawione jako w toku', 'success')
+    } catch (err: unknown) {
+      addToast(err instanceof Error ? err.message : 'Błąd zmiany statusu', 'error')
+    }
+  }
+
+  const handleClearAssignee = async () => {
+    try {
+      const updatedTask = await api.tasks.update(task.id, { assignee_ids: [] })
+      onUpdate(updatedTask)
+      addToast('Przypisanie usunięte', 'success')
+    } catch (err: unknown) {
+      addToast(err instanceof Error ? err.message : 'Błąd usuwania przypisania', 'error')
     }
   }
 
@@ -194,6 +215,7 @@ export default function TaskDetail({ task, onDelete, onComplete, onUpdate, onClo
     : hasOpenSubtasks
       ? `Najpierw zakończ podzadania: ${openSubtasks}`
       : undefined
+  const canStartTask = !isAdmin && !task.completed && task.status === 'todo'
 
   if (isEditing) {
     return (
@@ -214,7 +236,7 @@ export default function TaskDetail({ task, onDelete, onComplete, onUpdate, onClo
             <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{task.project}</p>
             <h3 className="text-xl font-semibold text-gray-900 dark:text-white">{task.title}</h3>
           </div>
-          {user?.role === 'admin' && (
+          {isAdmin && (
             <button onClick={() => setIsEditing(true)} className="btn btn-secondary btn-sm">Edytuj</button>
           )}
         </div>
@@ -228,7 +250,14 @@ export default function TaskDetail({ task, onDelete, onComplete, onUpdate, onClo
         </div>
 
         <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
-          <p><span className="font-medium">Przypisani:</span> {assigneeLabel}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p><span className="font-medium">Przypisani:</span> {assigneeLabel}</p>
+            {isAdmin && task.assignees.length > 0 && (
+              <button onClick={() => void handleClearAssignee()} className="text-xs font-medium text-destructive hover:underline">
+                Usuń przypisanie
+              </button>
+            )}
+          </div>
           <p><span className="font-medium">Utworzono:</span> {formatDateTime(task.created_at)}</p>
         </div>
       </div>
@@ -270,7 +299,7 @@ export default function TaskDetail({ task, onDelete, onComplete, onUpdate, onClo
                       {dependency.depends_on_task ? summaryMeta(dependency.depends_on_task) : 'Szczegóły niedostępne'}
                     </p>
                   </div>
-                  {user?.role === 'admin' && (
+                  {isAdmin && (
                     <button onClick={() => void handleRemoveDependency(dependency.id)} className="text-xs font-medium text-destructive hover:underline">
                       Usuń
                     </button>
@@ -280,7 +309,7 @@ export default function TaskDetail({ task, onDelete, onComplete, onUpdate, onClo
             )}
           </div>
 
-          {user?.role === 'admin' && (
+          {isAdmin && (
             <div className="mt-3 flex flex-col gap-2 sm:flex-row">
               <select
                 value={selectedDependencyId}
@@ -334,34 +363,48 @@ export default function TaskDetail({ task, onDelete, onComplete, onUpdate, onClo
             ) : (
               subtasks.map(subtask => (
                 <div key={subtask.id} className="flex items-center gap-2 rounded-lg border border-border p-2.5">
-                  <input
-                    type="checkbox"
-                    checked={subtask.completed}
-                    onChange={() => void handleToggleSubtask(subtask)}
-                    className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-                  />
+                  {isAdmin ? (
+                    <input
+                      type="checkbox"
+                      checked={subtask.completed}
+                      onChange={() => void handleToggleSubtask(subtask)}
+                      className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                    />
+                  ) : (
+                    <input
+                      type="checkbox"
+                      checked={subtask.completed}
+                      disabled
+                      readOnly
+                      className="h-4 w-4 rounded border-gray-300 text-primary opacity-70"
+                    />
+                  )}
                   <span className={`flex-1 text-sm ${subtask.completed ? 'line-through text-muted-foreground' : 'text-gray-900 dark:text-white'}`}>
                     {subtask.title}
                   </span>
-                  <button onClick={() => void handleDeleteSubtask(subtask.id)} className="text-xs font-medium text-destructive hover:underline">
-                    Usuń
-                  </button>
+                  {isAdmin && (
+                    <button onClick={() => void handleDeleteSubtask(subtask.id)} className="text-xs font-medium text-destructive hover:underline">
+                      Usuń
+                    </button>
+                  )}
                 </div>
               ))
             )}
           </div>
 
-          <div className="mt-3 flex gap-2">
-            <input
-              type="text"
-              value={newSubtask}
-              onChange={event => setNewSubtask(event.target.value)}
-              onKeyDown={event => event.key === 'Enter' && void handleAddSubtask()}
-              placeholder="Nowe podzadanie..."
-              className="input flex-1"
-            />
-            <button onClick={() => void handleAddSubtask()} className="btn btn-secondary btn-sm">Dodaj</button>
-          </div>
+          {isAdmin && (
+            <div className="mt-3 flex gap-2">
+              <input
+                type="text"
+                value={newSubtask}
+                onChange={event => setNewSubtask(event.target.value)}
+                onKeyDown={event => event.key === 'Enter' && void handleAddSubtask()}
+                placeholder="Nowe podzadanie..."
+                className="input flex-1"
+              />
+              <button onClick={() => void handleAddSubtask()} className="btn btn-secondary btn-sm">Dodaj</button>
+            </div>
+          )}
         </section>
 
         <section className="rounded-lg border border-border p-4">
@@ -418,15 +461,22 @@ export default function TaskDetail({ task, onDelete, onComplete, onUpdate, onClo
 
       <div className="border-t border-border bg-card p-4">
         <div className="flex justify-between gap-3">
-          <button
-            onClick={() => onComplete(task.id)}
-            disabled={completionBlocked}
-            title={completionBlockedTitle}
-            className={`btn btn-sm ${task.completed ? 'btn-secondary' : 'btn-primary'} disabled:cursor-not-allowed disabled:opacity-60`}
-          >
-            {task.completed ? 'Przywróć zadanie' : 'Oznacz jako zakończone'}
-          </button>
-          {user?.role === 'admin' && (
+          <div className="flex flex-wrap gap-2">
+            {canStartTask && (
+              <button onClick={() => void handleStartTask()} className="btn btn-secondary btn-sm">
+                Ustaw w toku
+              </button>
+            )}
+            <button
+              onClick={() => onComplete(task.id)}
+              disabled={completionBlocked}
+              title={completionBlockedTitle}
+              className={`btn btn-sm ${task.completed ? 'btn-secondary' : 'btn-primary'} disabled:cursor-not-allowed disabled:opacity-60`}
+            >
+              {task.completed ? 'Przywróć zadanie' : 'Oznacz jako zakończone'}
+            </button>
+          </div>
+          {isAdmin && (
             <div className="flex gap-2">
               <button onClick={() => onDelete(task.id)} className="btn btn-destructive btn-sm">Usuń zadanie</button>
             </div>

@@ -150,7 +150,7 @@ def _register_scheduler(app):
         return
     if scheduler.get_job("check_deadlines"):
         return
-    scheduler.add_job(id="check_deadlines", func=check_deadlines, trigger="interval", days=1)
+    scheduler.add_job(id="check_deadlines", func=check_deadlines, args=[app], trigger="interval", days=1)
     scheduler.start()
 
 

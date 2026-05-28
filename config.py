@@ -31,6 +31,7 @@ class Config:
     SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "false").lower() == "true"
     SESSION_COOKIE_SAMESITE = os.environ.get("SESSION_COOKIE_SAMESITE", "Lax")
     ENABLE_SCHEDULER = os.environ.get("ENABLE_SCHEDULER", "true").lower() == "true"
+    PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/")
     DEFAULT_ADMIN_USERNAME = os.environ.get("DEFAULT_ADMIN_USERNAME", "admin")
     DEFAULT_ADMIN_PASSWORD = os.environ.get("DEFAULT_ADMIN_PASSWORD", "dakos1admin2")
     DEFAULT_ADMIN_EMAIL = os.environ.get("DEFAULT_ADMIN_EMAIL", "admin@taskmaster.local")
@@ -51,4 +52,8 @@ class TestingConfig(Config):
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     SECRET_KEY = "test-secret-key"
     ENABLE_SCHEDULER = False
+    PUBLIC_BASE_URL = ""
+    DEFAULT_ADMIN_USERNAME = "admin"
+    DEFAULT_ADMIN_PASSWORD = "dakos1admin2"
+    DEFAULT_ADMIN_EMAIL = "admin@taskmaster.local"
     MAIL_SUPPRESS_SEND = True
