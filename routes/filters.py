@@ -7,10 +7,7 @@ from models import db, User, Task, Tag, SavedFilter, TaskTemplate, CustomField, 
 from schemas import TagSchema, FilterSchema, TemplateSchema, CustomFieldSchema
 from routes.auth import login_required
 from utils.socket_rooms import task_recipient_ids, user_room
-
-
-def user_can_access_task(user, task):
-    return user.role == 'admin' or user in task.assignees
+from utils.task_visibility import serialize_task_for_user, user_can_access_task
 
 
 def emit_task_event(action, user, task):
@@ -19,10 +16,14 @@ def emit_task_event(action, user, task):
         "user": user.username,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "task_id": task.id,
-        "task": task.to_dict(),
     }
     for recipient_id in sorted(task_recipient_ids(task, actor=user)):
-        socketio.emit("task_action", payload, to=user_room(recipient_id))
+        recipient = db.session.get(User, recipient_id)
+        socketio.emit(
+            "task_action",
+            {**payload, "task": serialize_task_for_user(task, recipient)},
+            to=user_room(recipient_id),
+        )
 
 
 def get_or_create_project(name, user):
@@ -176,7 +177,7 @@ def use_template(template_id):
     db.session.add(ActivityLog(user_id=user_id, task_id=task.id, action='created', details={'title': task.title, 'source': 'task_template'}))
     db.session.commit()
     emit_task_event("created", user, task)
-    return jsonify(task.to_dict()), 201
+    return jsonify(serialize_task_for_user(task, user)), 201
 
 # --- Custom Fields ---
 

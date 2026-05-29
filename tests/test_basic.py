@@ -330,6 +330,12 @@ def test_project_members_can_see_project_without_unassigned_tasks(auth_client, a
     assert visible_project is not None
     assert visible_project["tasks"] == []
 
+    completion_response = auth_client.get(f'/projects/{project["id"]}/completion')
+    assert completion_response.status_code == 200
+    completion = completion_response.get_json()
+    assert completion["open_tasks"] == []
+    assert "Other user task" not in str(completion)
+
 def test_task_accepts_only_one_assignee(auth_client, app):
     with app.app_context():
         first_user = User(username="single_assignee_one", email="single1@example.com", role="user")
@@ -776,6 +782,71 @@ def test_regular_user_only_sees_assigned_tasks(client, app):
     data = response.get_json()
     assert [task["title"] for task in data["tasks"]] == ["Visible"]
 
+def test_regular_user_task_payload_hides_unassigned_dependencies(client, app):
+    with app.app_context():
+        regular = User(username="regular_dep_view", email="regular_dep_view@example.com", role="user")
+        regular.set_password("password")
+        admin = User(username="admin_dep_view", email="admin_dep_view@example.com", role="admin")
+        admin.set_password("password")
+        db.session.add_all([regular, admin])
+        db.session.flush()
+        visible = Task(user_id=admin.id, title="Visible blocked")
+        hidden_blocker = Task(user_id=admin.id, title="Hidden blocker")
+        visible.assignees.append(regular)
+        db.session.add_all([visible, hidden_blocker])
+        db.session.flush()
+        db.session.add(TaskDependency(task_id=visible.id, depends_on_task_id=hidden_blocker.id))
+        db.session.commit()
+        regular_id = regular.id
+        visible_id = visible.id
+
+    with client.session_transaction() as sess:
+        sess['user_id'] = regular_id
+
+    response = client.get('/tasks')
+    complete_response = client.put(f'/tasks/{visible_id}/complete')
+
+    assert response.status_code == 200
+    task_payload = response.get_json()["tasks"][0]
+    assert task_payload["title"] == "Visible blocked"
+    assert task_payload["is_blocked"] is True
+    assert task_payload["blocked_by"] == []
+    assert task_payload["dependencies"] == []
+
+    assert complete_response.status_code == 409
+    blocked_payload = complete_response.get_json()
+    assert blocked_payload["blocked_by"] == []
+    assert blocked_payload["hidden_blocked_by_count"] == 1
+    assert "Hidden blocker" not in str(blocked_payload)
+
+def test_regular_user_task_payload_hides_unassigned_dependents(client, app):
+    with app.app_context():
+        regular = User(username="regular_dependent_view", email="regular_dependent_view@example.com", role="user")
+        regular.set_password("password")
+        admin = User(username="admin_dependent_view", email="admin_dependent_view@example.com", role="admin")
+        admin.set_password("password")
+        db.session.add_all([regular, admin])
+        db.session.flush()
+        visible_blocker = Task(user_id=admin.id, title="Visible blocker")
+        hidden_dependent = Task(user_id=admin.id, title="Hidden dependent")
+        visible_blocker.assignees.append(regular)
+        db.session.add_all([visible_blocker, hidden_dependent])
+        db.session.flush()
+        db.session.add(TaskDependency(task_id=hidden_dependent.id, depends_on_task_id=visible_blocker.id))
+        db.session.commit()
+        regular_id = regular.id
+
+    with client.session_transaction() as sess:
+        sess['user_id'] = regular_id
+
+    response = client.get('/tasks')
+    board_response = client.get('/tasks/dependency-board')
+
+    assert response.status_code == 200
+    assert response.get_json()["tasks"][0]["blocking"] == []
+    assert board_response.status_code == 200
+    assert board_response.get_json()["blockers"] == []
+
 def test_regular_user_cannot_create_task(user_client):
     response = user_client.post('/tasks', json={"title": "Nope"})
     assert response.status_code == 403
@@ -1001,7 +1072,7 @@ def test_comment_mentions_emit_event_and_activity(auth_client, app, monkeypatch)
         db.session.commit()
         mentioned_id = mentioned.id
 
-    task = auth_client.post('/tasks', json={"title": "Mention target"}).get_json()
+    task = auth_client.post('/tasks', json={"title": "Mention target", "assignee_ids": [mentioned_id]}).get_json()
     emitted = []
 
     def fake_emit(event_name, payload, **kwargs):
@@ -1025,6 +1096,32 @@ def test_comment_mentions_emit_event_and_activity(auth_client, app, monkeypatch)
         notification = Notification.query.filter_by(user_id=mentioned_id, type="mention").first()
         assert notification is not None
         assert notification.task_id == task["id"]
+
+def test_comment_mention_does_not_notify_unassigned_user(auth_client, app, monkeypatch):
+    with app.app_context():
+        outsider = User(username="mention_outsider", email="mention_outsider@example.com", role="user")
+        outsider.set_password("password")
+        db.session.add(outsider)
+        db.session.commit()
+        outsider_id = outsider.id
+
+    task = auth_client.post('/tasks', json={"title": "Private mention target"}).get_json()
+    emitted = []
+
+    def fake_emit(event_name, payload, **kwargs):
+        emitted.append({"event_name": event_name, "payload": payload, "kwargs": kwargs})
+
+    monkeypatch.setattr("routes.tasks.socketio.emit", fake_emit)
+
+    response = auth_client.post(f'/tasks/{task["id"]}/comments', json={"text": "@mention_outsider nie powinien widzieć"})
+
+    assert response.status_code == 201
+    task_event = next(event for event in emitted if event["event_name"] == "task_action")
+    assert task_event["payload"]["action"] == "commented"
+    assert "mentioned_usernames" not in task_event["payload"]
+
+    with app.app_context():
+        assert Notification.query.filter_by(user_id=outsider_id, type="mention").first() is None
 
 def test_regular_user_cannot_tag_unassigned_task(client, app):
     with app.app_context():
@@ -1171,6 +1268,39 @@ def test_global_activity_regular_user_only_sees_assigned_task_logs(client, app):
     actions = [item["action"] for item in response.get_json()["activity"]]
     assert actions == ["visible"]
 
+def test_regular_user_activity_hides_dependency_titles(client, app):
+    with app.app_context():
+        regular = User(username="activity_dep_regular", email="activity_dep_regular@example.com", role="user")
+        regular.set_password("password")
+        admin = User(username="activity_dep_admin", email="activity_dep_admin@example.com", role="admin")
+        admin.set_password("password")
+        db.session.add_all([regular, admin])
+        db.session.flush()
+        visible = Task(user_id=admin.id, title="Visible dependency activity")
+        hidden = Task(user_id=admin.id, title="Hidden dependency activity")
+        visible.assignees.append(regular)
+        db.session.add_all([visible, hidden])
+        db.session.flush()
+        db.session.add(ActivityLog(
+            user_id=admin.id,
+            task_id=visible.id,
+            action="dependency_added",
+            details={"depends_on_task_id": hidden.id, "title": hidden.title},
+        ))
+        db.session.commit()
+        regular_id = regular.id
+        visible_id = visible.id
+
+    with client.session_transaction() as sess:
+        sess['user_id'] = regular_id
+
+    response = client.get(f'/tasks/{visible_id}/activity')
+
+    assert response.status_code == 200
+    details = response.get_json()["activity"][0]["details"]
+    assert "title" not in details
+    assert "depends_on_task_id" not in details
+
 def test_regular_user_cannot_add_custom_field_to_unassigned_task(client, app):
     with app.app_context():
         admin = User(username="field_admin", email="field_admin@example.com", role="admin")
@@ -1194,7 +1324,7 @@ def test_regular_user_cannot_add_custom_field_to_unassigned_task(client, app):
     with app.app_context():
         assert CustomField.query.filter_by(task_id=task_id).all() == []
 
-def test_delete_task_emits_snapshot_event(auth_client, monkeypatch):
+def test_delete_task_emits_minimal_event(auth_client, monkeypatch):
     created = auth_client.post('/tasks', json={"title": "Delete me"})
     task_id = created.get_json()["id"]
 
@@ -1212,7 +1342,7 @@ def test_delete_task_emits_snapshot_event(auth_client, monkeypatch):
     assert emitted["event_name"] == "task_action"
     assert emitted["payload"]["action"] == "deleted"
     assert emitted["payload"]["task_id"] == task_id
-    assert emitted["payload"]["task"]["title"] == "Delete me"
+    assert "task" not in emitted["payload"]
 
 def test_bulk_complete_emits_socket_event(auth_client, monkeypatch):
     first = auth_client.post('/tasks', json={"title": "Bulk complete 1"}).get_json()

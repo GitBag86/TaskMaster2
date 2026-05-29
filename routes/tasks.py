@@ -18,6 +18,7 @@ from utils.email_sender import (
 )
 from utils.notifications import create_notification, emit_notifications
 from utils.socket_rooms import project_recipient_ids, task_recipient_ids, user_room
+from utils.task_visibility import serialize_activity_for_user, serialize_task_for_user, user_can_access_task
 
 TASK_ALLOWED_FIELDS = {'title', 'priority', 'project', 'project_id', 'due_date', 'notes', 'completed', 'status'}
 USER_START_TASK_FIELDS = {'status', 'completed'}
@@ -72,25 +73,41 @@ def task_list_recipient_ids(tasks, actor=None):
         recipient_ids.update(task_recipient_ids(task))
     return recipient_ids
 
-def emit_task_event(action, user, task=None, task_ids=None, task_id=None, task_payload=None, extra=None, recipient_ids=None):
+def base_task_event_payload(action, user, task_ids=None, task_id=None, task_payload=None, extra=None):
     payload = {
         "action": action,
         "user": user.username,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
-    if task is not None:
-        payload["task_id"] = task.id
-        payload["task"] = task.to_dict()
-    elif task_id is not None:
+    if task_id is not None:
         payload["task_id"] = task_id
-        payload["task"] = task_payload
+        if task_payload is not None:
+            payload["task"] = task_payload
     if task_ids is not None:
         payload["task_ids"] = task_ids
     if extra:
         payload.update(extra)
+    return payload
+
+def emit_task_event(action, user, task=None, task_ids=None, task_id=None, task_payload=None, extra=None, recipient_ids=None):
     if recipient_ids is None:
         recipient_ids = task_recipient_ids(task, actor=user) if task is not None else {user.id}
-    emit_to_user_rooms("task_action", payload, recipient_ids)
+    if task is None:
+        payload = base_task_event_payload(action, user, task_ids=task_ids, task_id=task_id, task_payload=task_payload, extra=extra)
+        emit_to_user_rooms("task_action", payload, recipient_ids)
+        return
+
+    for recipient_id in sorted(set(recipient_ids or [])):
+        recipient = db.session.get(User, recipient_id)
+        payload = base_task_event_payload(
+            action,
+            user,
+            task_ids=task_ids,
+            task_id=task.id,
+            task_payload=serialize_task_for_user(task, recipient),
+            extra=extra,
+        )
+        socketio.emit("task_action", payload, to=user_room(recipient_id))
 
 def emit_task_removed_for_users(user, task_id, recipient_ids):
     emit_task_event("deleted", user, task_id=task_id, recipient_ids=recipient_ids)
@@ -158,10 +175,10 @@ def send_project_activity_emails(project, actor, activity, task=None, exclude_us
         return
 
     link = project_url(project)
-    recipients = [
-        *project_email_users(project),
-        *(extra_users or []),
-    ]
+    if task is not None:
+        recipients = [*task_email_users(task), *(extra_users or [])]
+    else:
+        recipients = [*project_email_users(project), *(extra_users or [])]
     for recipient in unique_email_users(recipients, actor=actor, exclude_user_ids=exclude_user_ids):
         send_email(
             recipient.email,
@@ -195,9 +212,6 @@ def parse_due_date(value):
             pass
     return value
 
-def user_can_access_task(user, task):
-    return user.role == 'admin' or user in task.assignees
-
 def is_user_start_task_update(data):
     if not isinstance(data, dict) or not data:
         return False
@@ -218,12 +232,18 @@ def task_open_dependencies(task):
 def task_open_subtasks(task):
     return [subtask for subtask in task.subtasks if not subtask.completed]
 
-def blocked_completion_response(task):
+def blocked_completion_response(task, user):
     open_dependencies = task_open_dependencies(task)
     open_subtasks = task_open_subtasks(task)
+    visible_open_dependencies = [
+        dependency_task.summary_dict()
+        for dependency_task in open_dependencies
+        if user_can_access_task(user, dependency_task)
+    ]
     return jsonify({
         "error": "Nie można zakończyć zadania, dopóki ma otwarte zależności lub podzadania.",
-        "blocked_by": [dependency_task.summary_dict() for dependency_task in open_dependencies],
+        "blocked_by": visible_open_dependencies,
+        "hidden_blocked_by_count": len(open_dependencies) - len(visible_open_dependencies),
         "open_subtasks": [subtask.to_dict() for subtask in open_subtasks],
     }), 409
 
@@ -318,8 +338,12 @@ def visible_projects_for_user(user):
         return []
     return Project.query.filter(Project.id.in_(project_ids)).order_by(Project.name.asc()).all()
 
-def project_completion_status(project):
-    open_tasks = [task for task in project.tasks if not task_is_done(task)]
+def project_completion_status(project, user=None):
+    project_tasks = project.tasks
+    if user is not None and user.role != 'admin':
+        project_tasks = [task for task in project.tasks if user_can_access_task(user, task)]
+
+    open_tasks = [task for task in project_tasks if not task_is_done(task)]
     blocked_tasks = [task for task in open_tasks if task_open_dependencies(task)]
     today = date.today()
     overdue_tasks = [
@@ -462,7 +486,7 @@ def get_tasks():
     tasks = pagination.items
 
     return jsonify({
-        "tasks": [t.to_dict() for t in tasks],
+        "tasks": [serialize_task_for_user(t, user) for t in tasks],
         "total": pagination.total,
         "page": pagination.page,
         "pages": pagination.pages,
@@ -491,11 +515,11 @@ def get_today_tasks():
     upcoming = []
     for task in tasks:
         if task.due_date < today:
-            overdue.append(task.to_dict())
+            overdue.append(serialize_task_for_user(task, user))
         elif task.due_date == today:
-            due_today.append(task.to_dict())
+            due_today.append(serialize_task_for_user(task, user))
         else:
-            upcoming.append(task.to_dict())
+            upcoming.append(serialize_task_for_user(task, user))
 
     blocked = [task for task in tasks if task_open_dependencies(task)]
     ready = [task for task in tasks if not task_open_dependencies(task)]
@@ -526,7 +550,7 @@ def get_blocked_tasks():
     blocked_tasks = [task for task in tasks if not task_is_done(task) and task_open_dependencies(task)]
 
     return jsonify({
-        "tasks": [task.to_dict() for task in blocked_tasks],
+        "tasks": [serialize_task_for_user(task, user) for task in blocked_tasks],
         "total": len(blocked_tasks),
     })
 
@@ -549,25 +573,35 @@ def get_dependency_board():
     ]
     blocker_tasks = [
         task for task in open_tasks
-        if task.open_dependent_tasks()
+        if any(user_can_access_task(user, dependent) for dependent in task.open_dependent_tasks())
     ]
 
     blocked_tasks.sort(key=lambda task: (due_sort_value(task), priority_rank.get(task.priority, 9), task.created_at))
     ready_tasks.sort(key=lambda task: (due_sort_value(task), priority_rank.get(task.priority, 9), task.created_at))
-    blocker_tasks.sort(key=lambda task: (-len(task.open_dependent_tasks()), due_sort_value(task), task.title.lower()))
+    blocker_tasks.sort(
+        key=lambda task: (
+            -len([dependent for dependent in task.open_dependent_tasks() if user_can_access_task(user, dependent)]),
+            due_sort_value(task),
+            task.title.lower(),
+        )
+    )
 
     blockers = []
     for task in blocker_tasks[:10]:
-        blocked_dependents = [dependent.summary_dict() for dependent in task.open_dependent_tasks()]
+        blocked_dependents = [
+            dependent.summary_dict()
+            for dependent in task.open_dependent_tasks()
+            if user_can_access_task(user, dependent)
+        ]
         summary = task.summary_dict()
         summary["blocking_count"] = len(blocked_dependents)
         summary["blocking_tasks"] = blocked_dependents[:5]
         blockers.append(summary)
 
     return jsonify({
-        "blocked": [task.to_dict() for task in blocked_tasks[:10]],
+        "blocked": [serialize_task_for_user(task, user) for task in blocked_tasks[:10]],
         "blockers": blockers,
-        "ready": [task.to_dict() for task in ready_tasks[:10]],
+        "ready": [serialize_task_for_user(task, user) for task in ready_tasks[:10]],
         "counts": {
             "blocked": len(blocked_tasks),
             "blockers": len(blocker_tasks),
@@ -590,8 +624,8 @@ def manage_task_dependencies(task_id):
 
     if request.method == 'GET':
         return jsonify({
-            "dependencies": [dependency.to_dict() for dependency in task.dependencies],
-            "blocked_by": [dependency_task.summary_dict() for dependency_task in task_open_dependencies(task)],
+            "dependencies": serialize_task_for_user(task, user)["dependencies"],
+            "blocked_by": serialize_task_for_user(task, user)["blocked_by"],
         })
 
     if user.role != 'admin':
@@ -626,7 +660,7 @@ def manage_task_dependencies(task_id):
     db.session.refresh(task)
 
     emit_task_event("dependency_added", user, task=task)
-    return jsonify(task.to_dict()), 201
+    return jsonify(serialize_task_for_user(task, user)), 201
 
 @tasks_bp.route('/dependencies/<int:dep_id>', methods=['DELETE'])
 @login_required
@@ -655,7 +689,7 @@ def delete_dependency(dep_id):
     db.session.refresh(task)
 
     emit_task_event("dependency_removed", user, task=task)
-    return jsonify(task.to_dict())
+    return jsonify(serialize_task_for_user(task, user))
 
 @tasks_bp.route('/tasks/quick-add', methods=['POST'])
 @login_required
@@ -701,7 +735,7 @@ def quick_add_task():
     emit_task_event("created", user, task=task)
     emit_notifications(notifications)
     return jsonify({
-        "task": task.to_dict(),
+        "task": serialize_task_for_user(task, user),
         "parsed": {
             "project": task.project,
             "priority": task.priority,
@@ -769,7 +803,7 @@ def create_task():
     emit_task_event("created", user, task=task)
     emit_notifications(notifications)
 
-    return jsonify(task.to_dict()), 201
+    return jsonify(serialize_task_for_user(task, user)), 201
 
 @tasks_bp.route('/tasks/<int:task_id>', methods=['PUT'])
 @login_required
@@ -823,7 +857,7 @@ def update_task(task_id):
 
     if not was_done and task_is_done(task) and task_blocks_completion(task):
         db.session.rollback()
-        return blocked_completion_response(task)
+        return blocked_completion_response(task, user)
 
     db.session.commit()
 
@@ -883,7 +917,7 @@ def update_task(task_id):
         )
     emit_notifications(assignment_notifications)
 
-    return jsonify(task.to_dict())
+    return jsonify(serialize_task_for_user(task, user))
 
 @tasks_bp.route('/tasks/<int:task_id>/complete', methods=['PUT'])
 @login_required
@@ -898,7 +932,7 @@ def complete_task(task_id):
         return jsonify({"error": "Can only complete tasks assigned to you"}), 403
 
     if not task.completed and task_blocks_completion(task):
-        return blocked_completion_response(task)
+        return blocked_completion_response(task, user)
 
     will_complete = not task.completed
     task.completed = not task.completed
@@ -920,7 +954,7 @@ def complete_task(task_id):
     emit_task_event("completed" if task.completed else "reopened", user, task=task)
     emit_notifications(notifications)
 
-    return jsonify(task.to_dict())
+    return jsonify(serialize_task_for_user(task, user))
 
 @tasks_bp.route('/tasks/<int:task_id>', methods=['DELETE'])
 @login_required
@@ -936,12 +970,12 @@ def delete_task(task_id):
 
     project = task.project_record
     task_recipients = task_email_users(task)
-    task_snapshot = task.to_dict()
+    event_recipient_ids = task_list_recipient_ids([task], actor=user)
     db.session.delete(task)
     db.session.commit()
 
     send_project_activity_emails(project, user, "Usunięto zadanie", extra_users=task_recipients)
-    emit_task_event("deleted", user, task_ids=[task_id], task_id=task_id, task_payload=task_snapshot)
+    emit_task_event("deleted", user, task_ids=[task_id], task_id=task_id, recipient_ids=event_recipient_ids)
     return jsonify({"message": "Zadanie usunięte"}), 200
 
 @tasks_bp.route('/tasks/<int:task_id>/comments', methods=['POST'])
@@ -971,7 +1005,12 @@ def add_comment(task_id):
     )
     db.session.add(comment)
     mentioned_usernames = extract_mentions(comment.text)
-    mentioned_users = User.query.filter(User.username.in_(mentioned_usernames)).all() if mentioned_usernames else []
+    mentioned_candidates = User.query.filter(User.username.in_(mentioned_usernames)).all() if mentioned_usernames else []
+    mentioned_users = [
+        mentioned
+        for mentioned in mentioned_candidates
+        if user_can_access_task(mentioned, task)
+    ]
     mentioned_names = [mentioned.username for mentioned in mentioned_users]
     log = ActivityLog(
         user_id=user_id,
@@ -1027,7 +1066,7 @@ def get_task_activity(task_id):
     }
     activity = []
     for log in logs:
-        item = log.to_dict()
+        item = serialize_activity_for_user(log, user)
         item['username'] = users.get(log.user_id, 'System')
         activity.append(item)
 
@@ -1150,7 +1189,7 @@ def filter_tasks():
         query = query.filter_by(completed=(completed.lower() == 'true'))
 
     tasks = query.all()
-    return jsonify({"tasks": [t.to_dict() for t in tasks]})
+    return jsonify({"tasks": [serialize_task_for_user(t, user) for t in tasks]})
 
 @tasks_bp.route('/tasks/by-project', methods=['GET'])
 @login_required
@@ -1168,7 +1207,7 @@ def tasks_by_project():
         proj = task.project
         if proj not in projects:
             projects[proj] = []
-        projects[proj].append(task.to_dict())
+        projects[proj].append(serialize_task_for_user(task, user))
     return jsonify(projects)
 
 @tasks_bp.route('/projects', methods=['GET'])
@@ -1184,7 +1223,7 @@ def get_projects():
             project_tasks = project.tasks
         else:
             project_tasks = [task for task in project.tasks if user_can_access_task(user, task)]
-        project_data['tasks'] = [task.to_dict() for task in project_tasks]
+        project_data['tasks'] = [serialize_task_for_user(task, user) for task in project_tasks]
         projects.append(project_data)
 
     return jsonify({'projects': projects})
@@ -1347,7 +1386,7 @@ def get_project_completion(project_id):
     if not user_can_access_project(user, project):
         return jsonify({"error": "Permission denied"}), 403
 
-    return jsonify(project_completion_status(project))
+    return jsonify(project_completion_status(project, user))
 
 @tasks_bp.route('/projects/<int:project_id>/complete', methods=['POST'])
 @login_required
@@ -1362,7 +1401,7 @@ def complete_project(project_id):
     if not project:
         return jsonify({"error": "Project not found"}), 404
 
-    completion = project_completion_status(project)
+    completion = project_completion_status(project, user)
     if not completion["ready"]:
         return jsonify({
             "error": "Nie można zakończyć projektu, który nie spełnia checklisty gotowości.",
@@ -1391,7 +1430,7 @@ def archive_project(project_id):
     if not project:
         return jsonify({"error": "Project not found"}), 404
 
-    completion = project_completion_status(project)
+    completion = project_completion_status(project, user)
     if not completion["ready"]:
         return jsonify({
             "error": "Nie można archiwizować projektu, który nie spełnia checklisty gotowości.",
@@ -1423,7 +1462,7 @@ def search_tasks():
             (Task.title.ilike(f'%{query_str}%')) | (Task.notes.ilike(f'%{query_str}%'))
         ).all()
 
-    return jsonify({'tasks': [t.to_dict() for t in tasks]})
+    return jsonify({'tasks': [serialize_task_for_user(t, user) for t in tasks]})
 
 @tasks_bp.route('/tasks/<int:task_id>/tags/<int:tag_id>', methods=['POST', 'DELETE'])
 @login_required
@@ -1450,7 +1489,7 @@ def manage_task_tags(task_id, tag_id):
 
     db.session.commit()
     emit_task_event("updated", user, task=task)
-    return jsonify(task.to_dict())
+    return jsonify(serialize_task_for_user(task, user))
 
 @tasks_bp.route('/tasks/bulk/complete', methods=['PUT'])
 @login_required

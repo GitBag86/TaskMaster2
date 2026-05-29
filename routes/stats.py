@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from routes import stats_bp
 from models import db, User, Task, ActivityLog
 from routes.auth import login_required
+from utils.task_visibility import serialize_activity_for_user
 import csv
 from io import StringIO
 
@@ -154,7 +155,7 @@ def get_activity_log():
         query = query.filter(ActivityLog.task_id.in_(visible_task_ids))
 
     activity = query.order_by(ActivityLog.created_at.desc()).limit(limit).all()
-    return jsonify({'activity': [a.to_dict() for a in activity]})
+    return jsonify({'activity': [serialize_activity_for_user(a, user) for a in activity]})
 
 @stats_bp.route('/tasks/export/csv', methods=['GET'])
 @login_required
