@@ -16,6 +16,17 @@ def parse_cors_origins(value):
     return [origin.strip() for origin in value.split(",") if origin.strip()]
 
 
+def parse_bool(value):
+    return str(value).lower() == "true"
+
+
+def default_session_cookie_secure():
+    configured = os.environ.get("SESSION_COOKIE_SECURE")
+    if configured is not None:
+        return parse_bool(configured)
+    return os.environ.get("FLASK_ENV", "development").lower() == "production"
+
+
 class Config:
     # Database: SQLite by default (simplest for local Docker)
     # Override with DATABASE_URL or SQLALCHEMY_DATABASE_URI environment variables if needed
@@ -28,7 +39,7 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-key-change-me")
     CORS_ORIGINS = parse_cors_origins(os.environ.get("CORS_ORIGINS", "http://localhost:5000"))
-    SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "false").lower() == "true"
+    SESSION_COOKIE_SECURE = default_session_cookie_secure()
     SESSION_COOKIE_SAMESITE = os.environ.get("SESSION_COOKIE_SAMESITE", "Lax")
     ENABLE_SCHEDULER = os.environ.get("ENABLE_SCHEDULER", "true").lower() == "true"
     PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/")
@@ -52,6 +63,7 @@ class TestingConfig(Config):
     TESTING = True
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     SECRET_KEY = "test-secret-key"
+    SESSION_COOKIE_SECURE = False
     ENABLE_SCHEDULER = False
     PUBLIC_BASE_URL = ""
     DEFAULT_ADMIN_USERNAME = "admin"
