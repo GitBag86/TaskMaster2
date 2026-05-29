@@ -3,8 +3,9 @@ import os
 from datetime import datetime, timezone
 
 from dotenv import load_dotenv
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory, session
 from flask_cors import CORS
+from flask_socketio import join_room
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -17,6 +18,7 @@ from extensions import mail, migrate, scheduler, socketio
 from jobs.deadline_notifier import check_deadlines
 from models import User, db
 from utils.logging_config import register_request_logging, setup_logging
+from utils.socket_rooms import user_room
 
 logger = logging.getLogger(__name__)
 
@@ -145,6 +147,20 @@ def _register_routes(app):
         return jsonify({"error": "Not found"}), 404
 
 
+def _register_socket_handlers():
+    if getattr(socketio, "_taskmaster_handlers_registered", False):
+        return
+    socketio._taskmaster_handlers_registered = True
+
+    @socketio.on("connect")
+    def handle_socket_connect():
+        user_id = session.get("user_id")
+        if not user_id:
+            return False
+        join_room(user_room(user_id))
+        return None
+
+
 def _register_scheduler(app):
     if not app.config.get("ENABLE_SCHEDULER", True):
         return
@@ -200,6 +216,7 @@ def create_app(config_object=Config):
     if app.config.get("ENABLE_SCHEDULER", True):
         scheduler.init_app(app)
 
+    _register_socket_handlers()
     _register_blueprints(app)
     _register_routes(app)
     register_request_logging(app)

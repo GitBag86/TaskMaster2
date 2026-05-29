@@ -1,9 +1,39 @@
 from flask import request, jsonify, session
+from datetime import datetime, timezone
 from marshmallow import ValidationError
+from extensions import socketio
 from routes import filters_bp
-from models import db, User, Task, Tag, SavedFilter, TaskTemplate, CustomField
+from models import db, User, Task, Tag, SavedFilter, TaskTemplate, CustomField, Project, ActivityLog
 from schemas import TagSchema, FilterSchema, TemplateSchema, CustomFieldSchema
 from routes.auth import login_required
+from utils.socket_rooms import task_recipient_ids, user_room
+
+
+def user_can_access_task(user, task):
+    return user.role == 'admin' or user in task.assignees
+
+
+def emit_task_event(action, user, task):
+    payload = {
+        "action": action,
+        "user": user.username,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "task_id": task.id,
+        "task": task.to_dict(),
+    }
+    for recipient_id in sorted(task_recipient_ids(task, actor=user)):
+        socketio.emit("task_action", payload, to=user_room(recipient_id))
+
+
+def get_or_create_project(name, user):
+    project_name = (name or 'Ogólny').strip() or 'Ogólny'
+    project = Project.query.filter_by(name=project_name).first()
+    if project:
+        return project
+    project = Project(name=project_name, created_by_id=user.id)
+    db.session.add(project)
+    db.session.flush()
+    return project
 
 # --- Tags ---
 
@@ -121,20 +151,31 @@ def use_template(template_id):
     template = db.session.get(TaskTemplate, template_id)
     if not template:
         return jsonify({"error": "Template not found"}), 404
+    if template.user_id != user_id:
+        return jsonify({"error": "Template not found"}), 404
 
-    data = template.template_data
+    data = template.template_data or {}
+    title = (data.get('title') or '').strip()
+    if not title:
+        return jsonify({"error": "Template does not contain a task title"}), 400
+
+    project = get_or_create_project(data.get('project'), user)
     task = Task(
         user_id=user_id,
-        title=data.get('title'),
+        title=title,
         priority=data.get('priority', 'medium'),
-        project=data.get('project', 'General'),
+        project=project.name,
+        project_id=project.id,
         notes=data.get('notes', '')
     )
     assignee_ids = data.get('assignee_ids', [])
     if assignee_ids:
         task.assignees = User.query.filter(User.id.in_(assignee_ids[:1])).all()
     db.session.add(task)
+    db.session.flush()
+    db.session.add(ActivityLog(user_id=user_id, task_id=task.id, action='created', details={'title': task.title, 'source': 'task_template'}))
     db.session.commit()
+    emit_task_event("created", user, task)
     return jsonify(task.to_dict()), 201
 
 # --- Custom Fields ---
@@ -142,9 +183,13 @@ def use_template(template_id):
 @filters_bp.route('/tasks/<int:task_id>/fields', methods=['POST'])
 @login_required
 def add_custom_field(task_id):
+    user_id = session.get('user_id')
+    user = db.session.get(User, user_id)
     task = db.session.get(Task, task_id)
     if not task:
         return jsonify({"error": "Task not found"}), 404
+    if not user_can_access_task(user, task):
+        return jsonify({"error": "Permission denied"}), 403
 
     data = request.get_json()
     schema = CustomFieldSchema()
@@ -154,11 +199,12 @@ def add_custom_field(task_id):
         return jsonify({"error": err.messages}), 400
 
     field = CustomField(
-        user_id=session.get('user_id'),
+        user_id=user_id,
         task_id=task_id,
         field_name=validated['field_name'],
         field_value=validated.get('field_value')
     )
     db.session.add(field)
     db.session.commit()
+    emit_task_event("custom_field_added", user, task)
     return jsonify(field.to_dict()), 201

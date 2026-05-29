@@ -1,5 +1,6 @@
 from extensions import socketio
 from models import db, Notification
+from utils.socket_rooms import user_room
 
 
 def create_notification(user_id, notification_type, message, task=None, actor=None):
@@ -16,7 +17,7 @@ def create_notification(user_id, notification_type, message, task=None, actor=No
 
 
 def emit_notification(notification):
-    socketio.emit("notification", notification.to_dict())
+    socketio.emit("notification", notification.to_dict(), to=user_room(notification.user_id))
 
 
 def emit_notifications(notifications):

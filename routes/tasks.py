@@ -17,6 +17,7 @@ from utils.email_sender import (
     get_task_completion_body,
 )
 from utils.notifications import create_notification, emit_notifications
+from utils.socket_rooms import project_recipient_ids, task_recipient_ids, user_room
 
 TASK_ALLOWED_FIELDS = {'title', 'priority', 'project', 'project_id', 'due_date', 'notes', 'completed', 'status'}
 USER_START_TASK_FIELDS = {'status', 'completed'}
@@ -61,7 +62,17 @@ PROJECT_TEMPLATES = {
     },
 }
 
-def emit_task_event(action, user, task=None, task_ids=None, task_id=None, task_payload=None, extra=None):
+def emit_to_user_rooms(event_name, payload, recipient_ids):
+    for recipient_id in sorted(set(recipient_ids or [])):
+        socketio.emit(event_name, payload, to=user_room(recipient_id))
+
+def task_list_recipient_ids(tasks, actor=None):
+    recipient_ids = {actor.id} if actor is not None else set()
+    for task in tasks:
+        recipient_ids.update(task_recipient_ids(task))
+    return recipient_ids
+
+def emit_task_event(action, user, task=None, task_ids=None, task_id=None, task_payload=None, extra=None, recipient_ids=None):
     payload = {
         "action": action,
         "user": user.username,
@@ -77,7 +88,23 @@ def emit_task_event(action, user, task=None, task_ids=None, task_id=None, task_p
         payload["task_ids"] = task_ids
     if extra:
         payload.update(extra)
-    socketio.emit("task_action", payload)
+    if recipient_ids is None:
+        recipient_ids = task_recipient_ids(task, actor=user) if task is not None else {user.id}
+    emit_to_user_rooms("task_action", payload, recipient_ids)
+
+def emit_task_removed_for_users(user, task_id, recipient_ids):
+    emit_task_event("deleted", user, task_id=task_id, recipient_ids=recipient_ids)
+
+def emit_project_event(action, user, project, task_ids=None):
+    payload = {
+        "action": action,
+        "user": user.username,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "project": project.to_dict(include_tasks=False),
+    }
+    if task_ids is not None:
+        payload["task_ids"] = task_ids
+    emit_to_user_rooms("task_action", payload, project_recipient_ids(project, actor=user))
 
 def app_url(path=''):
     base_url = current_app.config.get("PUBLIC_BASE_URL")
@@ -822,6 +849,9 @@ def update_task(task_id):
             body = get_task_assignment_body(task.title, assignee_user.username, task_link)
             send_email(assignee_user.email, subject, body)
 
+    removed_assignee_ids = old_assignee_ids - {assignee.id for assignee in task.assignees}
+    if removed_assignee_ids:
+        emit_task_removed_for_users(user, task.id, removed_assignee_ids)
     emit_task_event("updated", user, task=task)
 
     changes = {}
@@ -1188,12 +1218,7 @@ def create_project():
     update_project_members(project, validated.get('member_ids', []))
     db.session.add(project)
     db.session.commit()
-    socketio.emit("task_action", {
-        "action": "project_created",
-        "user": user.username,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "project": project.to_dict(include_tasks=False),
-    })
+    emit_project_event("project_created", user, project)
     return jsonify(project.to_dict(include_tasks=False)), 201
 
 @tasks_bp.route('/project-templates', methods=['GET'])
@@ -1264,13 +1289,7 @@ def use_project_template(template_id):
             ))
 
     db.session.commit()
-    socketio.emit("task_action", {
-        "action": "project_template_used",
-        "user": user.username,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "project": project.to_dict(include_tasks=False),
-        "task_ids": [task.id for task in created_tasks],
-    })
+    emit_project_event("project_template_used", user, project, task_ids=[task.id for task in created_tasks])
     return jsonify(project.to_dict(include_tasks=True)), 201
 
 @tasks_bp.route('/projects/<int:project_id>', methods=['PUT'])
@@ -1314,12 +1333,7 @@ def update_project(project_id):
 
     db.session.commit()
     send_project_activity_emails(project, user, "Zaktualizowano ustawienia projektu")
-    socketio.emit("task_action", {
-        "action": "project_updated",
-        "user": user.username,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "project": project.to_dict(include_tasks=False),
-    })
+    emit_project_event("project_updated", user, project)
     return jsonify(project.to_dict(include_tasks=True))
 
 @tasks_bp.route('/projects/<int:project_id>/completion', methods=['GET'])
@@ -1358,12 +1372,7 @@ def complete_project(project_id):
     project.archived = True
     db.session.commit()
     send_project_completed_emails(project, user)
-    socketio.emit("task_action", {
-        "action": "project_completed",
-        "user": user.username,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "project": project.to_dict(include_tasks=False),
-    })
+    emit_project_event("project_completed", user, project)
 
     data = project.to_dict(include_tasks=True)
     data["completion"] = completion
@@ -1392,12 +1401,7 @@ def archive_project(project_id):
     project.archived = True
     db.session.commit()
     send_project_completed_emails(project, user)
-    socketio.emit("task_action", {
-        "action": "project_archived",
-        "user": user.username,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "project": project.to_dict(include_tasks=False),
-    })
+    emit_project_event("project_archived", user, project)
     return jsonify(project.to_dict(include_tasks=False))
 
 @tasks_bp.route('/tasks/search', methods=['GET'])
@@ -1457,13 +1461,14 @@ def bulk_complete_tasks():
     if user.role != 'admin':
         return jsonify({"error": "Tylko administrator może edytować masowo"}), 403
 
-    data = request.get_json()
+    data = request.get_json() or {}
     task_ids = data.get('task_ids', [])
 
     if len(task_ids) > BULK_MAX_TASKS:
         return jsonify({"error": f"Maksymalna liczba zadań w operacji masowej: {BULK_MAX_TASKS}"}), 400
 
     tasks = [task for task_id in task_ids if (task := db.session.get(Task, task_id))]
+    recipient_ids = task_list_recipient_ids(tasks, actor=user)
     blocked_tasks = [task for task in tasks if not task_is_done(task) and task_blocks_completion(task)]
     if blocked_tasks:
         return jsonify({
@@ -1476,7 +1481,7 @@ def bulk_complete_tasks():
         task.status = 'done'
 
     db.session.commit()
-    emit_task_event("bulk_completed", user, task_ids=task_ids)
+    emit_task_event("bulk_completed", user, task_ids=task_ids, recipient_ids=recipient_ids)
     return jsonify({"message": f"Zakończono {len(task_ids)} zadań"}), 200
 
 @tasks_bp.route('/tasks/bulk/delete', methods=['DELETE'])
@@ -1488,21 +1493,24 @@ def bulk_delete_tasks():
     if user.role != 'admin':
         return jsonify({"error": "Tylko administrator może usuwać masowo"}), 403
 
-    data = request.get_json()
+    data = request.get_json() or {}
     task_ids = data.get('task_ids', [])
 
     if len(task_ids) > BULK_MAX_TASKS:
         return jsonify({"error": f"Maksymalna liczba zadań w operacji masowej: {BULK_MAX_TASKS}"}), 400
 
     count = 0
+    tasks_to_delete = []
     for task_id in task_ids:
         task = db.session.get(Task, task_id)
         if task:
+            tasks_to_delete.append(task)
             db.session.delete(task)
             count += 1
 
+    recipient_ids = task_list_recipient_ids(tasks_to_delete, actor=user)
     db.session.commit()
-    emit_task_event("bulk_deleted", user, task_ids=task_ids)
+    emit_task_event("bulk_deleted", user, task_ids=task_ids, recipient_ids=recipient_ids)
     return jsonify({"message": f"Usunięto {count} zadań"}), 200
 
 @tasks_bp.route('/tasks/bulk/update', methods=['PUT'])
@@ -1514,7 +1522,7 @@ def bulk_update_tasks():
     if user.role != 'admin':
         return jsonify({"error": "Tylko administrator może edytować masowo"}), 403
 
-    data = request.get_json()
+    data = request.get_json() or {}
     task_ids = data.get('task_ids', [])
     updates = data.get('updates', {})
 
@@ -1525,6 +1533,7 @@ def bulk_update_tasks():
             return jsonify({"error": "Zadanie może mieć tylko jednego przypisanego użytkownika."}), 400
 
     tasks = [task for task_id in task_ids if (task := db.session.get(Task, task_id))]
+    recipient_ids = task_list_recipient_ids(tasks, actor=user)
     marks_done = updates.get('completed') is True or updates.get('status') == 'done'
     blocked_tasks = [task for task in tasks if marks_done and not task_is_done(task) and task_blocks_completion(task)]
     if blocked_tasks:
@@ -1552,5 +1561,6 @@ def bulk_update_tasks():
                 setattr(task, key, value)
 
     db.session.commit()
-    emit_task_event("bulk_updated", user, task_ids=task_ids)
+    recipient_ids.update(task_list_recipient_ids(tasks, actor=user))
+    emit_task_event("bulk_updated", user, task_ids=task_ids, recipient_ids=recipient_ids)
     return jsonify({"message": f"Zaktualizowano {len(task_ids)} zadań"}), 200

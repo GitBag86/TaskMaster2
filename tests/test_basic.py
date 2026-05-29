@@ -2,7 +2,7 @@ import sqlite3
 from datetime import date, timedelta
 
 from jobs.deadline_notifier import check_deadlines
-from models import db, User, Task, Project, Tag, TaskDependency, ActivityLog, Notification, Subtask
+from models import db, User, Task, Project, Tag, TaskDependency, ActivityLog, Notification, Subtask, CustomField
 from utils.email_sender import get_task_assignment_body, send_email
 
 def test_health_check(client):
@@ -1004,8 +1004,8 @@ def test_comment_mentions_emit_event_and_activity(auth_client, app, monkeypatch)
     task = auth_client.post('/tasks', json={"title": "Mention target"}).get_json()
     emitted = []
 
-    def fake_emit(event_name, payload):
-        emitted.append({"event_name": event_name, "payload": payload})
+    def fake_emit(event_name, payload, **kwargs):
+        emitted.append({"event_name": event_name, "payload": payload, "kwargs": kwargs})
 
     monkeypatch.setattr("routes.tasks.socketio.emit", fake_emit)
 
@@ -1083,9 +1083,10 @@ def test_regular_user_cannot_use_another_users_tag_on_assigned_task(client, app)
 def test_create_task_emits_structured_socket_event(auth_client, monkeypatch):
     emitted = {}
 
-    def fake_emit(event_name, payload):
+    def fake_emit(event_name, payload, **kwargs):
         emitted["event_name"] = event_name
         emitted["payload"] = payload
+        emitted["kwargs"] = kwargs
 
     monkeypatch.setattr("routes.tasks.socketio.emit", fake_emit)
 
@@ -1095,6 +1096,38 @@ def test_create_task_emits_structured_socket_event(auth_client, monkeypatch):
     assert emitted["event_name"] == "task_action"
     assert emitted["payload"]["action"] == "created"
     assert emitted["payload"]["task_id"] == response.get_json()["id"]
+    assert emitted["kwargs"]["to"].startswith("user:")
+
+def test_task_socket_event_only_targets_actor_and_assignees(client, app, monkeypatch):
+    with app.app_context():
+        admin = User(username="socket_admin", email="socket_admin@example.com", role="admin")
+        admin.set_password("password")
+        assignee = User(username="socket_assignee", email="socket_assignee@example.com", role="user")
+        assignee.set_password("password")
+        outsider = User(username="socket_outsider", email="socket_outsider@example.com", role="user")
+        outsider.set_password("password")
+        db.session.add_all([admin, assignee, outsider])
+        db.session.commit()
+        admin_id = admin.id
+        assignee_id = assignee.id
+        outsider_id = outsider.id
+
+    with client.session_transaction() as sess:
+        sess['user_id'] = admin_id
+
+    emitted = []
+
+    def fake_emit(event_name, payload, **kwargs):
+        emitted.append({"event_name": event_name, "payload": payload, "kwargs": kwargs})
+
+    monkeypatch.setattr("routes.tasks.socketio.emit", fake_emit)
+
+    response = client.post('/tasks', json={"title": "Private socket task", "assignee_ids": [assignee_id]})
+
+    assert response.status_code == 201
+    rooms = {event["kwargs"]["to"] for event in emitted if event["event_name"] == "task_action"}
+    assert rooms == {f"user:{admin_id}", f"user:{assignee_id}"}
+    assert f"user:{outsider_id}" not in rooms
 
 def test_task_activity_includes_created_and_updated_events(auth_client):
     created = auth_client.post('/tasks', json={"title": "Activity Task"}).get_json()
@@ -1109,15 +1142,68 @@ def test_task_activity_includes_created_and_updated_events(auth_client):
     assert activity[0]["details"]["changes"]["title"]["to"] == "Activity Task Updated"
     assert activity[0]["username"] == "admin"
 
+def test_global_activity_regular_user_only_sees_assigned_task_logs(client, app):
+    with app.app_context():
+        regular = User(username="activity_regular", email="activity_regular@example.com", role="user")
+        regular.set_password("password")
+        admin = User(username="activity_admin", email="activity_admin@example.com", role="admin")
+        admin.set_password("password")
+        db.session.add_all([regular, admin])
+        db.session.flush()
+        visible_task = Task(user_id=admin.id, title="Visible activity")
+        hidden_task = Task(user_id=admin.id, title="Hidden activity")
+        visible_task.assignees.append(regular)
+        db.session.add_all([visible_task, hidden_task])
+        db.session.flush()
+        db.session.add_all([
+            ActivityLog(user_id=admin.id, task_id=visible_task.id, action="visible", details={"title": visible_task.title}),
+            ActivityLog(user_id=admin.id, task_id=hidden_task.id, action="hidden", details={"title": hidden_task.title}),
+        ])
+        db.session.commit()
+        regular_id = regular.id
+
+    with client.session_transaction() as sess:
+        sess['user_id'] = regular_id
+
+    response = client.get('/activity')
+
+    assert response.status_code == 200
+    actions = [item["action"] for item in response.get_json()["activity"]]
+    assert actions == ["visible"]
+
+def test_regular_user_cannot_add_custom_field_to_unassigned_task(client, app):
+    with app.app_context():
+        admin = User(username="field_admin", email="field_admin@example.com", role="admin")
+        admin.set_password("password")
+        regular = User(username="field_regular", email="field_regular@example.com", role="user")
+        regular.set_password("password")
+        db.session.add_all([admin, regular])
+        db.session.flush()
+        task = Task(user_id=admin.id, title="Private field task")
+        db.session.add(task)
+        db.session.commit()
+        regular_id = regular.id
+        task_id = task.id
+
+    with client.session_transaction() as sess:
+        sess['user_id'] = regular_id
+
+    response = client.post(f'/tasks/{task_id}/fields', json={"field_name": "Secret", "field_value": "Nope"})
+
+    assert response.status_code == 403
+    with app.app_context():
+        assert CustomField.query.filter_by(task_id=task_id).all() == []
+
 def test_delete_task_emits_snapshot_event(auth_client, monkeypatch):
     created = auth_client.post('/tasks', json={"title": "Delete me"})
     task_id = created.get_json()["id"]
 
     emitted = {}
 
-    def fake_emit(event_name, payload):
+    def fake_emit(event_name, payload, **kwargs):
         emitted["event_name"] = event_name
         emitted["payload"] = payload
+        emitted["kwargs"] = kwargs
 
     monkeypatch.setattr("routes.tasks.socketio.emit", fake_emit)
 
@@ -1133,9 +1219,10 @@ def test_bulk_complete_emits_socket_event(auth_client, monkeypatch):
     second = auth_client.post('/tasks', json={"title": "Bulk complete 2"}).get_json()
     emitted = {}
 
-    def fake_emit(event_name, payload):
+    def fake_emit(event_name, payload, **kwargs):
         emitted["event_name"] = event_name
         emitted["payload"] = payload
+        emitted["kwargs"] = kwargs
 
     monkeypatch.setattr("routes.tasks.socketio.emit", fake_emit)
 
@@ -1150,9 +1237,10 @@ def test_bulk_update_emits_socket_event(auth_client, monkeypatch):
     task = auth_client.post('/tasks', json={"title": "Bulk update"}).get_json()
     emitted = {}
 
-    def fake_emit(event_name, payload):
+    def fake_emit(event_name, payload, **kwargs):
         emitted["event_name"] = event_name
         emitted["payload"] = payload
+        emitted["kwargs"] = kwargs
 
     monkeypatch.setattr("routes.tasks.socketio.emit", fake_emit)
 
@@ -1170,9 +1258,10 @@ def test_bulk_delete_emits_socket_event(auth_client, monkeypatch):
     task = auth_client.post('/tasks', json={"title": "Bulk delete"}).get_json()
     emitted = {}
 
-    def fake_emit(event_name, payload):
+    def fake_emit(event_name, payload, **kwargs):
         emitted["event_name"] = event_name
         emitted["payload"] = payload
+        emitted["kwargs"] = kwargs
 
     monkeypatch.setattr("routes.tasks.socketio.emit", fake_emit)
 

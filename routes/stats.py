@@ -141,9 +141,19 @@ def get_weekly_report():
 @stats_bp.route('/activity', methods=['GET'])
 @login_required
 def get_activity_log():
+    user_id = session.get('user_id')
+    user = db.session.get(User, user_id)
     limit = request.args.get('limit', 50, type=int)
     limit = min(limit, 200)
-    activity = ActivityLog.query.order_by(ActivityLog.created_at.desc()).limit(limit).all()
+
+    query = ActivityLog.query
+    if user.role != 'admin':
+        visible_task_ids = [task.id for task in assigned_task_query(user).all()]
+        if not visible_task_ids:
+            return jsonify({'activity': []})
+        query = query.filter(ActivityLog.task_id.in_(visible_task_ids))
+
+    activity = query.order_by(ActivityLog.created_at.desc()).limit(limit).all()
     return jsonify({'activity': [a.to_dict() for a in activity]})
 
 @stats_bp.route('/tasks/export/csv', methods=['GET'])
