@@ -1,5 +1,6 @@
 import sqlite3
 from datetime import date, timedelta
+from pathlib import Path
 
 from jobs.deadline_notifier import check_deadlines
 from models import (
@@ -17,6 +18,8 @@ from models import (
     db,
 )
 from utils.email_sender import get_task_assignment_body, send_email
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def default_team_id(app):
@@ -1365,8 +1368,8 @@ def test_bulk_delete_emits_socket_event(auth_client, monkeypatch):
     assert emitted["payload"]["task_ids"] == [task["id"]]
 
 
-def test_normalize_database_uri_uses_psycopg_driver():
-    from config import normalize_database_uri, parse_cors_origins
+def test_normalize_database_uri_uses_psycopg_driver(monkeypatch):
+    from config import default_session_cookie_secure, normalize_database_uri, parse_cors_origins
 
     assert normalize_database_uri("postgres://user:pass@host/db") == "postgresql+psycopg://user:pass@host/db"
     assert normalize_database_uri("postgresql://user:pass@host/db") == "postgresql+psycopg://user:pass@host/db"
@@ -1376,6 +1379,25 @@ def test_normalize_database_uri_uses_psycopg_driver():
         "https://app.example.com",
         "http://localhost:3000",
     ]
+
+    monkeypatch.delenv("SESSION_COOKIE_SECURE", raising=False)
+    monkeypatch.setenv("FLASK_ENV", "production")
+    assert default_session_cookie_secure() is True
+    monkeypatch.setenv("FLASK_ENV", "development")
+    assert default_session_cookie_secure() is False
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "false")
+    monkeypatch.setenv("FLASK_ENV", "production")
+    assert default_session_cookie_secure() is False
+
+
+def test_nginx_auth_locations_use_strict_rate_limit():
+    config = (PROJECT_ROOT / "nginx" / "conf.d" / "taskmaster.conf").read_text()
+
+    assert "location = /auth/login" in config
+    assert "location = /auth/signup" in config
+    assert "location ~ ^/auth/(login|signup)" not in config
+    assert config.index("location = /auth/login") < config.index("location ~ ^/(auth|tasks|projects|users|stats|activity|notifications|filters|templates)")
+    assert config.index("location = /auth/signup") < config.index("location ~ ^/(auth|tasks|projects|users|stats|activity|notifications|filters|templates)")
 
 
 def test_migration_upgrade_smoke_fresh_sqlite(tmp_path, monkeypatch):

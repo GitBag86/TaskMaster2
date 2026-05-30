@@ -50,10 +50,9 @@ def _configure_app(app):
 
     # Bezpieczne cookies sesji. Secure=True wymaga HTTPS (Nginx termuje TLS).
     # W lokalnym devie bez Nginx ustaw SESSION_COOKIE_SECURE=False w .env.local.
-    secure_cookies = os.environ.get("SESSION_COOKIE_SECURE", "true").lower() == "true"
     app.config.setdefault("SESSION_COOKIE_HTTPONLY", True)
     app.config.setdefault("SESSION_COOKIE_SAMESITE", "Lax")
-    app.config.setdefault("SESSION_COOKIE_SECURE", secure_cookies)
+    app.config.setdefault("SESSION_COOKIE_SECURE", True)
 
     CORS(app, supports_credentials=True, origins=app.config["CORS_ORIGINS"])
 
