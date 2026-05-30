@@ -1090,8 +1090,9 @@ def test_regular_user_cannot_manage_assigned_task_subtasks(client, app):
         assert saved_subtask.completed is False
 
 def test_admin_can_unassign_task_user(auth_client, app):
+    team_id = default_team_id(app)
     with app.app_context():
-        regular = User(username="assigned_user", email="assigned_user@example.com", role="user")
+        regular = User(username="assigned_user", email="assigned_user@example.com", role="user", team_id=team_id)
         regular.set_password("password")
         db.session.add(regular)
         db.session.commit()

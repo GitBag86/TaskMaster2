@@ -1100,7 +1100,7 @@ def add_subtask(task_id):
 
     if not user_can_access_task(user, task):
         return jsonify({"error": "Permission denied"}), 403
-    if user.role != 'admin':
+    if g.get('current_role') not in ('manager', 'super_admin'):
         return jsonify({"error": "Tylko administrator może zarządzać podzadaniami"}), 403
 
     data = request.get_json()
@@ -1139,7 +1139,7 @@ def complete_subtask(subtask_id):
     task = get_team_resource_or_404(Task, subtask.task_id)
     if not user_can_access_task(user, task):
         return jsonify({"error": "Permission denied"}), 403
-    if user.role != 'admin':
+    if g.get('current_role') not in ('manager', 'super_admin'):
         return jsonify({"error": "Tylko administrator może zarządzać podzadaniami"}), 403
 
     subtask.completed = not subtask.completed
@@ -1171,7 +1171,7 @@ def delete_subtask(subtask_id):
     task = get_team_resource_or_404(Task, subtask.task_id)
     if not user_can_access_task(user, task):
         return jsonify({"error": "Permission denied"}), 403
-    if user.role != 'admin':
+    if g.get('current_role') not in ('manager', 'super_admin'):
         return jsonify({"error": "Tylko administrator może zarządzać podzadaniami"}), 403
 
     db.session.delete(subtask)
