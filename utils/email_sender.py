@@ -10,8 +10,30 @@ BRAND_NAME = "TaskMaster"
 SIGNATURE = "Zespol TaskMaster"
 
 
+def missing_mail_config():
+    if current_app.config.get("MAIL_SUPPRESS_SEND"):
+        return []
+
+    missing = []
+    if not current_app.config.get("MAIL_SERVER"):
+        missing.append("MAIL_SERVER")
+    if not (current_app.config.get("MAIL_DEFAULT_SENDER") or current_app.config.get("MAIL_USERNAME")):
+        missing.append("MAIL_DEFAULT_SENDER")
+    return missing
+
+
 def send_email(to_email, subject, body):
-    msg = Message(subject, recipients=[to_email])
+    missing = missing_mail_config()
+    if missing:
+        current_app.logger.warning(
+            "Email not sent to %s: missing mail configuration: %s",
+            to_email,
+            ", ".join(missing),
+        )
+        return False
+
+    sender = current_app.config.get("MAIL_DEFAULT_SENDER") or current_app.config.get("MAIL_USERNAME")
+    msg = Message(subject, recipients=[to_email], sender=sender)
 
     if isinstance(body, dict):
         msg.body = body.get("text", "")

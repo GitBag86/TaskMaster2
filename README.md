@@ -711,6 +711,7 @@ Najwazniejsze zmienne srodowiskowe:
 SECRET_KEY=...
 DATABASE_URL=...
 CORS_ORIGINS=http://localhost:5000
+PUBLIC_BASE_URL=https://twoja-domena.com
 LOG_LEVEL=INFO
 ENABLE_SCHEDULER=true
 SOCKETIO_ASYNC_MODE=threading

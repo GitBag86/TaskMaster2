@@ -1,12 +1,14 @@
 import sqlite3
 from datetime import date, timedelta
 
+from jobs.deadline_notifier import check_deadlines
 from models import (
     ActivityLog,
     CustomField,
     Notification,
     Project,
     RecurringTask,
+    Subtask,
     Tag,
     Task,
     TaskDependency,
@@ -66,6 +68,58 @@ def test_email_templates_include_html_text_and_escape_content(app, monkeypatch):
 
     assert sent[0].body == body["text"]
     assert sent[0].html == body["html"]
+
+def test_send_email_requires_delivery_config_when_not_suppressed(app, monkeypatch):
+    sent = []
+
+    def fake_send(message):
+        sent.append(message)
+
+    monkeypatch.setattr("utils.email_sender.mail.send", fake_send)
+
+    with app.app_context():
+        app.config.update(
+            MAIL_SUPPRESS_SEND=False,
+            MAIL_SERVER=None,
+            MAIL_DEFAULT_SENDER=None,
+            MAIL_USERNAME=None,
+        )
+        assert send_email("anna@example.com", "Test", "Body") is False
+
+    assert sent == []
+
+def test_deadline_notifier_uses_public_base_url_without_request_context(app, monkeypatch):
+    sent = []
+
+    def fake_send_email(to_email, subject, body):
+        sent.append({"to": to_email, "subject": subject, "body": body})
+        return True
+
+    monkeypatch.setattr("jobs.deadline_notifier.send_email", fake_send_email)
+
+    with app.app_context():
+        app.config["PUBLIC_BASE_URL"] = "https://tasks.example.test"
+        admin = User(username="deadline_admin", email="deadline_admin@example.com", role="admin")
+        admin.set_password("password")
+        assignee = User(username="deadline_user", email="deadline_user@example.com", role="user")
+        assignee.set_password("password")
+        db.session.add_all([admin, assignee])
+        db.session.commit()
+
+        task = Task(
+            user_id=admin.id,
+            title="Deadline task",
+            due_date=date.today() + timedelta(days=1),
+        )
+        task.assignees.append(assignee)
+        db.session.add(task)
+        db.session.commit()
+        task_id = task.id
+
+    assert check_deadlines(app) == 1
+    assert sent[0]["to"] == "deadline_user@example.com"
+    assert sent[0]["subject"] == "Zbliża się termin wykonania zadania: Deadline task"
+    assert f"https://tasks.example.test/tasks/{task_id}" in sent[0]["body"]["text"]
 
 def test_signup(client):
     with client.application.app_context():
@@ -933,6 +987,93 @@ def test_regular_user_can_complete_assigned_task(client, app):
     response = client.put(f'/tasks/{task_id}/complete')
     assert response.status_code == 200
     assert response.get_json()["completed"] is True
+
+def test_regular_user_can_mark_assigned_task_in_progress(client, app, monkeypatch):
+    monkeypatch.setattr("routes.tasks.send_email", lambda *args, **kwargs: True)
+
+    with app.app_context():
+        admin = User(username="admin_start", email="admin_start@example.com", role="admin")
+        admin.set_password("password")
+        regular = User(username="regular_start", email="regular_start@example.com", role="user")
+        regular.set_password("password")
+        db.session.add_all([admin, regular])
+        db.session.commit()
+        task = Task(user_id=admin.id, title="Start me")
+        task.assignees.append(regular)
+        db.session.add(task)
+        db.session.commit()
+        regular_id = regular.id
+        task_id = task.id
+
+    with client.session_transaction() as sess:
+        sess['user_id'] = regular_id
+
+    response = client.put(f'/tasks/{task_id}', json={"status": "in_progress", "completed": False})
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["status"] == "in_progress"
+    assert payload["completed"] is False
+
+    with app.app_context():
+        saved_task = db.session.get(Task, task_id)
+        assert saved_task.status == "in_progress"
+        assert saved_task.completed is False
+
+def test_regular_user_cannot_manage_assigned_task_subtasks(client, app):
+    with app.app_context():
+        admin = User(username="admin_subtasks", email="admin_subtasks@example.com", role="admin")
+        admin.set_password("password")
+        regular = User(username="regular_subtasks", email="regular_subtasks@example.com", role="user")
+        regular.set_password("password")
+        db.session.add_all([admin, regular])
+        db.session.commit()
+        task = Task(user_id=admin.id, title="Checklist")
+        task.assignees.append(regular)
+        db.session.add(task)
+        db.session.flush()
+        subtask = Subtask(task_id=task.id, title="Manager-owned item")
+        db.session.add(subtask)
+        db.session.commit()
+        regular_id = regular.id
+        task_id = task.id
+        subtask_id = subtask.id
+
+    with client.session_transaction() as sess:
+        sess['user_id'] = regular_id
+
+    add_response = client.post(f'/tasks/{task_id}/subtasks', json={"title": "User item"})
+    toggle_response = client.put(f'/subtasks/{subtask_id}/complete')
+    delete_response = client.delete(f'/subtasks/{subtask_id}')
+
+    assert add_response.status_code == 403
+    assert toggle_response.status_code == 403
+    assert delete_response.status_code == 403
+
+    with app.app_context():
+        saved_task = db.session.get(Task, task_id)
+        saved_subtask = db.session.get(Subtask, subtask_id)
+        assert [item.title for item in saved_task.subtasks] == ["Manager-owned item"]
+        assert saved_subtask.completed is False
+
+def test_admin_can_unassign_task_user(auth_client, app):
+    with app.app_context():
+        regular = User(username="assigned_user", email="assigned_user@example.com", role="user")
+        regular.set_password("password")
+        db.session.add(regular)
+        db.session.commit()
+        regular_id = regular.id
+
+    task = auth_client.post('/tasks', json={"title": "Unassign me", "assignee_ids": [regular_id]}).get_json()
+
+    response = auth_client.put(f'/tasks/{task["id"]}', json={"assignee_ids": []})
+
+    assert response.status_code == 200
+    assert response.get_json()["assignees"] == []
+
+    with app.app_context():
+        saved_task = db.session.get(Task, task["id"])
+        assert saved_task.assignees == []
 
 def test_regular_user_cannot_comment_unassigned_task(client, app):
     with app.app_context():
