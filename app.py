@@ -200,6 +200,7 @@ def _ensure_default_admin(app):
     username = app.config.get("DEFAULT_ADMIN_USERNAME")
     password = app.config.get("DEFAULT_ADMIN_PASSWORD")
     email = app.config.get("DEFAULT_ADMIN_EMAIL")
+    reset_password = app.config.get("DEFAULT_ADMIN_RESET_PASSWORD", False)
     if not username or not password or not email:
         return
 
@@ -209,7 +210,9 @@ def _ensure_default_admin(app):
             # Brand-new database: create the bootstrap account directly as super_admin
             # with team_id=None (R3.4).
             user = User(username=username, email=email, role="super_admin", team_id=None)
+            user.set_password(password)
             db.session.add(user)
+            logger.info("Default admin account created: %s", username)
         else:
             # Existing account: ensure it stays super_admin and detached from any team.
             # The migration in 81d661ec5395 already promoted legacy 'admin' → 'super_admin'
@@ -217,7 +220,11 @@ def _ensure_default_admin(app):
             user.role = "super_admin"
             user.team_id = None
             user.email = user.email or email
-        user.set_password(password)
+            if reset_password:
+                user.set_password(password)
+                logger.info("Default admin password reset: %s", username)
+            else:
+                logger.info("Default admin account is ready without password reset: %s", username)
         db.session.commit()
         logger.info("Default super-admin account is ready: %s", username)
     except SQLAlchemyError:

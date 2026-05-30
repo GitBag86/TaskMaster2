@@ -35,6 +35,7 @@ class Config:
     DEFAULT_ADMIN_USERNAME = os.environ.get("DEFAULT_ADMIN_USERNAME", "admin")
     DEFAULT_ADMIN_PASSWORD = os.environ.get("DEFAULT_ADMIN_PASSWORD", "dakos1admin2")
     DEFAULT_ADMIN_EMAIL = os.environ.get("DEFAULT_ADMIN_EMAIL", "admin@taskmaster.local")
+    DEFAULT_ADMIN_RESET_PASSWORD = os.environ.get("DEFAULT_ADMIN_RESET_PASSWORD", "false").lower() == "true"
 
     # Team workspaces (multi-tenancy)
     # SIGNUP_MODE: 'disabled' | 'invite_only' | 'default_team'
@@ -65,6 +66,7 @@ class TestingConfig(Config):
     DEFAULT_ADMIN_USERNAME = "admin"
     DEFAULT_ADMIN_PASSWORD = "dakos1admin2"
     DEFAULT_ADMIN_EMAIL = "admin@taskmaster.local"
+    DEFAULT_ADMIN_RESET_PASSWORD = False
     MAIL_SUPPRESS_SEND = True
     # Bootstrap admin defaults isolated from any .env values that may
     # be loaded into the process. Tests assert against these constants.
