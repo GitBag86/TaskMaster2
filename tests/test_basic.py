@@ -308,7 +308,7 @@ def test_project_changes_email_project_participants(auth_client, app, monkeypatc
         sent.append({"to": to_email, "subject": subject, "body": body})
         return True
 
-    monkeypatch.setattr("routes.tasks.send_email", fake_send_email)
+    monkeypatch.setattr("routes.tasks.enqueue_email", fake_send_email)
 
     with app.app_context():
         team_id = Team.query.filter_by(slug="default").one().id
@@ -1022,7 +1022,7 @@ def test_regular_user_can_complete_assigned_task(client, app):
     assert response.get_json()["completed"] is True
 
 def test_regular_user_can_mark_assigned_task_in_progress(client, app, monkeypatch):
-    monkeypatch.setattr("routes.tasks.send_email", lambda *args, **kwargs: True)
+    monkeypatch.setattr("routes.tasks.enqueue_email", lambda *args, **kwargs: True)
 
     with app.app_context():
         admin = User(username="admin_start", email="admin_start@example.com", role="admin")

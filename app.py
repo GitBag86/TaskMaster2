@@ -231,6 +231,44 @@ def _ensure_default_admin(app):
         logger.info("Default admin bootstrap skipped until database schema is ready")
 
 
+def _log_mail_status(app):
+    if app.config.get("TESTING"):
+        return
+
+    server = app.config.get("MAIL_SERVER")
+    suppress = app.config.get("MAIL_SUPPRESS_SEND")
+    sender = app.config.get("MAIL_DEFAULT_SENDER") or app.config.get("MAIL_USERNAME")
+
+    if suppress:
+        app.logger.warning(
+            "MAIL_SUPPRESS_SEND=True - email notifications are disabled. "
+            "Set MAIL_SUPPRESS_SEND=False (or remove it) to enable delivery."
+        )
+        return
+
+    if not server:
+        app.logger.warning(
+            "MAIL_SERVER is not configured - email notifications will be skipped silently. "
+            "Set MAIL_SERVER, MAIL_PORT, MAIL_USERNAME, MAIL_PASSWORD and MAIL_DEFAULT_SENDER."
+        )
+        return
+
+    if not sender:
+        app.logger.warning(
+            "Mail is configured but MAIL_DEFAULT_SENDER (and MAIL_USERNAME) are empty - "
+            "outbound emails will be rejected by Flask-Mail."
+        )
+        return
+
+    app.logger.info(
+        "Mail configured: server=%s port=%s tls=%s sender=%s",
+        server,
+        app.config.get("MAIL_PORT"),
+        app.config.get("MAIL_USE_TLS"),
+        sender,
+    )
+
+
 def create_app(config_object=Config):
     app = Flask(__name__, static_folder="frontend/dist", static_url_path="/")
     app.config.from_object(config_object)
@@ -253,6 +291,7 @@ def create_app(config_object=Config):
     _register_routes(app)
     register_auth_layer(app)
     register_request_logging(app)
+    _log_mail_status(app)
 
     with app.app_context():
         if app.config.get("ENABLE_SCHEDULER", True):

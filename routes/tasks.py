@@ -21,7 +21,7 @@ from models import (
 from schemas import TaskSchema, CommentSchema, SubtaskSchema, ProjectSchema, DependencySchema
 from routes.auth import login_required
 from utils.email_sender import (
-    send_email,
+    enqueue_email,
     get_project_activity_body,
     get_project_completed_body,
     get_task_status_change_body,
@@ -109,7 +109,7 @@ def send_task_completion_emails(task, actor):
     link = task_url(task)
     action_label = "zakończone" if task.completed else "przywrócone"
     for recipient in task_email_users(task, actor=actor):
-        send_email(
+        enqueue_email(
             recipient.email,
             f"Zadanie {action_label}: {task.title}",
             get_task_completion_body(task.title, recipient.username, actor.username, task.completed, link),
@@ -125,7 +125,7 @@ def send_project_activity_emails(project, actor, activity, task=None, exclude_us
         *(extra_users or []),
     ]
     for recipient in unique_email_users(recipients, actor=actor, exclude_user_ids=exclude_user_ids):
-        send_email(
+        enqueue_email(
             recipient.email,
             f"Zmiana w projekcie: {project.name}",
             get_project_activity_body(
@@ -141,7 +141,7 @@ def send_project_activity_emails(project, actor, activity, task=None, exclude_us
 def send_project_completed_emails(project, actor):
     link = project_url(project)
     for recipient in project_email_users(project, actor=actor):
-        send_email(
+        enqueue_email(
             recipient.email,
             f"Projekt zakończony: {project.name}",
             get_project_completed_body(project.name, recipient.username, actor.username, link),
@@ -803,7 +803,7 @@ def create_task():
         if assignee.email:
             subject = f"Zostałeś przypisany do zadania: {task.title}"
             body = get_task_assignment_body(task.title, assignee.username, task_link)
-            send_email(assignee.email, subject, body)
+            enqueue_email(assignee.email, subject, body)
 
     log = ActivityLog(user_id=user_id, task_id=task.id, team_id=task.team_id, action='created', details={'title': task.title})
     db.session.add(log)
@@ -885,7 +885,7 @@ def update_task(task_id):
         if task.owner and task.owner.email:
             subject = f"Zmiana statusu zadania: {task.title}"
             body = get_task_status_change_body(task.title, old_status, task.status, task_link)
-            send_email(task.owner.email, subject, body)
+            enqueue_email(task.owner.email, subject, body)
 
     # Send email for new assignments
     assignment_notifications = []
@@ -898,7 +898,7 @@ def update_task(task_id):
                 continue
             subject = f"Zostałeś przypisany do zadania: {task.title}"
             body = get_task_assignment_body(task.title, assignee_user.username, task_link)
-            send_email(assignee_user.email, subject, body)
+            enqueue_email(assignee_user.email, subject, body)
 
     emit_task_event("updated", user, task=task)
 

@@ -1,6 +1,9 @@
 from html import escape
 
-from flask import current_app
+import socket
+import threading
+
+from flask import current_app, has_app_context
 from flask_mail import Message
 
 from extensions import mail
@@ -8,6 +11,23 @@ from extensions import mail
 
 BRAND_NAME = "TaskMaster"
 SIGNATURE = "Zespol TaskMaster"
+DEFAULT_MAIL_TIMEOUT_SECONDS = 10
+
+
+_pool_lock = threading.Lock()
+_email_executor = None
+
+
+def _get_executor():
+    """Lazy-init shared thread pool used to send emails off the request thread."""
+    global _email_executor
+    if _email_executor is not None:
+        return _email_executor
+    with _pool_lock:
+        if _email_executor is None:
+            from concurrent.futures import ThreadPoolExecutor
+            _email_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="email")
+    return _email_executor
 
 
 def missing_mail_config():
@@ -23,6 +43,11 @@ def missing_mail_config():
 
 
 def send_email(to_email, subject, body):
+    """Synchronous email send. Returns True on success.
+
+    Use enqueue_email() from request handlers - this call blocks the
+    current thread on SMTP and is only safe in background workers/tests.
+    """
     missing = missing_mail_config()
     if missing:
         current_app.logger.warning(
@@ -31,6 +56,15 @@ def send_email(to_email, subject, body):
             ", ".join(missing),
         )
         return False
+
+    if current_app.config.get("MAIL_SUPPRESS_SEND"):
+        current_app.logger.info(
+            "Email to %s suppressed (MAIL_SUPPRESS_SEND=True): %s",
+            to_email,
+            subject,
+        )
+        # Flask-Mail honours MAIL_SUPPRESS_SEND and skips the SMTP roundtrip,
+        # but tests still rely on mail.send being called for inspection.
 
     sender = current_app.config.get("MAIL_DEFAULT_SENDER") or current_app.config.get("MAIL_USERNAME")
     msg = Message(subject, recipients=[to_email], sender=sender)
@@ -41,6 +75,10 @@ def send_email(to_email, subject, body):
     else:
         msg.body = str(body)
 
+    timeout = current_app.config.get("MAIL_TIMEOUT", DEFAULT_MAIL_TIMEOUT_SECONDS)
+    previous_timeout = socket.getdefaulttimeout()
+    if timeout:
+        socket.setdefaulttimeout(timeout)
     try:
         mail.send(msg)
         current_app.logger.info("Email sent to %s with subject: %s", to_email, subject)
@@ -48,6 +86,36 @@ def send_email(to_email, subject, body):
     except Exception as e:
         current_app.logger.error("Failed to send email to %s: %s", to_email, e)
         return False
+    finally:
+        if timeout:
+            socket.setdefaulttimeout(previous_timeout)
+
+
+def enqueue_email(to_email, subject, body):
+    """Schedule an email to be sent off the request thread.
+
+    Returns immediately so HTTP handlers don't wait on SMTP. If the app is
+    configured to send emails synchronously (e.g. tests, or MAIL_ASYNC=False)
+    the call falls back to send_email and propagates its return value.
+    """
+    if not has_app_context():
+        # Fallback: nothing useful we can do without an app context.
+        return False
+
+    if not current_app.config.get("MAIL_ASYNC", True):
+        return send_email(to_email, subject, body)
+
+    app = current_app._get_current_object()
+
+    def _worker():
+        with app.app_context():
+            try:
+                send_email(to_email, subject, body)
+            except Exception:  # noqa: BLE001 - log and swallow, never crash the worker
+                app.logger.exception("Async email worker crashed for %s", to_email)
+
+    _get_executor().submit(_worker)
+    return True
 
 
 def _line(label, value):
