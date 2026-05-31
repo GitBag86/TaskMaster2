@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from models import Project, ProjectTemplate, Team, User, db
-from utils.template_service import seed_team_templates
+from models import Project, Team, User, db
 
 
 def make_team(name: str) -> Team:
@@ -22,7 +21,6 @@ def make_manager(username: str, team: Team) -> User:
     user.set_password("password")
     db.session.add(user)
     db.session.flush()
-    seed_team_templates(team.id, created_by_id=user.id)
     return user
 
 
@@ -89,53 +87,3 @@ def test_cross_team_project_member_reference_rejected(client, app):
 
     assert response.status_code == 400
     assert response.get_json()["code"] == "cross_team_reference"
-
-
-def test_project_templates_are_loaded_from_current_team(client, app):
-    with app.app_context():
-        team = make_team("Templates Team")
-        manager = make_manager("templates_manager", team)
-        db.session.commit()
-        team_id = team.id
-        manager_id = manager.id
-
-    with app.app_context():
-        login_as(client, db.session.get(User, manager_id))
-
-    response = client.get("/project-templates")
-
-    assert response.status_code == 200
-    templates = response.get_json()["templates"]
-    assert len(templates) == 3
-    with app.app_context():
-        db_ids = {template.id for template in ProjectTemplate.query.filter_by(team_id=team_id).all()}
-    assert {template["id"] for template in templates} == db_ids
-
-
-def test_using_project_template_requires_current_team_template(client, app):
-    with app.app_context():
-        team_a = make_team("Template Use A")
-        team_b = make_team("Template Use B")
-        manager_a = make_manager("template_use_manager_a", team_a)
-        manager_b = make_manager("template_use_manager_b", team_b)
-        db.session.commit()
-        manager_a_id = manager_a.id
-        manager_b_id = manager_b.id
-        template_b_id = ProjectTemplate.query.filter_by(team_id=team_b.id).first().id
-
-    with app.app_context():
-        login_as(client, db.session.get(User, manager_a_id))
-    rejected = client.post(f"/project-templates/{template_b_id}/use", json={"name": "Should fail"})
-    assert rejected.status_code == 404
-
-    own_templates = client.get("/project-templates").get_json()["templates"]
-    accepted = client.post(
-        f"/project-templates/{own_templates[0]['id']}/use",
-        json={"name": "Own template project"},
-    )
-    assert accepted.status_code == 201
-    assert accepted.get_json()["name"] == "Own template project"
-
-    with app.app_context():
-        login_as(client, db.session.get(User, manager_b_id))
-    assert client.get("/projects").status_code == 200

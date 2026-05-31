@@ -14,7 +14,6 @@ os.environ.setdefault("ENABLE_SCHEDULER", "false")
 from app import create_app
 from config import TestingConfig
 from models import db, Team, User, Task
-from utils.template_service import seed_team_templates
 
 @pytest.fixture
 def app():
@@ -46,7 +45,6 @@ def auth_client(client, app):
         admin.set_password("password")
         db.session.add(admin)
         db.session.flush()
-        seed_team_templates(team.id, created_by_id=admin.id)
         db.session.commit()
         
         with client.session_transaction() as sess:

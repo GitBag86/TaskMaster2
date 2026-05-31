@@ -15,7 +15,6 @@ from models import (
     ActivityLog,
     Tag,
     Project,
-    ProjectTemplate,
     TaskDependency,
 )
 from schemas import TaskSchema, CommentSchema, SubtaskSchema, ProjectSchema, DependencySchema
@@ -29,7 +28,6 @@ from utils.email_sender import (
     get_task_completion_body,
 )
 from utils.notifications import create_notification, emit_notifications
-from utils.project_template_catalogue import PROJECT_TEMPLATE_CATALOGUE
 from utils.delete_helpers import prepare_task_for_delete
 from utils.errors import CrossTeamReferenceError
 from utils.scoping import get_team_resource_or_404, team_scoped
@@ -37,11 +35,6 @@ from utils.scoping import get_team_resource_or_404, team_scoped
 TASK_ALLOWED_FIELDS = {'title', 'priority', 'project', 'project_id', 'due_date', 'notes', 'completed', 'status'}
 USER_START_TASK_FIELDS = {'status', 'completed'}
 BULK_MAX_TASKS = 100
-
-# Backwards-compat name for the in-route handlers; the global catalogue lives
-# in utils/project_template_catalogue.py. Removed when route handlers switch
-# to reading from per-team DB rows (Task 9).
-PROJECT_TEMPLATES = PROJECT_TEMPLATE_CATALOGUE
 
 def emit_task_event(action, user, task=None, task_ids=None, task_id=None, task_payload=None, extra=None):
     payload = {
@@ -1278,95 +1271,6 @@ def create_project():
         "project": project.to_dict(include_tasks=False),
     })
     return jsonify(project.to_dict(include_tasks=False)), 201
-
-@tasks_bp.route('/project-templates', methods=['GET'])
-@login_required
-def get_project_templates():
-    templates = (
-        team_scoped(ProjectTemplate.query, ProjectTemplate)
-        .order_by(ProjectTemplate.created_at.asc(), ProjectTemplate.id.asc())
-        .all()
-    )
-    return jsonify({
-        "templates": [
-            {
-                "id": template.id,
-                "name": template.name,
-                "description": template.description,
-                "task_count": len((template.payload or {}).get("tasks", [])),
-                "color": template.color,
-            }
-            for template in templates
-        ]
-    })
-
-@tasks_bp.route('/project-templates/<template_id>/use', methods=['POST'])
-@login_required
-def use_project_template(template_id):
-    user_id = session.get('user_id')
-    user = db.session.get(User, user_id)
-
-    if g.get('current_role') not in ('manager', 'super_admin'):
-        return jsonify({"error": "Tylko administrator może tworzyć projekty z szablonu"}), 403
-
-    template = None
-    if str(template_id).isdigit():
-        template = get_team_resource_or_404(ProjectTemplate, int(template_id))
-    if not template:
-        return jsonify({"error": "Template not found"}), 404
-
-    payload = request.get_json() or {}
-    template_payload = template.payload or {}
-    template_tasks = template_payload.get("tasks", [])
-    name = normalize_project_name(payload.get("name") or template.name)
-    if team_scoped(Project.query, Project).filter_by(name=name).first():
-        return jsonify({"error": "Projekt o tej nazwie już istnieje"}), 409
-    start_date = parse_due_date(payload.get("start_date")) or date.today()
-
-    project = Project(
-        name=name,
-        description=payload.get("description") or template.description,
-        color=payload.get("color") or template.color,
-        created_by_id=user_id,
-        team_id=g.get('current_team_id'),
-    )
-    db.session.add(project)
-    db.session.flush()
-
-    created_tasks = []
-    for template_task in template_tasks:
-        task = Task(
-            user_id=user_id,
-            title=template_task["title"],
-            priority=template_task.get("priority", "medium"),
-            project=project.name,
-            project_id=project.id,
-            due_date=start_date + timedelta(days=template_task.get("due_offset", 1)),
-            notes=template_task.get("notes", ""),
-            team_id=project.team_id,
-        )
-        db.session.add(task)
-        db.session.flush()
-        created_tasks.append(task)
-        db.session.add(ActivityLog(user_id=user_id, task_id=task.id, team_id=task.team_id, action='created', details={'title': task.title, 'source': 'project_template'}))
-
-    for task_index, template_task in enumerate(template_tasks):
-        for dependency_index in template_task.get("depends_on", []):
-            db.session.add(TaskDependency(
-                task_id=created_tasks[task_index].id,
-                depends_on_task_id=created_tasks[dependency_index].id,
-                team_id=project.team_id,
-            ))
-
-    db.session.commit()
-    emit_team_event({
-        "action": "project_template_used",
-        "user": user.username,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "project": project.to_dict(include_tasks=False),
-        "task_ids": [task.id for task in created_tasks],
-    })
-    return jsonify(project.to_dict(include_tasks=True)), 201
 
 @tasks_bp.route('/projects/<int:project_id>', methods=['PUT'])
 @login_required

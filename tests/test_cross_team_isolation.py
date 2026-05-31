@@ -7,7 +7,6 @@ from models import (
     CustomField,
     Notification,
     Project,
-    ProjectTemplate,
     SavedFilter,
     Subtask,
     Tag,
@@ -66,13 +65,6 @@ def seed_team_resources(team, manager):
         name="A Template",
         template_data={"title": "From A Template"},
     )
-    project_template = ProjectTemplate(
-        team_id=team.id,
-        name="A Project Template",
-        description="Only A",
-        payload={"tasks": [{"title": "A Project Template Task"}]},
-        created_by_id=manager.id,
-    )
     notification = Notification(user_id=manager.id, team_id=team.id, type="info", message="A Notification")
     activity = ActivityLog(user_id=manager.id, team_id=team.id, action="created", details={"title": "A"})
     db.session.add_all([
@@ -82,7 +74,6 @@ def seed_team_resources(team, manager):
         blocker,
         saved_filter,
         task_template,
-        project_template,
         notification,
         activity,
     ])
@@ -107,7 +98,6 @@ def seed_team_resources(team, manager):
         "blocker_id": blocker.id,
         "saved_filter_id": saved_filter.id,
         "task_template_id": task_template.id,
-        "project_template_id": project_template.id,
         "notification_id": notification.id,
         "subtask_id": subtask.id,
         "dependency_id": dependency.id,
@@ -158,7 +148,6 @@ TEAM_SCOPED_RESOURCE_ENDPOINTS = [
     ("GET", "/projects/{project_id}/completion", None),
     ("POST", "/projects/{project_id}/complete", None),
     ("DELETE", "/projects/{project_id}", None),
-    ("POST", "/project-templates/{project_template_id}/use", {"name": "No leak"}),
     ("DELETE", "/tags/{tag_id}", None),
     ("DELETE", "/filters/{saved_filter_id}", None),
     ("DELETE", "/templates/{task_template_id}", None),

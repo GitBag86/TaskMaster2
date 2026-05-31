@@ -18,7 +18,6 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from models import (
-    ProjectTemplate,
     Team,
     User,
     db,
@@ -35,37 +34,6 @@ def _make_user(username="legacy", role="user", team_id=None):
     db.session.add(u)
     db.session.flush()
     return u
-
-
-def test_default_team_has_3_seed_project_templates(app):
-    """Verifies the seeding logic from the migration."""
-    from utils.template_service import seed_team_templates
-
-    with app.app_context():
-        team = Team(name="Default", slug="default")
-        db.session.add(team)
-        db.session.flush()
-
-        seed_team_templates(team.id)
-        db.session.commit()
-
-        keys = {t.source_catalogue_key for t in ProjectTemplate.query.filter_by(team_id=team.id)}
-        assert keys == {"client_onboarding", "release", "campaign"}
-
-
-def test_seed_team_templates_idempotency(app):
-    from utils.template_service import seed_team_templates
-
-    with app.app_context():
-        team = Team(name="Idem", slug="idem")
-        db.session.add(team)
-        db.session.flush()
-
-        seed_team_templates(team.id)
-        seed_team_templates(team.id)
-        db.session.commit()
-
-        assert ProjectTemplate.query.filter_by(team_id=team.id).count() == 3
 
 
 def test_user_can_have_team_id_after_migration(app):

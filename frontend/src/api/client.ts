@@ -14,23 +14,22 @@ import type {
   ProjectCompletionChecklist,
   DependencyBoardResponse,
   WeeklyReport,
-  ProjectTemplate,
   NotificationItem,
   Role,
   Team,
   InviteToken,
   TeamAuditEntry,
-} from '@/types';
+} from "@/types";
 
 const API_BASE =
   (import.meta.env.VITE_API_BASE as string | undefined) ??
   (import.meta.env.VITE_API_URL as string | undefined) ??
-  '';
+  "";
 
 type TaskPayload = {
   title: string;
   assignee_ids?: number[];
-  priority?: 'low' | 'medium' | 'high';
+  priority?: "low" | "medium" | "high";
   project?: string;
   project_id?: number | null;
   due_date?: string;
@@ -39,15 +38,15 @@ type TaskPayload = {
 
 type TaskUpdatePayload = Partial<TaskPayload> & {
   completed?: boolean;
-  status?: 'todo' | 'in_progress' | 'done';
+  status?: "todo" | "in_progress" | "done";
 };
 
 type BulkTaskUpdatePayload = {
-  priority?: 'low' | 'medium' | 'high';
+  priority?: "low" | "medium" | "high";
   project?: string;
   project_id?: number | null;
   completed?: boolean;
-  status?: 'todo' | 'in_progress' | 'done';
+  status?: "todo" | "in_progress" | "done";
 };
 
 type ProjectPayload = {
@@ -62,7 +61,7 @@ type UserCreatePayload = {
   username: string;
   password: string;
   email: string;
-  role: 'manager' | 'user';
+  role: "manager" | "user";
 };
 
 type SignupPayload = {
@@ -75,7 +74,7 @@ type SignupPayload = {
   invite_token?: string | null;
 };
 
-type SignupMode = 'disabled' | 'invite_only' | 'default_team';
+type SignupMode = "disabled" | "invite_only" | "default_team";
 
 type SignupInfo = {
   mode: SignupMode;
@@ -99,7 +98,7 @@ export class ApiError extends Error {
 
   constructor(message: string, status: number, body: unknown, code?: string) {
     super(message);
-    this.name = 'ApiError';
+    this.name = "ApiError";
     this.status = status;
     this.body = body;
     this.code = code;
@@ -111,22 +110,22 @@ export function setAuthErrorHandler(handler: AuthErrorHandler | null) {
 }
 
 const ERROR_FIELD_LABELS: Record<string, string> = {
-  username: 'Nazwa użytkownika',
-  password: 'Hasło',
-  email: 'E-mail',
-  accept_terms: 'Regulamin',
-  accept_privacy: 'Polityka prywatności',
-  accept_marketing: 'Zgoda marketingowa',
-  role: 'Rola',
-  _schema: 'Formularz',
+  username: "Nazwa użytkownika",
+  password: "Hasło",
+  email: "E-mail",
+  accept_terms: "Regulamin",
+  accept_privacy: "Polityka prywatności",
+  accept_marketing: "Zgoda marketingowa",
+  role: "Rola",
+  _schema: "Formularz",
 };
 
 function formatErrorValue(value: unknown): string {
-  if (typeof value === 'string') return value;
+  if (typeof value === "string") return value;
   if (Array.isArray(value)) {
-    return value.map(formatErrorValue).filter(Boolean).join(', ');
+    return value.map(formatErrorValue).filter(Boolean).join(", ");
   }
-  if (value && typeof value === 'object') {
+  if (value && typeof value === "object") {
     return Object.entries(value)
       .map(([field, fieldError]) => {
         const label = ERROR_FIELD_LABELS[field] ?? field;
@@ -134,13 +133,13 @@ function formatErrorValue(value: unknown): string {
         return message ? `${label}: ${message}` : label;
       })
       .filter(Boolean)
-      .join('; ');
+      .join("; ");
   }
-  return '';
+  return "";
 }
 
 function getErrorMessage(errorBody: unknown, status: number): string {
-  if (errorBody && typeof errorBody === 'object') {
+  if (errorBody && typeof errorBody === "object") {
     const body = errorBody as { error?: unknown; message?: unknown };
     return formatErrorValue(body.error ?? body.message) || `HTTP ${status}`;
   }
@@ -148,35 +147,37 @@ function getErrorMessage(errorBody: unknown, status: number): string {
 }
 
 function getErrorCode(errorBody: unknown): string | undefined {
-  if (errorBody && typeof errorBody === 'object') {
+  if (errorBody && typeof errorBody === "object") {
     const body = errorBody as { code?: unknown };
-    return typeof body.code === 'string' ? body.code : undefined;
+    return typeof body.code === "string" ? body.code : undefined;
   }
   return undefined;
 }
 
-async function request<T>(
-  url: string,
-  options: RequestInit = {}
-): Promise<T> {
+async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_BASE}${url}`, {
     ...options,
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
       ...options.headers,
     },
-    credentials: 'include',
+    credentials: "include",
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Request failed' }));
+    const error = await response
+      .json()
+      .catch(() => ({ error: "Request failed" }));
     const apiError = new ApiError(
       getErrorMessage(error, response.status),
       response.status,
       error,
       getErrorCode(error),
     );
-    if (apiError.code === 'team_archived' || apiError.code === 'session_stale') {
+    if (
+      apiError.code === "team_archived" ||
+      apiError.code === "session_stale"
+    ) {
       authErrorHandler?.(apiError);
     }
     throw apiError;
@@ -193,139 +194,154 @@ async function request<T>(
 export const api = {
   auth: {
     login: (username: string, password: string) =>
-      request<{ message: string; user: User }>('/auth/login', {
-        method: 'POST',
+      request<{ message: string; user: User }>("/auth/login", {
+        method: "POST",
         body: JSON.stringify({ username, password }),
       }),
     signup: (data: SignupPayload) =>
-      request<{ message: string; user: User }>('/auth/signup', {
-        method: 'POST',
+      request<{ message: string; user: User }>("/auth/signup", {
+        method: "POST",
         body: JSON.stringify(data),
       }),
     logout: () =>
-      request<{ message: string }>('/auth/logout', { method: 'POST' }),
-    me: () => request<User>('/auth/me'),
+      request<{ message: string }>("/auth/logout", { method: "POST" }),
+    me: () => request<User>("/auth/me"),
   },
 
   signup: {
     info: (token?: string | null) => {
-      const query = token ? `?token=${encodeURIComponent(token)}` : '';
+      const query = token ? `?token=${encodeURIComponent(token)}` : "";
       return request<SignupInfo>(`/auth/signup-info${query}`);
     },
     create: (data: SignupPayload) =>
-      request<{ message: string; user: User }>('/auth/signup', {
-        method: 'POST',
+      request<{ message: string; user: User }>("/auth/signup", {
+        method: "POST",
         body: JSON.stringify(data),
       }),
   },
 
   users: {
-    getAll: () => request<{ users: User[] }>('/users'),
+    getAll: () => request<{ users: User[] }>("/users"),
     create: (data: UserCreatePayload) =>
-      request<{ message: string; user: User }>('/users', {
-        method: 'POST',
+      request<{ message: string; user: User }>("/users", {
+        method: "POST",
         body: JSON.stringify(data),
       }),
-    updateRole: (userId: number, role: 'manager' | 'user') =>
+    updateRole: (userId: number, role: "manager" | "user") =>
       request<{ message: string }>(`/users/${userId}/role`, {
-        method: 'PUT',
+        method: "PUT",
         body: JSON.stringify({ role }),
       }),
     delete: (userId: number) =>
-      request<{ message: string }>(`/users/${userId}`, { method: 'DELETE' }),
+      request<{ message: string }>(`/users/${userId}`, { method: "DELETE" }),
   },
 
   teams: {
-    list: () => request<{ teams: Team[] }>('/admin/teams'),
+    list: () => request<{ teams: Team[] }>("/admin/teams"),
     create: (data: TeamPayload) =>
-      request<{ team: Team }>('/admin/teams', {
-        method: 'POST',
+      request<{ team: Team }>("/admin/teams", {
+        method: "POST",
         body: JSON.stringify(data),
       }),
     update: (id: number, data: Partial<TeamPayload>) =>
       request<{ team: Team }>(`/admin/teams/${id}`, {
-        method: 'PUT',
+        method: "PUT",
         body: JSON.stringify(data),
       }),
     archive: (id: number, archived = true) =>
       request<{ team: Team }>(`/admin/teams/${id}/archive`, {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify({ archived }),
       }),
     delete: (id: number, cascade = false) =>
-      request<void>(`/admin/teams/${id}${cascade ? '?cascade=true' : ''}`, { method: 'DELETE' }),
+      request<void>(`/admin/teams/${id}${cascade ? "?cascade=true" : ""}`, {
+        method: "DELETE",
+      }),
     deleteUser: (userId: number) =>
-      request<void>(`/admin/users/${userId}`, { method: 'DELETE' }),
+      request<void>(`/admin/users/${userId}`, { method: "DELETE" }),
     members: (id: number) =>
       request<{ team: Team; members: User[] }>(`/admin/teams/${id}/members`),
     addMember: (
       id: number,
-      data: { username: string; email: string; password: string; role: 'user' | 'manager' },
+      data: {
+        username: string;
+        email: string;
+        password: string;
+        role: "user" | "manager";
+      },
     ) =>
       request<{ user: User }>(`/admin/teams/${id}/members`, {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify(data),
       }),
     audit: (id: number) =>
       request<{ audit: TeamAuditEntry[] }>(`/admin/teams/${id}/audit`),
-    globalAudit: () =>
-      request<{ audit: TeamAuditEntry[] }>('/admin/audit'),
+    globalAudit: () => request<{ audit: TeamAuditEntry[] }>("/admin/audit"),
     moveUser: (userId: number, teamId: number) =>
       request<{ user: User }>(`/admin/users/${userId}/team`, {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify({ team_id: teamId }),
       }),
     updateUserRole: (userId: number, role: Role, teamId?: number | null) =>
       request<{ user: User }>(`/admin/users/${userId}/role`, {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify({ role, team_id: teamId }),
       }),
   },
 
   invites: {
-    list: () => request<{ invites: InviteToken[] }>('/team/invites'),
+    list: () => request<{ invites: InviteToken[] }>("/team/invites"),
     create: (email?: string) =>
-      request<InviteToken>('/team/invites', {
-        method: 'POST',
-        body: JSON.stringify({ default_role: 'user', email: email || undefined }),
+      request<InviteToken>("/team/invites", {
+        method: "POST",
+        body: JSON.stringify({
+          default_role: "user",
+          email: email || undefined,
+        }),
       }),
     revoke: (id: number) =>
-      request<void>(`/team/invites/${id}`, { method: 'DELETE' }),
+      request<void>(`/team/invites/${id}`, { method: "DELETE" }),
   },
 
   tasks: {
     getAll: (page = 1, perPage = 50) =>
-      request<PaginationResponse<Task>>(`/tasks?page=${page}&per_page=${perPage}`),
-    blocked: () => request<{ tasks: Task[]; total: number }>('/tasks/blocked'),
-    dependencyBoard: () => request<DependencyBoardResponse>('/tasks/dependency-board'),
-    today: () => request<TodayTasksResponse>('/tasks/today'),
-    byProject: () => request<Record<string, Task[]>>('/tasks/by-project'),
+      request<PaginationResponse<Task>>(
+        `/tasks?page=${page}&per_page=${perPage}`,
+      ),
+    blocked: () => request<{ tasks: Task[]; total: number }>("/tasks/blocked"),
+    dependencyBoard: () =>
+      request<DependencyBoardResponse>("/tasks/dependency-board"),
+    today: () => request<TodayTasksResponse>("/tasks/today"),
+    byProject: () => request<Record<string, Task[]>>("/tasks/by-project"),
     create: (data: TaskPayload) =>
-      request<Task>('/tasks', {
-        method: 'POST',
+      request<Task>("/tasks", {
+        method: "POST",
         body: JSON.stringify(data),
       }),
     quickAdd: (text: string) =>
-      request<{ task: Task; parsed: Record<string, unknown> }>('/tasks/quick-add', {
-        method: 'POST',
-        body: JSON.stringify({ text }),
-      }),
+      request<{ task: Task; parsed: Record<string, unknown> }>(
+        "/tasks/quick-add",
+        {
+          method: "POST",
+          body: JSON.stringify({ text }),
+        },
+      ),
     update: (id: number, data: TaskUpdatePayload) =>
       request<Task>(`/tasks/${id}`, {
-        method: 'PUT',
+        method: "PUT",
         body: JSON.stringify(data),
       }),
     delete: (id: number) =>
-      request<{ message: string }>(`/tasks/${id}`, { method: 'DELETE' }),
+      request<{ message: string }>(`/tasks/${id}`, { method: "DELETE" }),
     complete: (id: number) =>
-      request<Task>(`/tasks/${id}/complete`, { method: 'PUT' }),
+      request<Task>(`/tasks/${id}/complete`, { method: "PUT" }),
     addDependency: (id: number, dependsOnTaskId: number) =>
       request<Task>(`/tasks/${id}/dependencies`, {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify({ depends_on_task_id: dependsOnTaskId }),
       }),
     removeDependency: (dependencyId: number) =>
-      request<Task>(`/dependencies/${dependencyId}`, { method: 'DELETE' }),
+      request<Task>(`/dependencies/${dependencyId}`, { method: "DELETE" }),
     search: (q: string) =>
       request<{ tasks: Task[] }>(`/tasks/search?q=${encodeURIComponent(q)}`),
     filter: (params: Record<string, string>) => {
@@ -333,52 +349,49 @@ export const api = {
       return request<{ tasks: Task[] }>(`/tasks/filter?${qs}`);
     },
     bulkComplete: (taskIds: number[]) =>
-      request<{ message: string }>('/tasks/bulk/complete', {
-        method: 'PUT',
+      request<{ message: string }>("/tasks/bulk/complete", {
+        method: "PUT",
         body: JSON.stringify({ task_ids: taskIds }),
       }),
     bulkDelete: (taskIds: number[]) =>
-      request<{ message: string }>('/tasks/bulk/delete', {
-        method: 'DELETE',
+      request<{ message: string }>("/tasks/bulk/delete", {
+        method: "DELETE",
         body: JSON.stringify({ task_ids: taskIds }),
       }),
     bulkUpdate: (taskIds: number[], updates: BulkTaskUpdatePayload) =>
-      request<{ message: string }>('/tasks/bulk/update', {
-        method: 'PUT',
+      request<{ message: string }>("/tasks/bulk/update", {
+        method: "PUT",
         body: JSON.stringify({ task_ids: taskIds, updates }),
       }),
   },
 
   projects: {
-    getAll: () => request<{ projects: Project[] }>('/projects'),
-    templates: () => request<{ templates: ProjectTemplate[] }>('/project-templates'),
-    useTemplate: (templateId: number | string, name?: string, startDate?: string) =>
-      request<Project>(`/project-templates/${templateId}/use`, {
-        method: 'POST',
-        body: JSON.stringify({ name, start_date: startDate || undefined }),
-      }),
+    getAll: () => request<{ projects: Project[] }>("/projects"),
     create: (data: ProjectPayload) =>
-      request<Project>('/projects', {
-        method: 'POST',
+      request<Project>("/projects", {
+        method: "POST",
         body: JSON.stringify(data),
       }),
     update: (id: number, data: Partial<ProjectPayload>) =>
       request<Project>(`/projects/${id}`, {
-        method: 'PUT',
+        method: "PUT",
         body: JSON.stringify(data),
       }),
     completion: (id: number) =>
       request<ProjectCompletionChecklist>(`/projects/${id}/completion`),
     complete: (id: number) =>
-      request<Project & { completion: ProjectCompletionChecklist }>(`/projects/${id}/complete`, { method: 'POST' }),
+      request<Project & { completion: ProjectCompletionChecklist }>(
+        `/projects/${id}/complete`,
+        { method: "POST" },
+      ),
     archive: (id: number) =>
-      request<Project>(`/projects/${id}`, { method: 'DELETE' }),
+      request<Project>(`/projects/${id}`, { method: "DELETE" }),
   },
 
   comments: {
     add: (taskId: number, text: string) =>
       request<Comment>(`/tasks/${taskId}/comments`, {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify({ text }),
       }),
   },
@@ -386,18 +399,18 @@ export const api = {
   subtasks: {
     add: (taskId: number, title: string) =>
       request<Subtask>(`/tasks/${taskId}/subtasks`, {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify({ title }),
       }),
     complete: (id: number) =>
-      request<Subtask>(`/subtasks/${id}/complete`, { method: 'PUT' }),
+      request<Subtask>(`/subtasks/${id}/complete`, { method: "PUT" }),
     delete: (id: number) =>
-      request<{ message: string }>(`/subtasks/${id}`, { method: 'DELETE' }),
+      request<{ message: string }>(`/subtasks/${id}`, { method: "DELETE" }),
   },
 
   stats: {
-    dashboard: () => request<DashboardStats>('/stats/dashboard'),
-    weekly: () => request<WeeklyReport>('/reports/weekly'),
+    dashboard: () => request<DashboardStats>("/stats/dashboard"),
+    weekly: () => request<WeeklyReport>("/reports/weekly"),
   },
 
   activity: {
@@ -410,46 +423,59 @@ export const api = {
   notifications: {
     getAll: (limit = 20, unreadOnly = false) =>
       request<{ notifications: NotificationItem[]; unread_count: number }>(
-        `/notifications?limit=${limit}&unread_only=${unreadOnly ? 'true' : 'false'}`,
+        `/notifications?limit=${limit}&unread_only=${unreadOnly ? "true" : "false"}`,
       ),
     markRead: (id: number) =>
-      request<NotificationItem>(`/notifications/${id}/read`, { method: 'POST' }),
+      request<NotificationItem>(`/notifications/${id}/read`, {
+        method: "POST",
+      }),
     markAllRead: () =>
-      request<{ message: string; unread_count: number }>('/notifications/read-all', { method: 'POST' }),
+      request<{ message: string; unread_count: number }>(
+        "/notifications/read-all",
+        { method: "POST" },
+      ),
   },
 
   tags: {
-    getAll: () => request<{ tags: Tag[] }>('/tags'),
+    getAll: () => request<{ tags: Tag[] }>("/tags"),
     create: (name: string, color: string) =>
-      request<Tag>('/tags', {
-        method: 'POST',
+      request<Tag>("/tags", {
+        method: "POST",
         body: JSON.stringify({ name, color }),
       }),
     delete: (id: number) =>
-      request<{ message: string }>(`/tags/${id}`, { method: 'DELETE' }),
+      request<{ message: string }>(`/tags/${id}`, { method: "DELETE" }),
   },
 
   filters: {
-    getAll: () => request<{ filters: SavedFilter[] }>('/filters'),
+    getAll: () => request<{ filters: SavedFilter[] }>("/filters"),
     create: (name: string, filters: Record<string, string>) =>
-      request<SavedFilter>('/filters', {
-        method: 'POST',
+      request<SavedFilter>("/filters", {
+        method: "POST",
         body: JSON.stringify({ name, filters }),
       }),
     delete: (id: number) =>
-      request<{ message: string }>(`/filters/${id}`, { method: 'DELETE' }),
+      request<{ message: string }>(`/filters/${id}`, { method: "DELETE" }),
   },
 
   templates: {
-    getAll: () => request<{ templates: TaskTemplate[] }>('/templates'),
-    create: (name: string, description: string, templateData: Record<string, unknown>) =>
-      request<TaskTemplate>('/templates', {
-        method: 'POST',
-        body: JSON.stringify({ name, description, template_data: templateData }),
+    getAll: () => request<{ templates: TaskTemplate[] }>("/templates"),
+    create: (
+      name: string,
+      description: string,
+      templateData: Record<string, unknown>,
+    ) =>
+      request<TaskTemplate>("/templates", {
+        method: "POST",
+        body: JSON.stringify({
+          name,
+          description,
+          template_data: templateData,
+        }),
       }),
     delete: (id: number) =>
-      request<{ message: string }>(`/templates/${id}`, { method: 'DELETE' }),
+      request<{ message: string }>(`/templates/${id}`, { method: "DELETE" }),
     use: (id: number) =>
-      request<Task>(`/templates/${id}/use`, { method: 'POST' }),
+      request<Task>(`/templates/${id}/use`, { method: "POST" }),
   },
 };

@@ -1,4 +1,4 @@
-export type Role = 'super_admin' | 'manager' | 'user';
+export type Role = "super_admin" | "manager" | "user";
 
 export interface Team {
   id: number;
@@ -57,14 +57,14 @@ export interface Task {
   id: number;
   title: string;
   assignees: User[];
-  priority: 'low' | 'medium' | 'high';
+  priority: "low" | "medium" | "high";
   project: string;
   project_id: number | null;
   project_info: Project | null;
   due_date: string | null;
   notes: string;
   completed: boolean;
-  status: 'todo' | 'in_progress' | 'done';
+  status: "todo" | "in_progress" | "done";
   comments: Comment[];
   subtasks: Subtask[];
   dependencies: TaskDependency[];
@@ -77,7 +77,7 @@ export interface Task {
 export interface TaskSummary {
   id: number;
   title: string;
-  status: 'todo' | 'in_progress' | 'done';
+  status: "todo" | "in_progress" | "done";
   completed: boolean;
   project: string;
   due_date: string | null;
@@ -120,7 +120,7 @@ export interface NotificationItem {
   user_id: number;
   task_id: number | null;
   actor: string | null;
-  type: 'assignment' | 'mention' | 'unblocked' | string;
+  type: "assignment" | "mention" | "unblocked" | string;
   message: string;
   read: boolean;
   task: TaskSummary | null;
@@ -173,17 +173,12 @@ export interface WeeklyReport {
   created_tasks: TaskSummary[];
   overdue_tasks: TaskSummary[];
   blocked_tasks: TaskSummary[];
-  by_project: Record<string, { total: number; completed: number; open: number }>;
+  by_project: Record<
+    string,
+    { total: number; completed: number; open: number }
+  >;
   completed_by_user: Record<string, number>;
   generated_at: string;
-}
-
-export interface ProjectTemplate {
-  id: number;
-  name: string;
-  description: string;
-  color: string;
-  task_count: number;
 }
 
 export interface Tag {
@@ -233,7 +228,9 @@ export interface TodayTasksResponse {
 
 export interface DependencyBoardResponse {
   blocked: Task[];
-  blockers: Array<TaskSummary & { blocking_count: number; blocking_tasks: TaskSummary[] }>;
+  blockers: Array<
+    TaskSummary & { blocking_count: number; blocking_tasks: TaskSummary[] }
+  >;
   ready: Task[];
   counts: {
     blocked: number;
@@ -246,17 +243,17 @@ export interface DependencyBoardResponse {
 export interface Toast {
   id: string;
   message: string;
-  type: 'success' | 'error' | 'warning' | 'info';
+  type: "success" | "error" | "warning" | "info";
 }
 
 // Role helpers — use these instead of hardcoded string comparisons.
 
 /** True for any role that can create/edit/delete tasks and projects. */
 export function isAdminRole(role: Role | string | undefined): boolean {
-  return role === 'manager' || role === 'super_admin';
+  return role === "manager" || role === "super_admin";
 }
 
 /** True only for the platform-wide super administrator. */
 export function isSuperAdmin(role: Role | string | undefined): boolean {
-  return role === 'super_admin';
+  return role === "super_admin";
 }

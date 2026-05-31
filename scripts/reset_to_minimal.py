@@ -20,7 +20,6 @@ from sqlalchemy import text
 from app import create_app
 from config import Config
 from models import db, Team, User
-from utils.template_service import seed_team_templates
 
 
 def main():
@@ -83,8 +82,6 @@ def main():
             manager.set_password(password)
             db.session.add(manager)
             db.session.flush()
-
-            seed_team_templates(team.id, created_by_id=manager.id)
 
             print(f"  OK {team_name} (id={team.id}) -> {username} / {password}")
 

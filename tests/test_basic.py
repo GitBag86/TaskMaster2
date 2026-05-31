@@ -403,29 +403,6 @@ def test_task_accepts_only_one_assignee(auth_client, app):
     })
     assert rejected_update.status_code == 400
 
-def test_admin_can_create_project_from_template(auth_client, app):
-    templates_response = auth_client.get('/project-templates')
-    assert templates_response.status_code == 200
-    template_id = templates_response.get_json()["templates"][0]["id"]
-    start_date = date.today() + timedelta(days=14)
-
-    response = auth_client.post(f'/project-templates/{template_id}/use', json={
-        "name": "Template Launch",
-        "start_date": start_date.isoformat(),
-    })
-
-    assert response.status_code == 201
-    data = response.get_json()
-    assert data["name"] == "Template Launch"
-    assert len(data["tasks"]) > 1
-    assert any(task["dependencies"] for task in data["tasks"])
-    assert data["tasks"][0]["due_date"] == (start_date + timedelta(days=1)).isoformat()
-
-    with app.app_context():
-        project = Project.query.filter_by(name="Template Launch").first()
-        assert project is not None
-        assert len(project.tasks) == len(data["tasks"])
-
 def test_create_task_can_attach_existing_project(auth_client):
     project = auth_client.post('/projects', json={"name": "Existing Project"}).get_json()
 

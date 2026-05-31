@@ -19,7 +19,6 @@ os.environ.setdefault("ENABLE_SCHEDULER", "false")
 from app import create_app
 from config import Config
 from models import db, Team, User, Task, Comment, Project, Tag, SavedFilter, TaskTemplate, Notification, ActivityLog, CustomField, TaskDependency, Subtask, RecurringTask
-from utils.template_service import seed_team_templates
 
 
 def create_team_with_users(team_name, num_users=50, num_projects=100, num_tasks=1000, comments_per_task=5):
@@ -220,11 +219,6 @@ def main():
             team = create_team_with_users(team_name)
             teams.append(team)
             print(f"  OK {team_name}: {team.id}")
-        
-        # Seed templates for each team
-        for team in teams:
-            print(f"Seeding templates for {team.name}...")
-            seed_team_templates(team.id, created_by_id=team.members[0].id)
         
         # Print summary
         print("\n=== Seed Summary ===")
