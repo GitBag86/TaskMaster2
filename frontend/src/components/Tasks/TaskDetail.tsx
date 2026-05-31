@@ -479,22 +479,12 @@ export default function TaskDetail({
                   key={subtask.id}
                   className="flex items-center gap-2 rounded-lg border border-border p-2.5"
                 >
-                  {isAdmin ? (
-                    <input
-                      type="checkbox"
-                      checked={subtask.completed}
-                      onChange={() => void handleToggleSubtask(subtask)}
-                      className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-                    />
-                  ) : (
-                    <input
-                      type="checkbox"
-                      checked={subtask.completed}
-                      disabled
-                      readOnly
-                      className="h-4 w-4 rounded border-gray-300 text-primary opacity-70"
-                    />
-                  )}
+                  <input
+                    type="checkbox"
+                    checked={subtask.completed}
+                    onChange={() => void handleToggleSubtask(subtask)}
+                    className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                  />
                   <span
                     className={`flex-1 text-sm ${subtask.completed ? "line-through text-muted-foreground" : "text-gray-900 dark:text-white"}`}
                   >

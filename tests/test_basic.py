@@ -1053,41 +1053,47 @@ def test_regular_user_can_mark_assigned_task_in_progress(client, app, monkeypatc
         assert saved_task.status == "in_progress"
         assert saved_task.completed is False
 
-def test_regular_user_cannot_manage_assigned_task_subtasks(client, app):
+def test_regular_user_can_toggle_subtask_but_not_manage(auth_client, app):
+    """Regular user przypisany do zadania moze oznaczac swoje podzadania jako wykonane,
+    ale nie moze ich tworzyc ani usuwac."""
+    team_id = default_team_id(app)
     with app.app_context():
-        admin = User(username="admin_subtasks", email="admin_subtasks@example.com", role="admin")
-        admin.set_password("password")
-        regular = User(username="regular_subtasks", email="regular_subtasks@example.com", role="user")
+        regular = User(username="regular_subtasks", email="regular_subtasks@example.com", role="user", team_id=team_id)
         regular.set_password("password")
-        db.session.add_all([admin, regular])
-        db.session.commit()
-        task = Task(user_id=admin.id, title="Checklist")
-        task.assignees.append(regular)
-        db.session.add(task)
-        db.session.flush()
-        subtask = Subtask(task_id=task.id, title="Manager-owned item")
-        db.session.add(subtask)
+        db.session.add(regular)
         db.session.commit()
         regular_id = regular.id
-        task_id = task.id
-        subtask_id = subtask.id
 
-    with client.session_transaction() as sess:
+    # Manager z auth_client tworzy zadanie i podzadanie
+    create_resp = auth_client.post('/tasks', json={"title": "Checklist", "assignee_ids": [regular_id]})
+    assert create_resp.status_code == 201, create_resp.get_json()
+    task_id = create_resp.get_json()["id"]
+
+    subtask_resp = auth_client.post(f'/tasks/{task_id}/subtasks', json={"title": "Manager-owned item"})
+    assert subtask_resp.status_code == 201
+    subtask_id = subtask_resp.get_json()["id"]
+
+    # Przelacz sesje na regular usera
+    with auth_client.session_transaction() as sess:
         sess['user_id'] = regular_id
+        sess['team_id'] = team_id
+        sess['role'] = 'user'
+        sess['session_version'] = 0
 
-    add_response = client.post(f'/tasks/{task_id}/subtasks', json={"title": "User item"})
-    toggle_response = client.put(f'/subtasks/{subtask_id}/complete')
-    delete_response = client.delete(f'/subtasks/{subtask_id}')
+    add_response = auth_client.post(f'/tasks/{task_id}/subtasks', json={"title": "User item"})
+    toggle_response = auth_client.put(f'/subtasks/{subtask_id}/complete')
+    delete_response = auth_client.delete(f'/subtasks/{subtask_id}')
 
     assert add_response.status_code == 403
-    assert toggle_response.status_code == 403
+    assert toggle_response.status_code == 200
     assert delete_response.status_code == 403
 
     with app.app_context():
         saved_task = db.session.get(Task, task_id)
         saved_subtask = db.session.get(Subtask, subtask_id)
+        # Title niezmienione (regular nie moze tworzyc/usuwac), ale subtask zaznaczony jako done
         assert [item.title for item in saved_task.subtasks] == ["Manager-owned item"]
-        assert saved_subtask.completed is False
+        assert saved_subtask.completed is True
 
 def test_admin_can_unassign_task_user(auth_client, app):
     team_id = default_team_id(app)
