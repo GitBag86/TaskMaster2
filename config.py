@@ -1,7 +1,6 @@
 import os
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-INSTANCE_DB_PATH = os.path.join(BASE_DIR, "instance", "tasks.db")
 
 
 def normalize_database_uri(uri):
@@ -28,12 +27,12 @@ def default_session_cookie_secure():
 
 
 class Config:
-    # Database: SQLite by default (simplest for local Docker)
-    # Override with DATABASE_URL or SQLALCHEMY_DATABASE_URI environment variables if needed
+    # Database: PostgreSQL via DATABASE_URL (Railway provides this automatically).
+    # For local dev without Postgres, set DATABASE_URL=sqlite:///instance/tasks.db
     SQLALCHEMY_DATABASE_URI = normalize_database_uri(
         os.environ.get(
             "SQLALCHEMY_DATABASE_URI",
-            os.environ.get("DATABASE_URL", f"sqlite:///{INSTANCE_DB_PATH}")
+            os.environ.get("DATABASE_URL", "sqlite:///instance/tasks.db")
         )
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
@@ -77,13 +76,10 @@ class TestingConfig(Config):
     SESSION_COOKIE_SECURE = False
     ENABLE_SCHEDULER = False
     PUBLIC_BASE_URL = ""
+    RATELIMIT_ENABLED = False
     DEFAULT_ADMIN_USERNAME = "admin"
     DEFAULT_ADMIN_PASSWORD = "dakos1admin2"
     DEFAULT_ADMIN_EMAIL = "admin@taskmaster.local"
     DEFAULT_ADMIN_RESET_PASSWORD = False
     MAIL_SUPPRESS_SEND = True
-    # Bootstrap admin defaults isolated from any .env values that may
-    # be loaded into the process. Tests assert against these constants.
-    DEFAULT_ADMIN_USERNAME = "admin"
-    DEFAULT_ADMIN_PASSWORD = "dakos1admin2"
-    DEFAULT_ADMIN_EMAIL = "admin@taskmaster.local"
+    MAIL_ASYNC = False

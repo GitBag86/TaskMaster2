@@ -6,32 +6,13 @@ from routes import auth_bp
 from models import db, Team, TeamInvite, User
 from schemas import LoginSchema, SignupSchema
 from utils.errors import InviteTokenInvalidError, SignupDisabledError, TeamArchivedError
-import time
 import logging
-from collections import defaultdict
 from datetime import datetime, timezone
+
+from extensions import limiter
 
 logger = logging.getLogger(__name__)
 
-rate_limit_store = defaultdict(list)
-RATE_LIMIT_MAX = 60
-RATE_LIMIT_WINDOW = 60
-
-def rate_limit(f):
-    from functools import wraps
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        client_ip = request.remote_addr
-        now = time.time()
-        window_start = now - RATE_LIMIT_WINDOW
-        rate_limit_store[client_ip] = [
-            t for t in rate_limit_store[client_ip] if t > window_start
-        ]
-        if len(rate_limit_store[client_ip]) >= RATE_LIMIT_MAX:
-            return jsonify({"error": "Zbyt wiele żądań. Spróbuj ponownie później."}), 429
-        rate_limit_store[client_ip].append(now)
-        return f(*args, **kwargs)
-    return decorated
 
 def login_required(f):
     from functools import wraps
@@ -43,7 +24,7 @@ def login_required(f):
     return decorated_function
 
 @auth_bp.route('/signup', methods=['POST'])
-@rate_limit
+@limiter.limit("5 per minute")
 def signup():
     data = request.get_json()
     schema = SignupSchema()
@@ -124,7 +105,7 @@ def signup_info():
     return jsonify(payload)
 
 @auth_bp.route('/login', methods=['POST'])
-@rate_limit
+@limiter.limit("5 per minute")
 def login():
     data = request.get_json()
     schema = LoginSchema()

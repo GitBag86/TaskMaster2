@@ -20,7 +20,7 @@ load_dotenv()
 load_dotenv(".env.local", override=True)
 
 from config import Config
-from extensions import mail, migrate, scheduler, socketio
+from extensions import limiter, mail, migrate, scheduler, socketio
 from jobs.deadline_notifier import check_deadlines
 from models import User, db
 from utils.errors import TaskMasterError
@@ -281,6 +281,7 @@ def create_app(config_object=Config):
 
     db.init_app(app)
     mail.init_app(app)
+    limiter.init_app(app)
     migrate.init_app(app, db)
     socketio.init_app(app, cors_allowed_origins=app.config["CORS_ORIGINS"])
     register_socketio_handlers()

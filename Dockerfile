@@ -33,8 +33,7 @@ COPY jobs ./jobs
 COPY migrations ./migrations
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
-RUN mkdir -p /app/instance && \
-    sed -i 's/\r$//' /app/start.sh && \
+RUN sed -i 's/\r$//' /app/start.sh && \
     chmod +x /app/start.sh && \
     adduser --disabled-password --gecos '' --uid 10001 appuser && \
     chown -R appuser:appuser /app
