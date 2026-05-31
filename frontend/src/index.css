@@ -47,7 +47,9 @@
   }
   body {
     @apply bg-background text-foreground antialiased;
-    font-feature-settings: "rlig" 1, "calt" 1;
+    font-feature-settings:
+      "rlig" 1,
+      "calt" 1;
   }
 }
 
@@ -68,7 +70,7 @@
     @apply hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2;
   }
   .btn-sm {
-    @apply h-9 rounded-md px-3;
+    @apply h-10 rounded-md px-3;
   }
   .btn-lg {
     @apply h-11 rounded-md px-8;
@@ -116,7 +118,12 @@
     position: absolute;
     inset: 0;
     transform: translateX(-100%);
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.22), transparent);
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.22),
+      transparent
+    );
     animation: skeleton-shimmer 1.3s infinite;
   }
 }
