@@ -111,39 +111,7 @@ Kazdy zasob (zadanie, projekt, tag, filtr, szablon, powiadomienie, audit log) je
 
 ## Jak Uruchomic
 
-### Opcja 1: Docker
-
-Najprostszy sposob lokalnego uruchomienia:
-
-```bash
-docker-compose up --build
-```
-
-Aplikacja bedzie dostepna pod adresem:
-
-```text
-https://localhost
-```
-
-Konfiguracja Docker Compose zawiera Nginx jako reverse proxy z self-signed SSL. Jesli wolisz uruchomic bez SSL/HTTPS, edytuj `nginx/conf.d/taskmaster.conf` lub uruchom Flask bezposrednio (Opcja 2).
-
-Zatrzymanie:
-
-```bash
-docker-compose down
-```
-
-Reset bazy danych Docker/SQLite:
-
-```bash
-docker-compose down -v
-rm -rf instance/tasks.db
-docker-compose up --build
-```
-
-Wdrozenie produkcyjne (Linux + Nginx + FortiGate) opisuje [DEPLOYMENT.md](DEPLOYMENT.md).
-
-### Opcja 2: Lokalny Backend i Frontend
+### Opcja 1: Lokalny Backend i Frontend
 
 Backend:
 
@@ -168,6 +136,23 @@ Frontend Vite dziala zwykle na:
 ```text
 http://localhost:3000
 ```
+
+### Opcja 2: Lokalnie przez Dockerfile
+
+Aplikacja ma multi-stage `Dockerfile` (frontend build + Python runtime). Lokalnie zbudujesz i uruchomisz tak:
+
+```bash
+docker build -t taskmaster2 .
+docker run -p 5000:5000 --env-file .env taskmaster2
+```
+
+### Wdrozenie
+
+Aplikacja dziala produkcyjnie na **Railway**. Railway wykrywa `Dockerfile`, buduje obraz i serwuje go za swoim edge proxy (SSL + WebSocket out-of-the-box). Konfiguracja:
+
+1. New Project -> Deploy from GitHub repo.
+2. W zakladce Variables ustaw zmienne z [.env.example](.env.example) (minimum: `SECRET_KEY`, `CORS_ORIGINS`, `PUBLIC_BASE_URL`, dane SMTP jesli chcesz powiadomienia e-mail).
+3. Railway sam doda zmienna `PORT`, ktora jest uzywana w `start.sh` (Gunicorn binduje sie na `0.0.0.0:$PORT`).
 
 Backend Flask dziala na:
 

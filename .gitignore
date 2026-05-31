@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 .venv/
+venv/
 bin/
 lib/
 lib64/
@@ -31,8 +32,7 @@ var/
 debug-59c6ac.log
 assets/
 taskmaster2.tar
+output.txt
 
 # Logs (rotating files)
 logs/
-nginx/ssl/
-docker-compose.override.yml

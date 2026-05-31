@@ -2,7 +2,7 @@
 
 **TaskMaster2**: A full-stack task management application with a Flask REST API backend and React/TypeScript SPA frontend. Features role-based access control, subtasks, comments, real-time updates via Socket.IO, dark mode, and PWA support.
 
-Deployment target: **self-hosted Docker on a Linux server (Ubuntu) behind Nginx + FortiGate**. SQLite is the only supported database.
+Deployment target: **Railway** (Docker build via `Dockerfile`, edge proxy + SSL provided by Railway). SQLite is the only supported database.
 
 ---
 
@@ -20,27 +20,22 @@ Deployment target: **self-hosted Docker on a Linux server (Ubuntu) behind Nginx 
 
 **What are you implementing or fixing?**
 
-| Task Type | First Steps | See Also |
-|-----------|------------|----------|
-| **New REST endpoint** | 1. Create route in `routes/` <br> 2. Pick decorator: `@require_team_member` (default), `@require_super_admin`, `@require_role(...)` <br> 3. Use `team_scoped(Model.query, Model)` for lists, `get_team_resource_or_404(Model, id)` for single resource <br> 4. Add Marshmallow schema <br> 5. If POST/PATCH/DELETE: `socketio.emit('task_action', payload, room=f'team:{team_id}')` <br> 6. Add pytest tests | [Authorization Layer](#authorization-layer-team-workspaces), [Socket.IO Patterns](#socket-io-real-time-sync), [Exemplary: routes/tasks.py](#key-files--exemplary-patterns) |
-| **Database schema change** | 1. Update `models.py` (add `team_id` if team-scoped) <br> 2. `flask db migrate -m "desc"` <br> 3. Edit migration manually if data backfill needed <br> 4. `flask db upgrade` <br> 5. Add tests | [Common Pitfalls](#common-pitfalls) |
-| **New frontend page/component** | 1. Create in `frontend/src/components/` <br> 2. Lazy-load in `App.tsx` (wrap in `<RoleRoute roles={[...]}>` if role-restricted) <br> 3. Use `useAuth()`, `useSocket()`, `useTheme()` hooks <br> 4. Style with Tailwind | [Frontend Guidelines](#related-instruction-files), [Exemplary: DashboardLayout.tsx](#key-files--exemplary-patterns) |
-| **Real-time sync issue** | 1. Check: Backend emits `socketio.emit()` with `room=f'team:{team_id}'` after DB commit <br> 2. Verify: Frontend listens in `SocketContext.tsx` <br> 3. Check browser console for Socket.IO events | [Socket.IO Patterns](#socket-io-real-time-sync), [Pitfall: Missing Socket.IO Emit](#common-pitfalls) |
-| **Bug or performance issue** | 1. Review [Common Pitfalls](#common-pitfalls) <br> 2. For list endpoints: ensure `_eager_task_options()` is used <br> 3. Check instruction files for domain-specific rules | [Pitfalls Table](#common-pitfalls), [Authorization Layer](#authorization-layer-team-workspaces) |
+| Task Type                       | First Steps                                                                                                                                                                                                                                                                                                                                                                                                  | See Also                                                                                                                                                                   |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **New REST endpoint**           | 1. Create route in `routes/` <br> 2. Pick decorator: `@require_team_member` (default), `@require_super_admin`, `@require_role(...)` <br> 3. Use `team_scoped(Model.query, Model)` for lists, `get_team_resource_or_404(Model, id)` for single resource <br> 4. Add Marshmallow schema <br> 5. If POST/PATCH/DELETE: `socketio.emit('task_action', payload, room=f'team:{team_id}')` <br> 6. Add pytest tests | [Authorization Layer](#authorization-layer-team-workspaces), [Socket.IO Patterns](#socket-io-real-time-sync), [Exemplary: routes/tasks.py](#key-files--exemplary-patterns) |
+| **Database schema change**      | 1. Update `models.py` (add `team_id` if team-scoped) <br> 2. `flask db migrate -m "desc"` <br> 3. Edit migration manually if data backfill needed <br> 4. `flask db upgrade` <br> 5. Add tests                                                                                                                                                                                                               | [Common Pitfalls](#common-pitfalls)                                                                                                                                        |
+| **New frontend page/component** | 1. Create in `frontend/src/components/` <br> 2. Lazy-load in `App.tsx` (wrap in `<RoleRoute roles={[...]}>` if role-restricted) <br> 3. Use `useAuth()`, `useSocket()`, `useTheme()` hooks <br> 4. Style with Tailwind                                                                                                                                                                                       | [Frontend Guidelines](#related-instruction-files), [Exemplary: DashboardLayout.tsx](#key-files--exemplary-patterns)                                                        |
+| **Real-time sync issue**        | 1. Check: Backend emits `socketio.emit()` with `room=f'team:{team_id}'` after DB commit <br> 2. Verify: Frontend listens in `SocketContext.tsx` <br> 3. Check browser console for Socket.IO events                                                                                                                                                                                                           | [Socket.IO Patterns](#socket-io-real-time-sync), [Pitfall: Missing Socket.IO Emit](#common-pitfalls)                                                                       |
+| **Bug or performance issue**    | 1. Review [Common Pitfalls](#common-pitfalls) <br> 2. For list endpoints: ensure `_eager_task_options()` is used <br> 3. Check instruction files for domain-specific rules                                                                                                                                                                                                                                   | [Pitfalls Table](#common-pitfalls), [Authorization Layer](#authorization-layer-team-workspaces)                                                                            |
 
 ---
 
 ## 🚀 Quick Start
 
-### Docker (Recommended)
-```bash
-docker-compose up --build
-```
-Aplikacja jest dostępna na `https://localhost` (przez Nginx z portami 80/443). Baza SQLite zapisuje się w `instance/tasks.db`.
-
-### Lokalny development (bez Dockera)
+### Lokalny development
 
 **Backend:**
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate           # Windows: .venv\Scripts\activate
@@ -50,13 +45,22 @@ python app.py                       # Flask dev server na :5000
 ```
 
 **Frontend (osobny terminal):**
+
 ```bash
 cd frontend
 npm install
 npm run dev                         # Vite na :3000, proxy do Flask :5000
 ```
 
+### Lokalny build w Dockerze
+
+```bash
+docker build -t taskmaster2 .
+docker run -p 5000:5000 --env-file .env taskmaster2
+```
+
 ### Database & Testing
+
 ```bash
 flask db migrate -m "description"
 flask db upgrade
@@ -65,34 +69,36 @@ pytest
 
 ---
 
-## 🚀 Deployment (Self-hosted)
+## 🚀 Deployment (Railway)
 
-Aplikacja jest projektowana do uruchamiania na własnym serwerze Linux (Ubuntu) za Nginx + FortiGate. Pełna instrukcja: [DEPLOYMENT.md](DEPLOYMENT.md).
+Aplikacja deployuje sie automatycznie przez Railway: push na `main` -> Railway buduje obraz z `Dockerfile` (multi-stage: frontend build + Python runtime) -> uruchamia `start.sh` (Gunicorn gthread, port z `$PORT`).
 
-Skrót:
-1. `./scripts/setup-ssl.sh taskmaster.local admin@taskmaster.local`
-2. `cp .env.example .env` i uzupełnij wartości
-3. `docker-compose up -d --build`
-4. Otwórz porty 80/443 w UFW i FortiGate
+Co trzeba zrobic raz:
 
-Dla konfiguracji FortiGate zobacz [FORTIGATE_SETUP.md](FORTIGATE_SETUP.md).
+1. New Project -> Deploy from GitHub repo.
+2. Variables: ustaw zmienne z `.env.example` (minimum: `SECRET_KEY`, `CORS_ORIGINS`, `PUBLIC_BASE_URL`, dane SMTP jesli chcesz powiadomienia e-mail).
+3. Volume na `/app/instance` jesli chcesz persistencji bazy SQLite (Settings -> Storage).
+
+Railway dostarcza HTTPS edge proxy, WebSocket upgrade i wstrzykuje `PORT` (uzywany w `start.sh`). Logi `stdout`/`stderr` sa w panelu projektu.
 
 ---
 
 ## 🏗️ Architecture
 
 ### Technology Stack
+
 - **Backend**: Flask 3.x + SQLAlchemy ORM + Marshmallow (validation/serialization)
 - **Frontend**: React 18 + TypeScript + Vite + Tailwind CSS
 - **Database**: SQLite with Flask-Migrate (Alembic)
 - **Real-Time**: Socket.IO for cross-client synchronization
 - **Auth**: Session-based (user_id in Flask session)
-- **Reverse Proxy**: Nginx (SSL termination, rate limiting, security headers)
+- **Edge Proxy**: Railway edge (SSL termination, WebSocket upgrade, request routing)
 - **Runtime**: Gunicorn (gthread worker class) inside Docker
 
 ### Backend Architecture
 
 **Core Models** (`models.py`)
+
 - **User** - Authentication; roles (`admin` / `user`); first user auto-becomes admin
 - **Task** - Main entity with title, priority, project, due_date, notes, owner
   - Many-to-many: assignees, tags, dependencies
@@ -100,6 +106,7 @@ Dla konfiguracji FortiGate zobacz [FORTIGATE_SETUP.md](FORTIGATE_SETUP.md).
 - **Supporting**: Subtask, Comment, Tag, SavedFilter, ActivityLog, RecurringTask, TaskTemplate, TaskDependency, CustomField, Notification, Project
 
 **Modules** (`routes/`)
+
 - `auth.py` - Login, signup, user management (rate-limited)
 - `tasks.py` - CRUD operations with real-time Socket.IO emission
 - `filters.py` - Saved filters and custom views
@@ -108,14 +115,16 @@ Dla konfiguracji FortiGate zobacz [FORTIGATE_SETUP.md](FORTIGATE_SETUP.md).
 - `notifications.py` - User notifications
 
 **API Patterns**
+
 - All endpoints return JSON
 - Success: Task object or list with HTTP 200/201
 - Errors: `{"error": "message"}` with HTTP 401/403/404/429
 - Request validation via Marshmallow schemas (`schemas.py`)
 - Session-based auth: `@login_required` decorator
-- Rate limiting: enforced by Nginx (Auth: 5/min, API: 30/s)
+- Rate limiting: not enforced application-side (Railway edge handles basic abuse). For per-route limits dodaj Flask-Limiter.
 
 **Real-Time Synchronization** (Socket.IO)
+
 - Backend: `socketio.emit('task_action', {'action': 'create', 'task_id': id})` after mutations
 - Frontend: Listens for `task_action`, triggers `loadTasks()` + toast notifications
 - **Critical**: Any POST/PATCH/DELETE must emit `task_action` to keep all clients in sync
@@ -123,6 +132,7 @@ Dla konfiguracji FortiGate zobacz [FORTIGATE_SETUP.md](FORTIGATE_SETUP.md).
 ### Frontend Architecture
 
 **Directory Structure** (`frontend/src/`)
+
 ```
 components/
   ├─ Activity/ActivityPage.tsx
@@ -146,12 +156,14 @@ types/
 ```
 
 **State Management** (React Context API, not Redux)
+
 - `AuthContext` - Authentication, session validation, logout
 - `SocketContext` - Socket.IO connection, connection state
 - `ThemeContext` - Dark mode (Tailwind `darkMode: 'class'`)
 - `ToastContext` - Toast notifications with `showToast(message, type)`
 
 **Component Patterns**
+
 - Route components lazy-loaded via `React.lazy()` + `Suspense`
 - Fallback loading via `<Skeletons/>` component
 - API calls centralized in `api/client.ts` (typed fetch wrapper)
@@ -159,13 +171,16 @@ types/
 - Responsive: Tailwind breakpoints; mobile-first design
 
 **Styling** (Tailwind CSS)
+
 - Dark mode enabled via `darkMode: 'class'` in `tailwind.config.ts`
 - Custom turquoise-purple theme in `frontend/src/index.css`
 - Dark mode toggle button in `DashboardLayout.tsx`
 - Utility-first approach; no custom component CSS
 
 ### Database Migrations
+
 Use **Flask-Migrate** (Alembic):
+
 - **DO NOT** delete `instance/tasks.db` directly to change schema
 - **DO** use:
   ```bash
@@ -176,6 +191,7 @@ Use **Flask-Migrate** (Alembic):
 - Roll back if needed: `flask db downgrade`
 
 ### Task Dependencies
+
 Tasks can depend on other tasks via the `TaskDependency` model. Tasks with open dependencies cannot be marked done. Tasks with cascade-delete behaviour: deleting a task automatically deletes its dependency records, subtasks, comments, and activity logs.
 
 ```python
@@ -196,20 +212,19 @@ socketio.emit('task_action', {'action': 'dependency_added', 'task_id': 1})
 
 ## Key Files & Exemplary Patterns
 
-| File | Pattern | Why It Matters |
-|------|---------|---|
-| [app.py](app.py) | Flask app factory + Socket.IO init | Entry point; SPA fallback routing, health/ready endpoints |
-| [models.py](models.py) | SQLAlchemy models with relationships | Schema definition; cascade deletes, many-to-many tables |
-| [schemas.py](schemas.py) | Marshmallow v3.x validation | Request validation; uses `load_default` (not `default`) |
-| [routes/auth.py](routes/auth.py) | Auth + session | Input validation, error handling, custom decorators |
-| [routes/tasks.py](routes/tasks.py) | Task CRUD + Socket.IO emission + pagination | Real-time sync pattern: emit after mutations |
-| [frontend/src/App.tsx](frontend/src/App.tsx) | Route protection + Suspense + Context | Auth guard, lazy loading, provider nesting |
-| [frontend/src/store/AuthContext.tsx](frontend/src/store/AuthContext.tsx) | Context API + custom hook | Centralized auth state; clean hook interface |
-| [frontend/src/api/client.ts](frontend/src/api/client.ts) | Typed fetch wrapper | DRY API calls; centralized error handling; type safety |
-| [frontend/src/components/Layout/DashboardLayout.tsx](frontend/src/components/Layout/DashboardLayout.tsx) | Dark mode toggle + layout | Tailwind dark mode class-based strategy |
-| [frontend/src/index.css](frontend/src/index.css) | Tailwind + custom theme | Dark mode colors (turquoise-purple); CSS variables |
-| [Dockerfile](Dockerfile) + [docker-compose.yml](docker-compose.yml) | Multi-stage build + Nginx + Flask | Production setup with reverse proxy |
-| [nginx/conf.d/taskmaster.conf](nginx/conf.d/taskmaster.conf) | Reverse proxy + WebSocket | SSL, rate limiting, Socket.IO upgrade |
+| File                                                                                                     | Pattern                                     | Why It Matters                                            |
+| -------------------------------------------------------------------------------------------------------- | ------------------------------------------- | --------------------------------------------------------- |
+| [app.py](app.py)                                                                                         | Flask app factory + Socket.IO init          | Entry point; SPA fallback routing, health/ready endpoints |
+| [models.py](models.py)                                                                                   | SQLAlchemy models with relationships        | Schema definition; cascade deletes, many-to-many tables   |
+| [schemas.py](schemas.py)                                                                                 | Marshmallow v3.x validation                 | Request validation; uses `load_default` (not `default`)   |
+| [routes/auth.py](routes/auth.py)                                                                         | Auth + session                              | Input validation, error handling, custom decorators       |
+| [routes/tasks.py](routes/tasks.py)                                                                       | Task CRUD + Socket.IO emission + pagination | Real-time sync pattern: emit after mutations              |
+| [frontend/src/App.tsx](frontend/src/App.tsx)                                                             | Route protection + Suspense + Context       | Auth guard, lazy loading, provider nesting                |
+| [frontend/src/store/AuthContext.tsx](frontend/src/store/AuthContext.tsx)                                 | Context API + custom hook                   | Centralized auth state; clean hook interface              |
+| [frontend/src/api/client.ts](frontend/src/api/client.ts)                                                 | Typed fetch wrapper                         | DRY API calls; centralized error handling; type safety    |
+| [frontend/src/components/Layout/DashboardLayout.tsx](frontend/src/components/Layout/DashboardLayout.tsx) | Dark mode toggle + layout                   | Tailwind dark mode class-based strategy                   |
+| [frontend/src/index.css](frontend/src/index.css)                                                         | Tailwind + custom theme                     | Dark mode colors (turquoise-purple); CSS variables        |
+| [Dockerfile](Dockerfile) + [start.sh](start.sh)                                                          | Multi-stage build + Gunicorn entrypoint     | Railway buduje obraz z tego pliku                         |
 
 ## Frontend Setup & Build
 
@@ -226,6 +241,7 @@ npm run preview            # Preview production build
 ## API & Error Handling Patterns
 
 **Request/Response Format**
+
 ```json
 {
   "id": 1,
@@ -239,11 +255,13 @@ npm run preview            # Preview production build
 ```
 
 **Error Responses**
+
 ```json
 { "error": "Task not found", "status": 404 }
 ```
 
 **HTTP Status Codes**
+
 - `200` - Success (GET, PATCH)
 - `201` - Created (POST)
 - `400` - Bad request (validation error)
@@ -256,6 +274,7 @@ npm run preview            # Preview production build
 ## Environment Variables
 
 Key `.env` variables (see [.env.example](.env.example) for full list):
+
 ```
 SECRET_KEY=...                     # WYMAGANE - random 32-byte hex
 CORS_ORIGINS=...                   # https://twoja-domena.com
@@ -269,8 +288,9 @@ DEFAULT_ADMIN_EMAIL=...
 ```
 
 **Socket.IO Async Mode:**
+
 - `threading` — Local Flask dev server
-- `gthread` — Docker / Gunicorn (default in `docker-compose.yml`)
+- `gthread` — Docker / Gunicorn (Railway runtime)
 - ❌ **Avoid `eventlet`** — Deprecated, known compatibility issues
 
 ## Authorization Layer (Team Workspaces)
@@ -334,6 +354,7 @@ Bumping `User.session_version` (e.g. on team move, role change, archive) atomica
 ### Per-team Socket.IO rooms (R22, design 5)
 
 Connect handler in `utils/realtime`:
+
 - Super admin → joins `super_admin` room.
 - Manager/user → joins `team:<team_id>` room.
 - Anything else → connection rejected.
@@ -347,12 +368,14 @@ Every `socketio.emit('task_action', ...)` and `socketio.emit('notification', ...
 ### Performance (Task 21, design 15)
 
 Composite indexes from migration `2c8e44f754b0` cover the hot query paths:
+
 - `ix_task_team_due` (team_id, due_date) WHERE completed=false
 - `ix_task_team_status` (team_id, status)
 - `ix_notification_team_user_unread` (team_id, user_id) WHERE read=false
 - `ix_activity_team_created` (team_id, created_at DESC)
 
 When listing many tasks, use the `_eager_task_options()` helper in `routes/tasks.py` to avoid N+1 queries:
+
 ```python
 tasks = visible_task_query(user).options(*_eager_task_options()).all()
 ```
@@ -368,7 +391,7 @@ Benchmark suite: `scripts/seed_perf.py` + `scripts/perf_bench.py`.
 - **Marshmallow v3.x compatibility** - Use `load_default` instead of `default` for field defaults in schemas.
 - **Decorator stacking** - `@app.route()` must come BEFORE `@login_required` in the decorator stack.
 - **WebSocket workers** - With Gunicorn use `gthread`. For local development, `threading` is preferred (avoid `eventlet`).
-- **Port Conflicts**: Port 5000 (Flask) and 80/443 (Nginx) - check with `lsof -i :5000` / `netstat -ano | findstr :5000`.
+- **Port Conflicts**: Port 5000 (Flask dev) - sprawdz przez `lsof -i :5000` / `netstat -ano | findstr :5000`. Na Railway Gunicorn binduje sie na `$PORT`.
 - **Frontend not built**: Flask serves `frontend/dist/`. After frontend edits run `npm run build` (or rebuild Docker image).
 - **Socket.IO Emission**: Any POST/PATCH/DELETE that modifies task state MUST emit `socketio.emit('task_action', ...)` with `room=f'team:{team_id}'`. Without it, other clients won't see updates.
 - **Session Timeout**: Session-based auth invalidated by bumping `User.session_version`. Use this on team move, role change, archive.
@@ -379,6 +402,7 @@ Benchmark suite: `scripts/seed_perf.py` + `scripts/perf_bench.py`.
 ## Local Troubleshooting
 
 **Port 5000 already in use:**
+
 ```bash
 # Linux / macOS
 lsof -i :5000
@@ -389,15 +413,18 @@ taskkill /PID <PID> /F
 ```
 
 **Flask dev server not reloading:**
+
 - Set `FLASK_ENV=development`
 - Make sure files aren't in `.venv/` or `node_modules/`
 
 **Socket.IO connection timeout:**
+
 1. Verify Flask is running: `lsof -i :5000`
 2. Check `CORS_ORIGINS` matches frontend URL
 3. Browser DevTools → Network → check socket URL
 
 **npm install issues:**
+
 ```bash
 cd frontend
 rm -rf node_modules package-lock.json
@@ -412,19 +439,19 @@ Aplikacja udostępnia dwa endpointy do monitorowania:
 - `GET /health` - prosty health check (zwraca 200 jeśli proces żyje)
 - `GET /ready` - readiness (sprawdza DB + Socket.IO)
 
-Docker `healthcheck` jest skonfigurowany dla `web` i `nginx` w `docker-compose.yml`.
+Docker `HEALTHCHECK` zdefiniowany w `Dockerfile` waliduje endpoint `/health` przy starcie kontenera.
 
 ## Related Instruction Files
 
 When modifying this codebase, agents should follow these domain-specific guidelines:
 
-| File | Purpose | Apply To |
-|------|---------|----------|
-| [Socket.IO Patterns](.github/instructions/socketio-patterns.instructions.md) | Real-time sync emission and listener patterns | `routes/**/*.py`, `frontend/src/store/SocketContext.tsx` |
-| [Frontend TypeScript Guidelines](.github/instructions/frontend-typescript-guidelines.instructions.md) | React, TypeScript, Context API, Tailwind best practices | `frontend/src/**/*.tsx`, `frontend/src/**/*.ts` |
-| [Python Security Guidelines](.github/instructions/python-security-guidelines.instructions.md) | Secure credential & secret handling | `**/*.py` |
-| [Python Test Guidelines](.github/instructions/python-test-guidelines.instructions.md) | TDD requirement: automated tests for all Python changes | `**/*.py` |
-| [Python Conventions Skill](.github/skills/python-conventions/SKILL.md) | Code style and pragmatic conventions | `**/*.py` |
+| File                                                                                                  | Purpose                                                 | Apply To                                                 |
+| ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | -------------------------------------------------------- |
+| [Socket.IO Patterns](.github/instructions/socketio-patterns.instructions.md)                          | Real-time sync emission and listener patterns           | `routes/**/*.py`, `frontend/src/store/SocketContext.tsx` |
+| [Frontend TypeScript Guidelines](.github/instructions/frontend-typescript-guidelines.instructions.md) | React, TypeScript, Context API, Tailwind best practices | `frontend/src/**/*.tsx`, `frontend/src/**/*.ts`          |
+| [Python Security Guidelines](.github/instructions/python-security-guidelines.instructions.md)         | Secure credential & secret handling                     | `**/*.py`                                                |
+| [Python Test Guidelines](.github/instructions/python-test-guidelines.instructions.md)                 | TDD requirement: automated tests for all Python changes | `**/*.py`                                                |
+| [Python Conventions Skill](.github/skills/python-conventions/SKILL.md)                                | Code style and pragmatic conventions                    | `**/*.py`                                                |
 
 ## Available Agent Skills
 

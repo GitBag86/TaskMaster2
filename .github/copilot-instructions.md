@@ -70,12 +70,12 @@ description: AI coding agent instructions for TaskMaster2 workspace
 
 ## Deployment
 
-- **Development**: `docker-compose up --build` (Nginx + Flask, dostęp na https://localhost)
-- **Frontend dev (z hot-reload)**: `cd frontend && npm run dev` (Vite na :3000, proxy do Flask :5000)
-- **Self-hosted production**: Linux/Docker za Nginx + FortiGate. Pełna instrukcja w [DEPLOYMENT.md](../../DEPLOYMENT.md).
+- **Lokalny dev backend**: `python app.py` (Flask na :5000)
+- **Lokalny dev frontend**: `cd frontend && npm run dev` (Vite na :3000, proxy do Flask :5000)
+- **Lokalny build w Dockerze**: `docker build -t taskmaster2 . && docker run -p 5000:5000 --env-file .env taskmaster2`
+- **Production**: Railway buduje z `Dockerfile` po push na `main`. Edge proxy (SSL + WebSocket) zapewnia Railway.
 
 ## Need More?
 
 - [AGENTS.md](../AGENTS.md) — Architektura, exemplary files, common pitfalls, troubleshooting
-- [DEPLOYMENT.md](../../DEPLOYMENT.md) — Wdrażanie na własnym serwerze (Nginx + Docker + SSL)
-- [FORTIGATE_SETUP.md](../../FORTIGATE_SETUP.md) — Konfiguracja FortiGate
+- [DOCS.md](../../DOCS.md) — Pelna dokumentacja techniczna

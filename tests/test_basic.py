@@ -1391,16 +1391,6 @@ def test_normalize_database_uri_uses_psycopg_driver(monkeypatch):
     assert default_session_cookie_secure() is False
 
 
-def test_nginx_auth_locations_use_strict_rate_limit():
-    config = (PROJECT_ROOT / "nginx" / "conf.d" / "taskmaster.conf").read_text()
-
-    assert "location = /auth/login" in config
-    assert "location = /auth/signup" in config
-    assert "location ~ ^/auth/(login|signup)" not in config
-    assert config.index("location = /auth/login") < config.index("location ~ ^/(auth|tasks|projects|users|stats|activity|notifications|filters|templates)")
-    assert config.index("location = /auth/signup") < config.index("location ~ ^/(auth|tasks|projects|users|stats|activity|notifications|filters|templates)")
-
-
 def test_migration_upgrade_smoke_fresh_sqlite(tmp_path, monkeypatch):
     db_path = tmp_path / "migration-smoke.db"
     db_uri = f"sqlite:///{db_path.as_posix()}"
