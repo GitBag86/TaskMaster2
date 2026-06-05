@@ -45,8 +45,15 @@ def _configure_app(app):
         )
 
     os.makedirs(app.instance_path, exist_ok=True)
-    if not app.config.get("SQLALCHEMY_DATABASE_URI"):
+    uri = app.config.get("SQLALCHEMY_DATABASE_URI", "")
+    if not uri:
+        # No URI configured at all — build one with an absolute path
         app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + os.path.join(app.instance_path, "tasks.db")
+    elif uri.startswith("sqlite:///") and not uri.startswith("sqlite:////"):
+        # Relative SQLite path — resolve to absolute (relative to app.py dir) so it works regardless of CWD
+        rel_path = uri.removeprefix("sqlite:///")
+        abs_path = os.path.abspath(os.path.join(os.path.dirname(__file__), rel_path))
+        app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + abs_path
 
     # Bezpieczne cookies sesji. Secure=True wymaga HTTPS (Nginx termuje TLS).
     # W lokalnym devie bez Nginx ustaw SESSION_COOKIE_SECURE=False w .env.local.
