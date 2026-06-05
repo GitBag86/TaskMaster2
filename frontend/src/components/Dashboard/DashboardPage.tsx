@@ -21,6 +21,7 @@ import {
   Legend,
 } from "recharts";
 import { DashboardSkeleton } from "@/components/common/Skeletons";
+import { priorityLabel, priorityClass, formatShortDate } from "@/utils/helpers";
 
 const COLORS = ["#ef4444", "#f59e0b", "#22c55e"];
 const dependencyRefreshActions = new Set([
@@ -485,25 +486,4 @@ function StatCard({
   );
 }
 
-function priorityLabel(priority: Task["priority"]) {
-  return priority === "high"
-    ? "Wysoki"
-    : priority === "medium"
-      ? "Średni"
-      : "Niski";
-}
 
-function priorityClass(priority: Task["priority"]) {
-  if (priority === "high")
-    return "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400";
-  if (priority === "medium")
-    return "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400";
-  return "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400";
-}
-
-function formatShortDate(date: string) {
-  return new Date(date).toLocaleDateString("pl-PL", {
-    day: "numeric",
-    month: "short",
-  });
-}

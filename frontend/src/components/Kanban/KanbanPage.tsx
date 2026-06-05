@@ -4,6 +4,7 @@ import { api } from "@/api/client";
 import { useToast } from "@/store/ToastContext";
 import { useSocket } from "@/store/SocketContext";
 import { KanbanSkeleton } from "@/components/common/Skeletons";
+import { priorityLabel, priorityClass, formatShortDate, isOverdue } from "@/utils/helpers";
 
 const columns = [
   {
@@ -240,7 +241,7 @@ export default function KanbanPage() {
                                 : ""
                             }
                           >
-                            {formatDueDate(task.due_date)}
+                            {formatShortDate(task.due_date)}
                           </span>
                         )}
                       </div>
@@ -274,33 +275,7 @@ export default function KanbanPage() {
   );
 }
 
-function priorityLabel(priority: Task["priority"]) {
-  return priority === "high"
-    ? "Wysoki"
-    : priority === "medium"
-      ? "Średni"
-      : "Niski";
-}
 
-function priorityClass(priority: Task["priority"]) {
-  if (priority === "high")
-    return "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400";
-  if (priority === "medium")
-    return "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400";
-  return "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400";
-}
-
-function formatDueDate(date: string) {
-  return new Date(date).toLocaleDateString("pl-PL", {
-    day: "numeric",
-    month: "short",
-  });
-}
-
-function isOverdue(date: string, completed: boolean) {
-  if (completed) return false;
-  return new Date(date) < new Date(new Date().toDateString());
-}
 
 function StatChip({
   label,

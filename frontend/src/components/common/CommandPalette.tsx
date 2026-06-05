@@ -5,6 +5,7 @@ import { api } from '@/api/client'
 import { useAuth } from '@/store/AuthContext'
 import { useTheme } from '@/store/ThemeContext'
 import { useToast } from '@/store/ToastContext'
+import { priorityLabel } from '@/utils/helpers'
 
 type Command = {
   id: string;
@@ -246,6 +247,4 @@ function navCommand(
   }
 }
 
-function priorityLabel(priority: Task['priority']) {
-  return priority === 'high' ? 'Wysoki' : priority === 'medium' ? 'Średni' : 'Niski'
-}
+

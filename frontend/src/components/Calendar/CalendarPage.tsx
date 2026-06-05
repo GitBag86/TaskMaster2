@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { createPortal } from "react-dom";
 import type { Task } from "@/types";
 import { isAdminRole } from "@/types";
 import { api } from "@/api/client";
@@ -7,9 +6,11 @@ import { useToast } from "@/store/ToastContext";
 import { useSocket } from "@/store/SocketContext";
 import { useAuth } from "@/store/AuthContext";
 import { CalendarSkeleton } from "@/components/common/Skeletons";
+import Modal from "@/components/common/Modal";
 import TaskDetail from "@/components/Tasks/TaskDetail";
 import TaskForm from "@/components/Tasks/TaskForm";
 import { getPolishCalendarInfo } from "@/data/polishCalendar";
+import { priorityLabel, priorityClass } from "@/utils/helpers";
 
 const days = ["Pn", "Wt", "Śr", "Cz", "Pt", "So", "Nd"];
 const months = [
@@ -746,21 +747,7 @@ function taskDotClass(task: Task) {
   return "bg-slate-400";
 }
 
-function priorityLabel(priority: Task["priority"]) {
-  return priority === "high"
-    ? "Wysoki"
-    : priority === "medium"
-      ? "Średni"
-      : "Niski";
-}
 
-function priorityClass(priority: Task["priority"]) {
-  if (priority === "high")
-    return "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400";
-  if (priority === "medium")
-    return "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400";
-  return "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300";
-}
 
 function getIsoWeekNumber(date: Date) {
   const target = new Date(
@@ -834,29 +821,4 @@ function CalendarInfoBox({
   );
 }
 
-function Modal({
-  children,
-  onClose,
-}: {
-  children: React.ReactNode;
-  onClose: () => void;
-}) {
-  if (typeof document === "undefined") {
-    return null;
-  }
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-lg rounded-xl bg-white shadow-xl dark:bg-gray-900"
-        onClick={(event) => event.stopPropagation()}
-      >
-        {children}
-      </div>
-    </div>,
-    document.body,
-  );
-}

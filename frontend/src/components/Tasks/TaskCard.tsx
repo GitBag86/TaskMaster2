@@ -1,4 +1,5 @@
 import type { Task } from '@/types'
+import { formatDate, isOverdue } from '@/utils/helpers'
 
 const priorityConfig = {
   high: { label: 'Wysoki', className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400', accent: 'border-l-red-500' },
@@ -145,11 +146,4 @@ export default function TaskCard({ task, onClick, onComplete, selectable = false
   )
 }
 
-function isOverdue(dateStr: string, completed: boolean) {
-  if (completed) return false
-  return new Date(dateStr) < new Date(new Date().toDateString())
-}
 
-function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' })
-}

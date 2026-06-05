@@ -11,6 +11,7 @@ import { api } from "@/api/client";
 import { useToast } from "@/store/ToastContext";
 import { useAuth } from "@/store/AuthContext";
 import TaskForm from "./TaskForm";
+import { priorityLabel, statusText, statusLabel, formatDateTime } from "@/utils/helpers";
 
 interface Props {
   task: Task;
@@ -646,38 +647,12 @@ export default function TaskDetail({
   );
 }
 
-function priorityLabel(priority: string) {
-  return (
-    {
-      high: "Priorytet: wysoki",
-      medium: "Priorytet: średni",
-      low: "Priorytet: niski",
-    }[priority] || priority
-  );
-}
-
-function statusLabel(status: string) {
-  return `Status: ${statusText(status)}`;
-}
-
-function statusText(status: string) {
-  return (
-    { todo: "do zrobienia", in_progress: "w toku", done: "zakończone" }[
-      status
-    ] || status
-  );
-}
-
 function summaryMeta(task: TaskSummary) {
   const status = statusText(task.status);
   const dueDate = task.due_date
     ? `, termin: ${new Date(task.due_date).toLocaleDateString("pl-PL")}`
     : "";
   return `${task.project} - ${status}${dueDate}`;
-}
-
-function formatDateTime(value: string) {
-  return new Date(value).toLocaleString("pl-PL");
 }
 
 function Badge({

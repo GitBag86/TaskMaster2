@@ -4,6 +4,7 @@ import { api } from '@/api/client'
 import { useSocket } from '@/store/SocketContext'
 import { useToast } from '@/store/ToastContext'
 import { TasksPageSkeleton } from '@/components/common/Skeletons'
+import { priorityLabel, priorityClass, formatDate } from '@/utils/helpers'
 
 const emptyToday: TodayTasksResponse = {
   overdue: [],
@@ -249,16 +250,4 @@ function metricClass(tone: 'danger' | 'primary' | 'default' | 'success' | 'warni
   return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-300'
 }
 
-function priorityLabel(priority: Task['priority']) {
-  return priority === 'high' ? 'Wysoki' : priority === 'medium' ? 'Średni' : 'Niski'
-}
 
-function priorityClass(priority: Task['priority']) {
-  if (priority === 'high') return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-  if (priority === 'medium') return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-  return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-}
-
-function formatDate(date: string) {
-  return new Date(date).toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric', month: 'short' })
-}

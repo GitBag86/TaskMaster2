@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { createPortal } from 'react-dom'
 import type { Task } from '@/types'
 import { isAdminRole } from '@/types'
 import { api } from '@/api/client'
@@ -10,6 +9,8 @@ import TaskCard from './TaskCard'
 import TaskForm from './TaskForm'
 import TaskDetail from './TaskDetail'
 import { TasksPageSkeleton } from '@/components/common/Skeletons'
+import Modal from '@/components/common/Modal'
+import { isOverdue } from '@/utils/helpers'
 
 interface TaskFormData {
   title: string;
@@ -53,7 +54,7 @@ export default function TasksPage() {
   const totalPages = Math.max(1, Math.ceil(total / PER_PAGE))
   const completedCount = tasks.filter(task => task.completed).length
   const pendingCount = Math.max(0, tasks.length - completedCount)
-  const overdueCount = tasks.filter(task => isOverdue(task)).length
+  const overdueCount = tasks.filter(task => task.due_date && isOverdue(task.due_date, task.completed)).length
   const blockedCount = tasks.filter(task => task.is_blocked && !task.completed).length
 
   const replaceTask = useCallback((updatedTask: Task) => {
@@ -540,27 +541,4 @@ export default function TasksPage() {
       )}
     </div>
   )
-}
-
-function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
-  if (typeof document === 'undefined') {
-    return null
-  }
-
-  return createPortal(
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
-      <div
-        className="w-full max-w-lg rounded-xl bg-white shadow-xl dark:bg-gray-900"
-        onClick={e => e.stopPropagation()}
-      >
-        {children}
-      </div>
-    </div>,
-    document.body,
-  )
-}
-
-function isOverdue(task: Task) {
-  if (task.completed || !task.due_date) return false
-  return new Date(task.due_date) < new Date(new Date().toDateString())
 }
