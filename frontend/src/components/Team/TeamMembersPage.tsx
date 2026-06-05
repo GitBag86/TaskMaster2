@@ -184,8 +184,9 @@ function MembersTable({
 }) {
   return (
     <div className="card overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[760px]">
+      {/* Desktop table */}
+      <div className="hidden sm:block overflow-x-auto">
+        <table className="w-full min-w-[640px]">
           <thead className="border-b border-border bg-gray-50 dark:bg-gray-800">
             <tr>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Użytkownik</th>
@@ -246,6 +247,57 @@ function MembersTable({
           </tbody>
         </table>
       </div>
+
+      {/* Mobile cards */}
+      <div className="divide-y divide-border sm:hidden">
+        {users.map(user => {
+          const busy = busyUserId === user.id;
+          const protectedSelf = user.id === currentUserId;
+
+          return (
+            <div key={user.id} className="space-y-3 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-medium text-primary">
+                    {user.username.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-gray-900 dark:text-white">{user.username}</p>
+                    <p className="truncate text-sm text-muted-foreground">{user.email || '—'}</p>
+                  </div>
+                </div>
+                <span className={`badge shrink-0 ${
+                  user.role === 'manager'
+                    ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
+                    : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
+                }`}>
+                  {user.role === 'manager' ? 'Manager' : 'User'}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <select
+                  value={user.role}
+                  onChange={event => onRoleChange(user, event.target.value as ManageableRole)}
+                  disabled={busy || protectedSelf}
+                  className="input h-9 flex-1 min-w-[120px] text-xs"
+                >
+                  <option value="user">User</option>
+                  <option value="manager">Manager</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={() => onDelete(user)}
+                  disabled={busy || protectedSelf}
+                  className="btn btn-destructive btn-sm"
+                >
+                  Usuń
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
       {users.length === 0 && (
         <div className="p-8 text-center text-sm text-muted-foreground">Brak członków.</div>
       )}

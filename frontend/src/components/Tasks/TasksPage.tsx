@@ -10,6 +10,7 @@ import TaskForm from './TaskForm'
 import TaskDetail from './TaskDetail'
 import { TasksPageSkeleton } from '@/components/common/Skeletons'
 import Modal from '@/components/common/Modal'
+import { EmptyState } from '@/components/common/EmptyState'
 import { isOverdue } from '@/utils/helpers'
 
 interface TaskFormData {
@@ -469,15 +470,11 @@ export default function TasksPage() {
       )}
 
       {filteredTasks.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-16 text-center">
-          <svg className="mb-4 h-12 w-12 text-gray-300 dark:text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-          </svg>
-          <p className="text-lg font-medium text-gray-500 dark:text-gray-400">Brak zadań</p>
-          <p className="text-sm text-gray-400 dark:text-gray-500">
-            {isAdminRole(user?.role) ? 'Kliknij "Nowe zadanie" aby utworzyć' : 'Nie masz przypisanych zadań'}
-          </p>
-        </div>
+        <EmptyState
+          type="tasks"
+          title="Brak zadań"
+          description={isAdminRole(user?.role) ? 'Kliknij "Nowe zadanie" aby utworzyć' : 'Nie masz przypisanych zadań'}
+        />
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {filteredTasks.map(task => (

@@ -4,6 +4,7 @@ import { api } from '@/api/client'
 import { useToast } from '@/store/ToastContext'
 import { ActivitySkeleton } from '@/components/common/Skeletons'
 import { formatDateTime } from '@/utils/helpers'
+import { EmptyState } from '@/components/common/EmptyState'
 
 const ACTION_LABELS: Record<string, string> = {
   created: 'Utworzono zadanie',
@@ -216,12 +217,11 @@ export default function ActivityPage() {
       </div>
 
       {filteredActivity.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-16 text-center">
-          <p className="text-lg font-medium text-gray-500 dark:text-gray-400">Brak aktywnosci</p>
-          <p className="text-sm text-muted-foreground">
-            {actionFilter ? 'Sprobuj zmienic filtr.' : 'Gdy pojawia sie zdarzenia, zobaczysz je tutaj.'}
-          </p>
-        </div>
+        <EmptyState
+          type="activity"
+          title="Brak aktywnosci"
+          description={actionFilter ? 'Sprobuj zmienic filtr.' : 'Gdy pojawia sie zdarzenia, zobaczysz je tutaj.'}
+        />
       ) : (
         <div className="space-y-6">
           {grouped.map(group => (

@@ -10,6 +10,7 @@ import Modal from "@/components/common/Modal";
 import TaskDetail from "@/components/Tasks/TaskDetail";
 import TaskForm from "@/components/Tasks/TaskForm";
 import { priorityLabel, priorityClass, formatShortDate } from "@/utils/helpers";
+import { EmptyState } from "@/components/common/EmptyState";
 
 type ProjectSummary = Project & {
   tasks: Task[];
@@ -403,22 +404,16 @@ export default function ProjectsPage() {
       </div>
 
       {summaries.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border py-16 text-center">
-          <p className="text-lg font-medium text-gray-500 dark:text-gray-400">
-            Brak projektów
-          </p>
-          <p className="text-sm text-muted-foreground">
-            Utwórz pusty projekt i przypisz do niego zadania, kiedy będą gotowe.
-          </p>
-          {isAdminRole(user?.role) && (
-            <button
-              onClick={() => setShowNewProject(true)}
-              className="btn btn-primary btn-sm mt-4"
-            >
+        <EmptyState
+          type="projects"
+          title="Brak projektów"
+          description="Utwórz pusty projekt i przypisz do niego zadania, kiedy będą gotowe."
+          action={isAdminRole(user?.role) ? (
+            <button onClick={() => setShowNewProject(true)} className="btn btn-primary btn-sm">
               Nowy projekt
             </button>
-          )}
-        </div>
+          ) : undefined}
+        />
       ) : (
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
           <div className="space-y-4">

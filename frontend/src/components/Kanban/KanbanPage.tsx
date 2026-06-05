@@ -184,7 +184,7 @@ export default function KanbanPage() {
         </div>
       </div>
 
-      <div className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2 sm:snap-none">
+      <div className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2 sm:snap-none" style={{ viewTransitionName: 'kanban-board' }}>
         {columns.map((column) => {
           const columnTasks = tasks.filter(
             (task) => task.status === column.key,
@@ -198,6 +198,7 @@ export default function KanbanPage() {
                 event.preventDefault();
                 setActiveColumn(column.key);
               }}
+              onDragLeave={() => setActiveColumn(null)}
               onDrop={(event) => void handleDrop(event, column.key)}
             >
               <header className="sticky top-0 z-10 mb-3 rounded-md bg-inherit py-1">
@@ -211,19 +212,23 @@ export default function KanbanPage() {
                 </div>
               </header>
 
-              <div className="space-y-2.5">
+              <div className="space-y-2.5 min-h-[120px] transition-colors duration-200">
                 {columnTasks.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
-                    Brak zadań w tej kolumnie.
+                  <div className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-border p-6 text-center text-xs text-muted-foreground">
+                    <svg className="mb-2 h-8 w-8 text-gray-300 dark:text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                    </svg>
+                    Przeciągnij zadanie tutaj
                   </div>
                 ) : (
-                  columnTasks.map((task) => (
+                  columnTasks.map((task, index) => (
                     <article
                       key={task.id}
                       draggable
                       onDragStart={(event) => handleDragStart(event, task.id)}
                       onDragEnd={handleDragEnd}
-                      className={`cursor-grab rounded-lg border border-border bg-card p-3 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md active:cursor-grabbing ${draggedTaskId === task.id ? "opacity-70 ring-2 ring-primary/30" : ""}`}
+                      style={{ animationDelay: `${index * 30}ms` }}
+                      className={`animate-[fade-in-up_350ms_ease-out_both] cursor-grab rounded-lg border border-border bg-card p-3 shadow-sm transition-all duration-200 hover:shadow-md active:cursor-grabbing ${draggedTaskId === task.id ? "scale-[0.97] opacity-60 ring-2 ring-primary/30 shadow-lg" : "hover:-translate-y-0.5"} ${activeColumn && draggedTaskId !== task.id ? "transition-[transform,opacity,box-shadow]" : ""}`}
                     >
                       <p
                         className={`mb-2 text-sm font-semibold ${task.completed ? "line-through text-muted-foreground" : "text-gray-900 dark:text-white"}`}
