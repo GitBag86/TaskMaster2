@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from flask import session
 
 from models import Notification, Task, Team, User, db
-from routes.tasks import emit_task_event
+from routes.tasks import emit_task_event, emit_team_event
 from utils.notifications import emit_notification
 from utils.realtime import socket_connect_handler
 
@@ -136,3 +136,58 @@ def test_emit_notification_targets_notification_team_room(app, monkeypatch):
     assert emitted["event_name"] == "notification"
     assert emitted["payload"]["id"] == notification_id
     assert emitted["kwargs"]["room"] == f"team:{team_id}"
+
+
+def test_emit_team_event_targets_specified_team_room(app, monkeypatch):
+    emitted = []
+
+    def fake_emit(event_name, payload, **kwargs):
+        emitted.append({"event_name": event_name, "payload": payload, "kwargs": kwargs})
+
+    monkeypatch.setattr("routes.tasks.socketio.emit", fake_emit)
+
+    with app.app_context():
+        team_a = make_team("Team A")
+        team_b = make_team("Team B")
+        user = make_user("emit_team_user", "manager", team_a.id)
+        db.session.commit()
+
+        payload = {
+            "action": "project_created",
+            "user": user.username,
+            "timestamp": "2024-01-01T00:00:00",
+        }
+
+        emit_team_event(payload, team_id=team_b.id)
+
+    assert len(emitted) == 1
+    assert emitted[0]["event_name"] == "task_action"
+    assert emitted[0]["kwargs"]["room"] == f"team:{team_b.id}"
+
+
+def test_emit_team_event_falls_back_to_current_team(app, monkeypatch):
+    emitted = []
+
+    def fake_emit(event_name, payload, **kwargs):
+        emitted.append({"event_name": event_name, "payload": payload, "kwargs": kwargs})
+
+    monkeypatch.setattr("routes.tasks.socketio.emit", fake_emit)
+
+    with app.app_context():
+        team = make_team("Fallback Team")
+        user = make_user("fallback_user", "manager", team.id)
+        db.session.commit()
+
+        payload = {
+            "action": "project_created",
+            "user": user.username,
+            "timestamp": "2024-01-01T00:00:00",
+        }
+
+        with app.test_request_context():
+            from flask import g
+            g.current_team_id = team.id
+            emit_team_event(payload)
+
+    assert len(emitted) == 1
+    assert emitted[0]["kwargs"]["room"] == f"team:{team.id}"

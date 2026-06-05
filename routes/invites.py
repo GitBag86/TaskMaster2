@@ -1,4 +1,5 @@
 import hashlib
+import re
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -7,6 +8,14 @@ from flask import current_app, g, jsonify, request
 from models import TeamInvite, db
 from routes import invites_bp
 from routes.auth import login_required
+
+
+EMAIL_PATTERN = re.compile(r'^[a-zA-Z0-9.!#$%&\'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$')
+
+
+def validate_email(email: str) -> bool:
+    """Return True if email looks like a valid email address."""
+    return bool(EMAIL_PATTERN.match(email.strip())) if email else False
 
 
 def hash_invite_token(raw_token: str) -> str:
@@ -50,6 +59,10 @@ def create_invite():
     default_role = payload.get("default_role") or payload.get("role") or "user"
     if default_role != "user":
         return jsonify({"error": "Manager może wystawić zaproszenie tylko z rolą user"}), 400
+
+    email = payload.get("email")
+    if email is not None and not validate_email(email):
+        return jsonify({"error": "Nieprawidłowy format adresu email"}), 400
 
     raw_token = secrets.token_urlsafe(32)
     ttl_days = current_app.config.get("INVITE_TOKEN_TTL_DAYS", 7)

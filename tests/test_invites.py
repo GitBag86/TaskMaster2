@@ -181,3 +181,37 @@ def test_revoke_invite_removes_only_current_team_invite(client, app):
     assert client.delete(f"/team/invites/{invite_b_id}").status_code == 404
     created = client.post("/team/invites", json={}).get_json()
     assert client.delete(f"/team/invites/{created['id']}").status_code == 204
+
+
+def test_create_invite_rejects_invalid_email(client, app):
+    with app.app_context():
+        team = make_team("Email Validation")
+        manager = make_user("email_val_manager", team)
+        db.session.commit()
+        login_as(client, manager)
+
+    response = client.post("/team/invites", json={"email": "invalid-email"})
+    assert response.status_code == 400
+    assert "email" in response.get_json()["error"].lower()
+
+
+def test_create_invite_accepts_valid_email(client, app):
+    with app.app_context():
+        team = make_team("Valid Email")
+        manager = make_user("valid_email_manager", team)
+        db.session.commit()
+        login_as(client, manager)
+
+    response = client.post("/team/invites", json={"email": "user@example.com"})
+    assert response.status_code == 201
+
+
+def test_create_invite_accepts_no_email(client, app):
+    with app.app_context():
+        team = make_team("No Email")
+        manager = make_user("no_email_manager", team)
+        db.session.commit()
+        login_as(client, manager)
+
+    response = client.post("/team/invites", json={})
+    assert response.status_code == 201
