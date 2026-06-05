@@ -1,7 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import type { InviteToken } from '@/types'
 import { api } from '@/api/client'
 import { useToast } from '@/store/ToastContext'
+
+const EMAIL_REGEX = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/
 
 type InviteFormProps = {
   onCreated: (invite: InviteToken) => void;
@@ -11,7 +13,18 @@ export default function InviteForm({ onCreated }: InviteFormProps) {
   const [email, setEmail] = useState('');
   const [rawToken, setRawToken] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [dirty, setDirty] = useState(false);
   const { addToast } = useToast();
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const emailError = useMemo(() => {
+    const trimmed = email.trim()
+    if (!trimmed) return ''  // empty is allowed (optional)
+    if (!EMAIL_REGEX.test(trimmed)) return 'Nieprawidłowy format adresu email'
+    return ''
+  }, [email])
+
+  const canSubmit = !creating && !emailError
 
   const signupLink = useMemo(() => {
     if (!rawToken || typeof window === 'undefined') return '';
@@ -20,11 +33,17 @@ export default function InviteForm({ onCreated }: InviteFormProps) {
 
   const createInvite = async (event: React.FormEvent) => {
     event.preventDefault();
+    setDirty(true)
+    if (emailError) {
+      inputRef.current?.focus()
+      return
+    }
     setCreating(true);
     try {
       const invite = await api.invites.create(email.trim() || undefined);
       setRawToken(invite.raw_token ?? null);
       setEmail('');
+      setDirty(false)
       onCreated(invite);
       addToast('Zaproszenie utworzone', 'success');
     } catch (err: unknown) {
@@ -45,21 +64,39 @@ export default function InviteForm({ onCreated }: InviteFormProps) {
   };
 
   return (
-    <form onSubmit={createInvite} className="card p-4">
+    <form onSubmit={createInvite} noValidate className="card p-4">
       <div className="mb-4">
         <h3 className="font-semibold text-gray-900 dark:text-white">Nowe zaproszenie</h3>
         <p className="text-sm text-muted-foreground">Rola zaproszonej osoby: user.</p>
       </div>
 
       <div className="grid gap-3 md:grid-cols-[1fr_auto]">
-        <input
-          type="email"
-          value={email}
-          onChange={event => setEmail(event.target.value)}
-          className="input"
-          placeholder="E-mail opcjonalnie"
-        />
-        <button type="submit" disabled={creating} className="btn btn-primary whitespace-nowrap">
+        <div className="relative">
+          <input
+            ref={inputRef}
+            type="email"
+            value={email}
+            onChange={event => {
+              setEmail(event.target.value)
+              setDirty(true)
+            }}
+            onBlur={() => setDirty(true)}
+            className={`input ${dirty && emailError ? 'border-destructive focus-visible:ring-destructive/50' : ''}`}
+            placeholder="E-mail opcjonalnie"
+            aria-invalid={dirty && !!emailError}
+            aria-describedby={dirty && emailError ? 'email-error' : undefined}
+          />
+          {dirty && emailError && (
+            <p id="email-error" className="mt-1 text-xs text-destructive" role="alert">
+              {emailError}
+            </p>
+          )}
+        </div>
+        <button
+          type="submit"
+          disabled={!canSubmit}
+          className="btn btn-primary whitespace-nowrap disabled:opacity-50"
+        >
           {creating ? 'Tworzenie...' : 'Wygeneruj'}
         </button>
       </div>
