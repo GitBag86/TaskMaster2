@@ -42,6 +42,7 @@ class Config:
     SESSION_COOKIE_SECURE = default_session_cookie_secure()
     SESSION_COOKIE_SAMESITE = os.environ.get("SESSION_COOKIE_SAMESITE", "Lax")
     PERMANENT_SESSION_LIFETIME = timedelta(hours=int(os.environ.get("SESSION_LIFETIME_HOURS", 24)))
+    WTF_CSRF_TIME_LIMIT = None  # Match session lifetime; no shorter expiry to avoid mid-session lockouts
     SESSION_REFRESH_EACH_REQUEST = True
     ENABLE_SCHEDULER = os.environ.get("ENABLE_SCHEDULER", "true").lower() == "true"
     PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/")
