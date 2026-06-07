@@ -17,6 +17,7 @@ interface AuthContextType {
     invite_token?: string | null;
   }) => Promise<User>;
   logout: () => Promise<void>;
+  logoutAll: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -83,8 +84,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   };
 
+  const logoutAll = async () => {
+    await api.auth.logoutAll();
+    setUser(null);
+  };
+
   return (
-    <AuthContext.Provider value={{ user, currentTeam, loading, login, signup, logout }}>
+    <AuthContext.Provider value={{ user, currentTeam, loading, login, signup, logout, logoutAll }}>
       {children}
     </AuthContext.Provider>
   );

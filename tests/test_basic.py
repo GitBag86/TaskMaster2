@@ -34,6 +34,36 @@ def set_login_session(client, user):
         sess['role'] = user.role
         sess['session_version'] = user.session_version
 
+def test_logout_all_bumps_session_version_and_clears_session(auth_client, app):
+    """POST /auth/logout-all bumps session_version and clears all session keys."""
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").first()
+        original_version = admin.session_version
+
+    response = auth_client.post('/auth/logout-all')
+
+    assert response.status_code == 200
+    assert response.get_json()["message"] == "Wylogowano ze wszystkich urządzeń"
+
+    # Session should be cleared
+    with auth_client.session_transaction() as sess:
+        assert 'user_id' not in sess
+        assert 'team_id' not in sess
+        assert 'role' not in sess
+        assert 'session_version' not in sess
+
+    # session_version should be bumped
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").first()
+        assert admin.session_version == original_version + 1
+
+
+def test_logout_all_requires_login(client):
+    """POST /auth/logout-all returns 401 when not authenticated."""
+    response = client.post('/auth/logout-all')
+    assert response.status_code == 401
+
+
 def test_health_check(client):
     response = client.get('/health')
     assert response.status_code == 200

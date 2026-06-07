@@ -205,6 +205,8 @@ export const api = {
       }),
     logout: () =>
       request<{ message: string }>("/auth/logout", { method: "POST" }),
+    logoutAll: () =>
+      request<{ message: string }>("/auth/logout-all", { method: "POST" }),
     me: () => request<User>("/auth/me"),
   },
 

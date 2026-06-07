@@ -130,6 +130,26 @@ def logout():
         session.pop(key, None)
     return jsonify({"message": "Wylogowano"})
 
+
+@auth_bp.route('/logout-all', methods=['POST'])
+@login_required
+def logout_all():
+    """Bump session_version to invalidate ALL active sessions for this user.
+
+    The next before_request hook (utils/auth_layer.py) will detect the
+    version mismatch and return 401 session_stale on every concurrent session.
+    """
+    user_id = session.get('user_id')
+    if user_id:
+        user = db.session.get(User, user_id)
+        if user:
+            user.session_version += 1
+            db.session.commit()
+    # Clear the current session
+    for key in ('user_id', 'team_id', 'role', 'session_version'):
+        session.pop(key, None)
+    return jsonify({"message": "Wylogowano ze wszystkich urządzeń"})
+
 @auth_bp.route('/me', methods=['GET'])
 @login_required
 def get_current_user():
