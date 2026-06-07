@@ -18,8 +18,13 @@ limiter = Limiter(
 mail = Mail()
 migrate = Migrate()
 scheduler = APScheduler()
+# Map gunicorn worker class "gthread" → socketio async_mode "threading"
+# (gthread is a valid --worker-class for gunicorn but NOT a socketio async mode).
+_async_mode = os.environ.get("SOCKETIO_ASYNC_MODE", "threading")
+if _async_mode == "gthread":
+    _async_mode = "threading"
 socketio = SocketIO(
-    async_mode=os.environ.get("SOCKETIO_ASYNC_MODE", "threading"),
+    async_mode=_async_mode,
     ping_interval=25,
     ping_timeout=60,
 )
