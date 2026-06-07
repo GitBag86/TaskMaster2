@@ -37,8 +37,6 @@ fi
 
 python -m flask --app app db upgrade
 
-python scripts/seed_production.py
-
 # Gunicorn:
 #   --access-logfile - = stdout (widoczny przez docker compose logs)
 #   --error-logfile  - = stderr
