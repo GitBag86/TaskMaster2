@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
+from flask_wtf.csrf import generate_csrf
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -20,7 +21,7 @@ load_dotenv()
 load_dotenv(".env.local", override=True)
 
 from config import Config
-from extensions import limiter, mail, migrate, scheduler, socketio
+from extensions import csrf, limiter, mail, migrate, scheduler, socketio
 from jobs.deadline_notifier import check_deadlines
 from models import User, db
 from utils.errors import TaskMasterError
@@ -55,7 +56,7 @@ def _configure_app(app):
     if not uri:
         # No URI configured at all — build one with an absolute path
         app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + os.path.join(app.instance_path, "tasks.db")
-    elif uri.startswith("sqlite:///") and not uri.startswith("sqlite:////"):
+    elif uri.startswith("sqlite:///") and not uri.startswith("sqlite:////") and ":memory:" not in uri:
         # Relative SQLite path — resolve to absolute (relative to app.py dir) so it works regardless of CWD
         rel_path = uri.removeprefix("sqlite:///")
         abs_path = os.path.abspath(os.path.join(os.path.dirname(__file__), rel_path))
@@ -82,6 +83,11 @@ def _register_blueprints(app):
     app.register_blueprint(notifications_bp)
     app.register_blueprint(invites_bp)
     app.register_blueprint(projects_bp)
+
+    # Exempt public auth endpoints from CSRF (no session yet for login/signup)
+    from routes.auth import login, signup
+    csrf.exempt(login)
+    csrf.exempt(signup)
 
 
 def _register_routes(app):
@@ -139,6 +145,10 @@ def _register_routes(app):
             "checks": checks,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }), status_code
+
+    @app.route("/csrf-token")
+    def get_csrf_token():
+        return jsonify({"csrf_token": generate_csrf()})
 
     @app.route("/<path:path>")
     def serve_spa(path):
@@ -297,6 +307,7 @@ def create_app(config_object=Config):
     mail.init_app(app)
     limiter.init_app(app)
     migrate.init_app(app, db)
+    csrf.init_app(app)
     socketio.init_app(app, cors_allowed_origins=app.config["CORS_ORIGINS"])
     register_socketio_handlers()
     if app.config.get("ENABLE_SCHEDULER", True):

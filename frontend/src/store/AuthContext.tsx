@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 import type { Team, User } from '@/types'
-import { api, setAuthErrorHandler } from '@/api/client'
+import { api, clearCsrf, initCsrf, setAuthErrorHandler } from '@/api/client'
 
 interface AuthContextType {
   user: User | null;
@@ -32,6 +32,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const u = await api.auth.me();
       setUser(u);
+      // Fetch CSRF token after confirming user is authenticated
+      void initCsrf();
     } catch {
       setUser(null);
     } finally {
@@ -62,6 +64,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = async (username: string, password: string) => {
     const res = await api.auth.login(username, password);
     setUser(res.user);
+    void initCsrf();
     return res.user;
   };
 
@@ -76,16 +79,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }) => {
     const res = await api.auth.signup(data);
     setUser(res.user);
+    void initCsrf();
     return res.user;
   };
 
   const logout = async () => {
     await api.auth.logout();
+    clearCsrf();
     setUser(null);
   };
 
   const logoutAll = async () => {
     await api.auth.logoutAll();
+    clearCsrf();
     setUser(null);
   };
 

@@ -91,6 +91,29 @@ type AuthErrorHandler = (error: ApiError) => void;
 
 let authErrorHandler: AuthErrorHandler | null = null;
 
+let csrfToken: string | null = null;
+
+/** Fetch a fresh CSRF token from the server and cache it. */
+export async function initCsrf(): Promise<void> {
+  try {
+    const response = await fetch(`${API_BASE}/csrf-token`, {
+      credentials: "include",
+    });
+    if (response.ok) {
+      const data = (await response.json()) as { csrf_token: string };
+      csrfToken = data.csrf_token;
+    }
+  } catch {
+    // CSRF token fetch failure is non-fatal; requests will proceed without it
+    csrfToken = null;
+  }
+}
+
+/** Clear the cached CSRF token (e.g. on logout). */
+export function clearCsrf(): void {
+  csrfToken = null;
+}
+
 export class ApiError extends Error {
   status: number;
   code?: string;
@@ -155,12 +178,24 @@ function getErrorCode(errorBody: unknown): string | undefined {
 }
 
 async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
+  const method = (options.method ?? "GET").toUpperCase();
+  const isStateChanging = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  // Attach CSRF token for state-changing requests
+  if (isStateChanging && csrfToken) {
+    headers["X-CSRFToken"] = csrfToken;
+  }
+  // Merge any caller-supplied headers
+  if (options.headers) {
+    Object.assign(headers, options.headers);
+  }
+
   const response = await fetch(`${API_BASE}${url}`, {
     ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
+    headers,
     credentials: "include",
   });
 

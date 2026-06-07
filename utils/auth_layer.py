@@ -30,6 +30,7 @@ PUBLIC_PREFIXES: tuple[str, ...] = (
     "/auth/login",
     "/auth/signup",
     "/auth/logout",
+    "/auth/logout-all",
     "/auth/signup-info",  # added in Task 12
     "/socket.io",  # WebSocket negotiation — handled by socketio handlers, not Flask
 )
