@@ -308,7 +308,7 @@ def test_project_changes_email_project_participants(auth_client, app, monkeypatc
         sent.append({"to": to_email, "subject": subject, "body": body})
         return True
 
-    monkeypatch.setattr("routes.tasks.enqueue_email", fake_send_email)
+    monkeypatch.setattr("utils.email_sender.enqueue_email", fake_send_email)
 
     with app.app_context():
         team_id = Team.query.filter_by(slug="default").one().id
@@ -999,7 +999,7 @@ def test_regular_user_can_complete_assigned_task(client, app):
     assert response.get_json()["completed"] is True
 
 def test_regular_user_can_mark_assigned_task_in_progress(client, app, monkeypatch):
-    monkeypatch.setattr("routes.tasks.enqueue_email", lambda *args, **kwargs: True)
+    monkeypatch.setattr("utils.email_sender.enqueue_email", lambda *args, **kwargs: True)
 
     with app.app_context():
         admin = User(username="admin_start", email="admin_start@example.com", role="admin")
@@ -1137,7 +1137,7 @@ def test_comment_mentions_emit_event_and_activity(auth_client, app, monkeypatch)
     def fake_emit(event_name, payload, **kwargs):
         emitted.append({"event_name": event_name, "payload": payload})
 
-    monkeypatch.setattr("routes.tasks.socketio.emit", fake_emit)
+    monkeypatch.setattr("utils.realtime.socketio.emit", fake_emit)
 
     response = auth_client.post(f'/tasks/{task["id"]}/comments', json={"text": "@mentioned_user zerknij proszę"})
 
@@ -1231,7 +1231,7 @@ def test_create_task_emits_structured_socket_event(auth_client, monkeypatch):
         emitted["event_name"] = event_name
         emitted["payload"] = payload
 
-    monkeypatch.setattr("routes.tasks.socketio.emit", fake_emit)
+    monkeypatch.setattr("utils.realtime.socketio.emit", fake_emit)
 
     response = auth_client.post('/tasks', json={"title": "Socket Payload Task"})
 
@@ -1263,7 +1263,7 @@ def test_delete_task_emits_snapshot_event(auth_client, monkeypatch):
         emitted["event_name"] = event_name
         emitted["payload"] = payload
 
-    monkeypatch.setattr("routes.tasks.socketio.emit", fake_emit)
+    monkeypatch.setattr("utils.realtime.socketio.emit", fake_emit)
 
     deleted = auth_client.delete(f'/tasks/{task_id}')
     assert deleted.status_code == 200
@@ -1305,7 +1305,7 @@ def test_bulk_complete_emits_socket_event(auth_client, monkeypatch):
         emitted["event_name"] = event_name
         emitted["payload"] = payload
 
-    monkeypatch.setattr("routes.tasks.socketio.emit", fake_emit)
+    monkeypatch.setattr("utils.realtime.socketio.emit", fake_emit)
 
     response = auth_client.put('/tasks/bulk/complete', json={"task_ids": [first["id"], second["id"]]})
 
@@ -1322,7 +1322,7 @@ def test_bulk_update_emits_socket_event(auth_client, monkeypatch):
         emitted["event_name"] = event_name
         emitted["payload"] = payload
 
-    monkeypatch.setattr("routes.tasks.socketio.emit", fake_emit)
+    monkeypatch.setattr("utils.realtime.socketio.emit", fake_emit)
 
     response = auth_client.put('/tasks/bulk/update', json={
         "task_ids": [task["id"]],
@@ -1342,7 +1342,7 @@ def test_bulk_delete_emits_socket_event(auth_client, monkeypatch):
         emitted["event_name"] = event_name
         emitted["payload"] = payload
 
-    monkeypatch.setattr("routes.tasks.socketio.emit", fake_emit)
+    monkeypatch.setattr("utils.realtime.socketio.emit", fake_emit)
 
     response = auth_client.delete('/tasks/bulk/delete', json={"task_ids": [task["id"]]})
 

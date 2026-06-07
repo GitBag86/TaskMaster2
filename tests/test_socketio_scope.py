@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from flask import session
 
 from models import Notification, Task, Team, User, db
-from routes.tasks import emit_task_event, emit_team_event
+from utils.realtime import emit_task_event, emit_team_event
 from utils.notifications import emit_notification
 from utils.realtime import socket_connect_handler
 
@@ -90,7 +90,7 @@ def test_emit_task_event_targets_task_team_room(app, monkeypatch):
         emitted["payload"] = payload
         emitted["kwargs"] = kwargs
 
-    monkeypatch.setattr("routes.tasks.socketio.emit", fake_emit)
+    monkeypatch.setattr("utils.realtime.socketio.emit", fake_emit)
 
     with app.app_context():
         team = make_team("Emit Task")
@@ -144,7 +144,7 @@ def test_emit_team_event_targets_specified_team_room(app, monkeypatch):
     def fake_emit(event_name, payload, **kwargs):
         emitted.append({"event_name": event_name, "payload": payload, "kwargs": kwargs})
 
-    monkeypatch.setattr("routes.tasks.socketio.emit", fake_emit)
+    monkeypatch.setattr("utils.realtime.socketio.emit", fake_emit)
 
     with app.app_context():
         team_a = make_team("Team A")
@@ -171,7 +171,7 @@ def test_emit_team_event_falls_back_to_current_team(app, monkeypatch):
     def fake_emit(event_name, payload, **kwargs):
         emitted.append({"event_name": event_name, "payload": payload, "kwargs": kwargs})
 
-    monkeypatch.setattr("routes.tasks.socketio.emit", fake_emit)
+    monkeypatch.setattr("utils.realtime.socketio.emit", fake_emit)
 
     with app.app_context():
         team = make_team("Fallback Team")

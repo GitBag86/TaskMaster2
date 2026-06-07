@@ -4,8 +4,8 @@ from flask import current_app, g, request, jsonify, session, url_for
 from datetime import date, datetime, timedelta, timezone
 from marshmallow import ValidationError
 from sqlalchemy.orm import selectinload, joinedload
-from extensions import socketio
 from routes import tasks_bp
+from utils.realtime import emit_task_event, emit_team_event
 from models import (
     db,
     User,
@@ -17,7 +17,7 @@ from models import (
     Project,
     TaskDependency,
 )
-from schemas import TaskSchema, CommentSchema, SubtaskSchema, ProjectSchema, DependencySchema
+from schemas import TaskSchema, CommentSchema, SubtaskSchema, DependencySchema
 from routes.auth import login_required
 from utils.email_sender import (
     enqueue_email,
@@ -35,31 +35,6 @@ from utils.scoping import get_team_resource_or_404, team_scoped
 TASK_ALLOWED_FIELDS = {'title', 'priority', 'project', 'project_id', 'due_date', 'notes', 'completed', 'status'}
 USER_START_TASK_FIELDS = {'status', 'completed'}
 BULK_MAX_TASKS = 100
-
-def emit_task_event(action, user, task=None, task_ids=None, task_id=None, task_payload=None, extra=None):
-    payload = {
-        "action": action,
-        "user": user.username,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    }
-    if task is not None:
-        payload["task_id"] = task.id
-        payload["task"] = task.to_dict()
-    elif task_id is not None:
-        payload["task_id"] = task_id
-        payload["task"] = task_payload
-    if task_ids is not None:
-        payload["task_ids"] = task_ids
-    if extra:
-        payload.update(extra)
-    team_id = task.team_id if task is not None else g.get('current_team_id')
-    room = f"team:{team_id}" if team_id is not None else None
-    socketio.emit("task_action", payload, room=room)
-
-def emit_team_event(payload, team_id=None):
-    target_team_id = team_id if team_id is not None else g.get('current_team_id')
-    room = f"team:{target_team_id}" if target_team_id is not None else None
-    socketio.emit("task_action", payload, room=room)
 
 def app_url(path=''):
     base_url = current_app.config.get("PUBLIC_BASE_URL")
@@ -309,55 +284,6 @@ def resolve_project(project_id, project_name, user):
 def set_task_project(task, project):
     task.project_id = project.id
     task.project = project.name
-
-def visible_projects_for_user(user):
-    if g.get('current_role') in ('manager', 'super_admin'):
-        return team_scoped(Project.query, Project).order_by(Project.archived.asc(), Project.name.asc()).all()
-
-    project_ids = {
-        task.project_id
-        for task in assigned_task_query(user).all()
-        if task.project_id is not None
-    }
-    member_project_ids = {
-        project.id
-        for project in team_scoped(Project.query, Project).filter(Project.members.any(User.id == user.id)).all()
-    }
-    project_ids.update(member_project_ids)
-    if not project_ids:
-        return []
-    return team_scoped(Project.query, Project).filter(Project.id.in_(project_ids)).order_by(Project.name.asc()).all()
-
-def project_completion_status(project):
-    open_tasks = [task for task in project.tasks if not task_is_done(task)]
-    blocked_tasks = [task for task in open_tasks if task_open_dependencies(task)]
-    today = date.today()
-    overdue_tasks = [
-        task
-        for task in open_tasks
-        if task.due_date is not None and task.due_date < today
-    ]
-
-    checks = {
-        "all_tasks_done": len(open_tasks) == 0,
-        "no_blocked_tasks": len(blocked_tasks) == 0,
-        "no_overdue_tasks": len(overdue_tasks) == 0,
-    }
-
-    return {
-        "ready": all(checks.values()),
-        "checks": checks,
-        "open_tasks": [task.summary_dict() for task in open_tasks],
-        "blocked_tasks": [task.summary_dict() for task in blocked_tasks],
-        "overdue_tasks": [task.summary_dict() for task in overdue_tasks],
-    }
-
-def user_can_access_project(user, project):
-    if g.get('current_role') in ('manager', 'super_admin'):
-        return True
-    if user in project.members:
-        return True
-    return any(user_can_access_task(user, task) for task in project.tasks)
 
 def extract_mentions(text):
     return sorted(set(re.findall(r'@([A-Za-z0-9_.-]{3,100})', text or '')))
@@ -1215,189 +1141,6 @@ def tasks_by_project():
             projects[proj] = []
         projects[proj].append(task.to_dict())
     return jsonify(projects)
-
-@tasks_bp.route('/projects', methods=['GET'])
-@login_required
-def get_projects():
-    user_id = session.get('user_id')
-    user = db.session.get(User, user_id)
-    projects = []
-
-    for project in visible_projects_for_user(user):
-        project_data = project.to_dict(include_tasks=False)
-        if g.get('current_role') in ('manager', 'super_admin'):
-            project_tasks = project.tasks
-        else:
-            project_tasks = [task for task in project.tasks if user_can_access_task(user, task)]
-        project_data['tasks'] = [task.to_dict() for task in project_tasks]
-        projects.append(project_data)
-
-    return jsonify({'projects': projects})
-
-@tasks_bp.route('/projects', methods=['POST'])
-@login_required
-def create_project():
-    user_id = session.get('user_id')
-    user = db.session.get(User, user_id)
-
-    if g.get('current_role') not in ('manager', 'super_admin'):
-        return jsonify({"error": "Tylko administrator może tworzyć projekty"}), 403
-
-    schema = ProjectSchema()
-    try:
-        validated = schema.load(request.get_json() or {})
-    except ValidationError as err:
-        return jsonify({"error": err.messages}), 400
-
-    name = normalize_project_name(validated.get('name'))
-    if team_scoped(Project.query, Project).filter_by(name=name).first():
-        return jsonify({"error": "Projekt o tej nazwie już istnieje"}), 409
-
-    project = Project(
-        name=name,
-        description=validated.get('description') or '',
-        color=validated.get('color') or '#3b82f6',
-        archived=validated.get('archived', False),
-        created_by_id=user_id,
-        team_id=g.get('current_team_id'),
-    )
-    update_project_members(project, validated.get('member_ids', []))
-    db.session.add(project)
-    db.session.commit()
-    emit_team_event({
-        "action": "project_created",
-        "user": user.username,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "project": project.to_dict(include_tasks=False),
-    })
-    return jsonify(project.to_dict(include_tasks=False)), 201
-
-@tasks_bp.route('/projects/<int:project_id>', methods=['PUT'])
-@login_required
-def update_project(project_id):
-    user_id = session.get('user_id')
-    user = db.session.get(User, user_id)
-
-    if g.get('current_role') not in ('manager', 'super_admin'):
-        return jsonify({"error": "Tylko administrator może edytować projekty"}), 403
-
-    project = get_team_resource_or_404(Project, project_id)
-    if not project:
-        return jsonify({"error": "Project not found"}), 404
-
-    schema = ProjectSchema(partial=True)
-    try:
-        validated = schema.load(request.get_json() or {})
-    except ValidationError as err:
-        return jsonify({"error": err.messages}), 400
-
-    old_name = project.name
-    if 'name' in validated:
-        name = normalize_project_name(validated.get('name'))
-        duplicate = team_scoped(Project.query, Project).filter(Project.name == name, Project.id != project.id).first()
-        if duplicate:
-            return jsonify({"error": "Projekt o tej nazwie już istnieje"}), 409
-        project.name = name
-    if 'description' in validated:
-        project.description = validated.get('description') or ''
-    if 'color' in validated:
-        project.color = validated.get('color') or '#3b82f6'
-    if 'archived' in validated:
-        project.archived = validated.get('archived', False)
-    if 'member_ids' in validated:
-        update_project_members(project, validated.get('member_ids', []))
-
-    if project.name != old_name:
-        for task in project.tasks:
-            task.project = project.name
-
-    db.session.commit()
-    send_project_activity_emails(project, user, "Zaktualizowano ustawienia projektu")
-    emit_team_event({
-        "action": "project_updated",
-        "user": user.username,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "project": project.to_dict(include_tasks=False),
-    })
-    return jsonify(project.to_dict(include_tasks=True))
-
-@tasks_bp.route('/projects/<int:project_id>/completion', methods=['GET'])
-@login_required
-def get_project_completion(project_id):
-    user_id = session.get('user_id')
-    user = db.session.get(User, user_id)
-    project = get_team_resource_or_404(Project, project_id)
-    if not project:
-        return jsonify({"error": "Project not found"}), 404
-    if not user_can_access_project(user, project):
-        return jsonify({"error": "Permission denied"}), 403
-
-    return jsonify(project_completion_status(project))
-
-@tasks_bp.route('/projects/<int:project_id>/complete', methods=['POST'])
-@login_required
-def complete_project(project_id):
-    user_id = session.get('user_id')
-    user = db.session.get(User, user_id)
-
-    if g.get('current_role') not in ('manager', 'super_admin'):
-        return jsonify({"error": "Tylko administrator może kończyć projekty"}), 403
-
-    project = get_team_resource_or_404(Project, project_id)
-    if not project:
-        return jsonify({"error": "Project not found"}), 404
-
-    completion = project_completion_status(project)
-    if not completion["ready"]:
-        return jsonify({
-            "error": "Nie można zakończyć projektu, który nie spełnia checklisty gotowości.",
-            "completion": completion,
-        }), 409
-
-    project.archived = True
-    db.session.commit()
-    send_project_completed_emails(project, user)
-    emit_team_event({
-        "action": "project_completed",
-        "user": user.username,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "project": project.to_dict(include_tasks=False),
-    })
-
-    data = project.to_dict(include_tasks=True)
-    data["completion"] = completion
-    return jsonify(data)
-
-@tasks_bp.route('/projects/<int:project_id>', methods=['DELETE'])
-@login_required
-def archive_project(project_id):
-    user_id = session.get('user_id')
-    user = db.session.get(User, user_id)
-
-    if g.get('current_role') not in ('manager', 'super_admin'):
-        return jsonify({"error": "Tylko administrator może archiwizować projekty"}), 403
-
-    project = get_team_resource_or_404(Project, project_id)
-    if not project:
-        return jsonify({"error": "Project not found"}), 404
-
-    completion = project_completion_status(project)
-    if not completion["ready"]:
-        return jsonify({
-            "error": "Nie można archiwizować projektu, który nie spełnia checklisty gotowości.",
-            "completion": completion,
-        }), 409
-
-    project.archived = True
-    db.session.commit()
-    send_project_completed_emails(project, user)
-    emit_team_event({
-        "action": "project_archived",
-        "user": user.username,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "project": project.to_dict(include_tasks=False),
-    })
-    return jsonify(project.to_dict(include_tasks=False))
 
 @tasks_bp.route('/tasks/search', methods=['GET'])
 @login_required
