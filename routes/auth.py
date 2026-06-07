@@ -90,6 +90,7 @@ def signup():
 
 
 @auth_bp.route('/signup-info', methods=['GET'])
+@limiter.limit("10 per minute")
 def signup_info():
     mode = current_app.config.get('SIGNUP_MODE', 'invite_only')
     payload = {"mode": mode}

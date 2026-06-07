@@ -57,7 +57,7 @@ W TaskMaster2 są trzy poziomy uprawnień:
 
 ### 👑 Super Admin
 
-- Operuje **ponad zespołami** (nie należy do żadnego).
+- Operuje **ponad zespołami** (nie należy do żadnego, `team_id = NULL`).
 - Zarządza zespołami: tworzy, archiwizuje, usuwa, zmienia nazwy.
 - Przenosi użytkowników między zespołami.
 - Zmienia role (super_admin / manager / user).

@@ -43,6 +43,12 @@ def _configure_app(app):
             "SECRET_KEY environment variable is not set. "
             "Generate one with: python -c 'import secrets; print(secrets.token_hex(32))'"
         )
+    if secret_key == "dev-secret-key-change-me":
+        logger.warning(
+            "SECRET_KEY is still the insecure development default! "
+            "Set SECRET_KEY to a random 64-char hex string in production. "
+            "Generate one with: python -c 'import secrets; print(secrets.token_hex(32))'"
+        )
 
     os.makedirs(app.instance_path, exist_ok=True)
     uri = app.config.get("SQLALCHEMY_DATABASE_URI", "")

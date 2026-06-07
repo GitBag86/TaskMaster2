@@ -26,7 +26,7 @@ TaskMaster2 to pelna aplikacja do zarzadzania zadaniami i projektami zespolowymi
 TaskMaster2 zawiera:
 
 - rejestracje i logowanie uzytkownikow,
-- role `admin` i `user`,
+- role `super_admin`, `manager` i `user`,
 - tworzenie i edycje zadan,
 - przypisywanie wielu uzytkownikow do projektu,
 - przypisywanie jednego wykonawcy do zadania,
@@ -59,7 +59,7 @@ TaskMaster2 obsługuje multi-tenancy (Team Workspaces) z trzema poziomami uprawn
 
 ### Super Admin
 
-Super admin nie nalezy do zadnego zespolu (`team_id = NULL`) i nie pojawia sie w widokach team-scoped (np. /tasks, /projects). Sluzy wylacznie do administracji platforma.
+Super admin nie nalezy do zadnego zespolu (`team_id = NULL`) i nie pojawia sie w widokach team-scoped (np. `/tasks`, `/projects`). Sluzy wylacznie do administracji platforma.
 
 Super admin moze:
 
@@ -75,7 +75,7 @@ Po zalogowaniu super admin laduje na `/admin/teams` (konfigurowalne przez `SUPER
 
 ### Manager (Menedżer Zespołu)
 
-Manager jest odpowiednikiem dawnego `admin` w obrebie jednego zespolu. Widzi tylko zasoby swojego zespolu.
+Manager jest odpowiednikiem dawnego `admin` w obrebie jednego zespolu. Widzi tylko zasoby swojego zespolu. To on zarzadza zadaniami, projektami i czlonkami.
 
 Manager moze:
 
@@ -623,11 +623,28 @@ TaskMaster2/
   models.py
   schemas.py
   routes/
+    __init__.py
     auth.py
     users.py
     tasks.py
     stats.py
     filters.py
+    admin.py
+    invites.py
+    notifications.py
+  utils/
+    auth_layer.py
+    auth_decorators.py
+    scoping.py
+    errors.py
+    email_sender.py
+    notifications.py
+    realtime.py
+    socket_rooms.py
+    delete_helpers.py
+    logging_config.py
+  jobs/
+    deadline_notifier.py
   tests/
   migrations/
   frontend/
@@ -669,7 +686,7 @@ Po zmianach frontendowych, jesli testujesz przez Flask na porcie 5000, wykonaj `
 
 ## Testy
 
-Backend:
+Backend (220 testów, 1 skip):
 
 ```bash
 .venv/bin/pytest
@@ -678,10 +695,17 @@ Backend:
 Szybka walidacja skladni:
 
 ```bash
-python3 -m py_compile models.py routes/tasks.py routes/stats.py routes/filters.py
+python3 -m py_compile models.py routes/*.py utils/*.py
 ```
 
-Frontend:
+Frontend (18 testów):
+
+```bash
+cd frontend
+npm run test
+```
+
+Frontend build:
 
 ```bash
 cd frontend
@@ -794,9 +818,13 @@ Upewnij sie, ze:
 - Backend waliduje dane przez Marshmallow.
 - SQLAlchemy obsluguje modele i relacje.
 - Flask-Migrate/Alembic obsluguje migracje.
+- Multi-tenancy: 12 tabel z `team_id NOT NULL`, CHECK constraint na User (`super_admin` → NULL, `manager`/`user` → NOT NULL).
+- Auth: `utils/auth_layer.py` — before_request hook z session_version i team archive guard.
+- Scoping: `utils/scoping.py` — `team_scoped()` i `get_team_resource_or_404()` dla automatycznej filtracji per-team.
 - Projekty maja relacje wiele-do-wielu z uzytkownikami przez `project_members`.
-- Zadania nadal przechowuja wykonawcow w `task_assignees`, ale warstwa API ogranicza zapis do jednego wykonawcy.
-- Socket.IO wysyla event `task_action` po zmianach stanu.
+- Zadania maja max. jednego wykonawce (warstwa API ogranicza `assignee_ids` do 1).
+- `Comment`, `Subtask`, `TaskDependency`, `CustomField` maja denormalizowane `team_id` z parent task.
+- Socket.IO wysyla event `task_action` z `room=f'team:{team_id}'` (per-team isolation).
 - Frontend uzywa React Context API zamiast Redux.
 - Dark mode opiera sie o Tailwind `darkMode: 'class'`.
-- Zadania i projekty sa synchronizowane po mutacjach przez eventy Socket.IO.
+- Badania wydajnosciowe: `scripts/seed_perf.py` + `scripts/perf_bench.py`.

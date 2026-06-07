@@ -1,7 +1,8 @@
 from flask import g, request, jsonify, session
 from datetime import datetime, timedelta, timezone
+from sqlalchemy.orm import selectinload
 from routes import stats_bp
-from models import db, User, Task, ActivityLog
+from models import db, User, Task, TaskDependency, ActivityLog
 from routes.auth import login_required
 from utils.scoping import team_scoped
 import csv
@@ -85,7 +86,11 @@ def get_weekly_report():
     week_start = now - timedelta(days=7)
     today = now.date()
 
-    tasks = visible_task_query(user).all()
+    tasks = (
+        visible_task_query(user)
+        .options(selectinload(Task.dependencies).selectinload(TaskDependency.depends_on_task))
+        .all()
+    )
     visible_task_ids = {task.id for task in tasks}
 
     created = [task for task in tasks if as_utc(task.created_at) and as_utc(task.created_at) >= week_start]

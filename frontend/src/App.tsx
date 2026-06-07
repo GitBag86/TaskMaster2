@@ -18,6 +18,7 @@ const TeamsAdminPage = lazy(() => import('./components/Admin/TeamsAdminPage'))
 const TeamDetailPage = lazy(() => import('./components/Admin/TeamDetailPage'))
 const AdminAuditPage = lazy(() => import('./components/Admin/AdminAuditPage'))
 const TeamMembersPage = lazy(() => import('./components/Team/TeamMembersPage'))
+import ErrorBoundary from './components/common/ErrorBoundary'
 import { Toaster } from './components/common/Toaster'
 import { CommandPalette } from './components/common/CommandPalette'
 
@@ -81,7 +82,9 @@ export default function App() {
     <ThemeProvider>
       <AuthProvider>
         <ToastProvider>
-          <AppRoutes />
+          <ErrorBoundary>
+            <AppRoutes />
+          </ErrorBoundary>
           <CommandPalette />
           <Toaster />
         </ToastProvider>

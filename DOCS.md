@@ -64,9 +64,10 @@ Pełna dokumentacja techniczna aplikacji TaskMaster2 dla developerów i administ
             │  SQLAlchemy ORM     │
             └─────────┬───────────┘
                       ↓
-            ┌─────────────────────┐
-            │  SQLite (volume)    │  ← /app/instance/tasks.db (Railway Volume)
-            └─────────────────────┘
+            ┌──────────────────────────┐
+            │  PostgreSQL (Railway)    │  ← Managed via DATABASE_URL
+            │  lub SQLite (lokalnie)   │  ← instance/tasks.db
+            └──────────────────────────┘
 ```
 
 Aplikacja zyje w pojedynczym kontenerze Dockera (multi-stage build: frontend + Python). Frontend SPA jest budowany w czasie buildu obrazu i serwowany jako statyki przez Flaska z `frontend/dist/`.
@@ -110,6 +111,7 @@ Client A (browser, team_id=1)              Client B (browser, team_id=1)
 | Marshmallow             | 3.21.2 | Walidacja            |
 | Werkzeug                | 3.0.2  | WSGI utils, security |
 | Gunicorn                | 21.2.0 | App server           |
+| psycopg                 | 3.2+   | PostgreSQL adapter    |
 
 ### Frontend
 
@@ -127,8 +129,9 @@ Client A (browser, team_id=1)              Client B (browser, team_id=1)
 
 - Docker (multi-stage Dockerfile: Node frontend builder + Python runtime)
 - Railway jako platforma hostingowa (edge proxy, SSL, deploy z GitHub)
-- SQLite (single-writer, do ~20 concurrent users) — persistencja przez Railway Volume na `/app/instance`
-- (Opcjonalnie) PostgreSQL przez `psycopg` jeśli zwiększone obciążenie
+- **PostgreSQL** (Railway managed) — używany w produkcji, konfigurowany przez `DATABASE_URL`
+- SQLite — używany lokalnie do developmentu (`instance/tasks.db`)
+- Docker (multi-stage: Node builder + Python runtime) — artefakt deployu
 
 ---
 
@@ -200,6 +203,10 @@ Dodane przez migrację `2c8e44f754b0`:
 ### Constraints
 
 - `ck_user_team_role_consistency` na User: `(role='super_admin' AND team_id IS NULL) OR (role IN ('manager', 'user') AND team_id IS NOT NULL)`
+
+### Denormalizacja `team_id` na zasobach zagnieżdżonych
+
+`Comment`, `Subtask`, `TaskDependency`, `CustomField` przechowują własne `team_id` (skopiowane z parent task przy utworzeniu). Dzięki temu zapytania scoped nie wymagają JOIN-a przez `task` — co znacząco poprawia wydajność list endpointów.
 
 ---
 
@@ -581,12 +588,15 @@ docker build -t taskmaster2 .
 docker run -p 5000:5000 --env-file .env taskmaster2
 ```
 
-### Backup bazy SQLite
+### Backup bazy
 
+**PostgreSQL (Railway managed):**
 ```bash
-# Z poziomu Railway shell
-cp /app/instance/tasks.db /app/instance/tasks.db.$(date +%F)
-# Pobierz przez `railway run` albo zrzut do storage zewnetrznego.
+railway run --service Postgres pg_dump -T "public".* -Fc > backup.dump
+```
+**SQLite (lokalny dev):**
+```bash
+cp instance/tasks.db instance/tasks.db.$(date +%F)
 ```
 
 ---
@@ -608,6 +618,9 @@ CORS_ORIGINS=https://app.example.com
 SIGNUP_MODE=invite_only             # disabled | invite_only | default_team
 INVITE_TOKEN_TTL_DAYS=7
 SUPER_ADMIN_LANDING=/admin/teams
+DEFAULT_ADMIN_USERNAME=admin
+DEFAULT_ADMIN_PASSWORD=<silne haslo>
+DEFAULT_ADMIN_EMAIL=admin@example.com
 ```
 
 ### Bootstrap admin
@@ -709,9 +722,11 @@ Skrypty: `scripts/seed_perf.py` (5 zespołów × 1000 tasków × 5 komentarzy) +
 
 ### Skala
 
-- SQLite: do ~20 concurrent users na pojedynczą instancję.
-- Powyżej: PostgreSQL przez `DATABASE_URL=postgresql://...`.
+- **SQLite** (dev): do ~20 concurrent users na pojedynczą instancję.
+- **PostgreSQL** (produkcja): obsługuje setki concurrent users.
 - Dane: ~10MB DB dla 5 zespołów × 1000 tasków.
+- Benchmark: `scripts/seed_perf.py` + `scripts/perf_bench.py`.
+- Cel: <100ms p95 na list endpointach.
 
 ---
 
@@ -725,7 +740,7 @@ pytest -k "isolation"            # tylko isolation tests
 
 ### Stan
 
-**189 passed, 1 skipped** na czystej bazie SQLite.
+**220 passed, 1 skipped** na czystej bazie SQLite lub PostgreSQL.
 
 ### Struktura
 
@@ -737,7 +752,7 @@ tests/
 ├── test_user_team.py                    # User.team_id, session_version
 ├── test_auth_layer.py                   # before_request hook, decoratory
 ├── test_error_handler.py                # custom errors
-├── test_template_service.py             # seed_team_templates
+├── test_missing_endpoints.py            # brakujące endpointy
 ├── test_migration_001.py                # backfill team_id
 ├── test_migration_002.py                # NOT NULL flip
 ├── test_tasks_team_scope.py             # routes/tasks per-team

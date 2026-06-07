@@ -2,7 +2,7 @@
 
 **TaskMaster2**: A full-stack task management application with a Flask REST API backend and React/TypeScript SPA frontend. Features role-based access control, subtasks, comments, real-time updates via Socket.IO, dark mode, and PWA support.
 
-Deployment target: **Railway** (Docker build via `Dockerfile`, edge proxy + SSL provided by Railway). SQLite is the only supported database.
+Deployment target: **Railway** (Docker build via `Dockerfile`, edge proxy + SSL provided by Railway). Database: **PostgreSQL** in production (Railway managed), **SQLite** for local dev.
 
 ---
 
@@ -89,7 +89,7 @@ Railway dostarcza HTTPS edge proxy, WebSocket upgrade i wstrzykuje `PORT` (uzywa
 
 - **Backend**: Flask 3.x + SQLAlchemy ORM + Marshmallow (validation/serialization)
 - **Frontend**: React 18 + TypeScript + Vite + Tailwind CSS
-- **Database**: SQLite with Flask-Migrate (Alembic)
+- **Database**: PostgreSQL (production via Railway managed service) / SQLite (local dev), with Flask-Migrate (Alembic)
 - **Real-Time**: Socket.IO for cross-client synchronization
 - **Auth**: Session-based (user_id in Flask session)
 - **Edge Proxy**: Railway edge (SSL termination, WebSocket upgrade, request routing)
