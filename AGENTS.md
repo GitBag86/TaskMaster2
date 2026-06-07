@@ -1,4 +1,4 @@
-# Task Management API - Agent Instructions
+# TaskMaster2 v1.0 — Agent Instructions
 
 **TaskMaster2**: A full-stack task management application with a Flask REST API backend and React/TypeScript SPA frontend. Features role-based access control, subtasks, comments, real-time updates via Socket.IO, dark mode, and PWA support.
 

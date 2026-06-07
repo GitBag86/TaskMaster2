@@ -1,6 +1,19 @@
-# TaskMaster2
+# TaskMaster2  <img src="https://img.shields.io/badge/version-1.0-success" alt="v1.0">
 
-TaskMaster2 to pelna aplikacja do zarzadzania zadaniami i projektami zespolowymi. Backend dziala jako Flask REST API, frontend jako React/TypeScript SPA. Aplikacja obsluguje role uzytkownikow, projekty, zadania, podzadania, komentarze, zaleznosci miedzy zadaniami, widoki dzienne, Kanban, raporty, szablony projektow, szybkie dodawanie zadan i synchronizacje w czasie rzeczywistym przez Socket.IO.
+**TaskMaster2 v1.0** — pełna aplikacja do zarządzania zadaniami i projektami zespołowymi z izolacją multi‑tenant (Team Workspaces). Backend jako Flask REST API, frontend jako React/TypeScript SPA. Obsługuje role użytkowników, projekty, zadania, podzadania, komentarze, zależności między zadaniami, widok Dziś, Kanban z drag‑and‑drop, dashboard, raport tygodniowy, szablony projektów, szybkie dodawanie przez Command Palette, synchronizację w czasie rzeczywistym przez Socket.IO, audit log operacji administracyjnych oraz powiadomienia e‑mail.
+
+### ✨ Nowości w wersji 1.0
+
+- **Multi‑tenancy (Team Workspaces)** — pełna izolacja danych między zespołami z trzema poziomami uprawnień (super_admin / manager / user).
+- **Panel super‑admina** — zarządzanie zespołami, użytkownikami i rolami z globalnym audit logiem.
+- **Archiwizacja zespołów** — możliwość zamrożenia zespołu bez utraty danych.
+- **Przenoszenie użytkowników** między zespołami z atomicznym przeniesieniem filtrów, powiadomień i aktywności.
+- **PostgreSQL** jako baza produkcyjna (Railway managed obok SQLite dla lokalnego dev).
+- **Usprawnione usuwanie** — bezpieczne kaskadowe usuwanie użytkowników i zespołów z obsługą FK w PostgreSQL.
+- **CSRF protection** z auto‑odświeżaniem tokena co 20 minut i wydłużonym timeoutem.
+- **Docker Compose** do lokalnego developmentu.
+
+---
 
 ## Spis Tresci
 

@@ -1,6 +1,6 @@
-# TaskMaster2 — Dokumentacja techniczna
+# TaskMaster2 — Dokumentacja techniczna  <img src="https://img.shields.io/badge/version-1.0-success" alt="v1.0">
 
-Pełna dokumentacja techniczna aplikacji TaskMaster2 dla developerów i administratorów.
+**v1.0** — Pełna dokumentacja techniczna aplikacji TaskMaster2 dla developerów i administratorów.
 
 > © 2026 Krzysztof Graczyk. Wszelkie prawa zastrzeżone. Patrz [LICENSE](LICENSE).
 

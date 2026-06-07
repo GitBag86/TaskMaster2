@@ -32,7 +32,7 @@ from utils.realtime import register_socketio_handlers
 logger = logging.getLogger(__name__)
 
 # Wersja aplikacji - moze byc nadpisana przez build (ARG/ENV w Dockerfile)
-APP_VERSION = os.environ.get("APP_VERSION", "dev")
+APP_VERSION = os.environ.get("APP_VERSION", "1.0")
 APP_GIT_SHA = os.environ.get("APP_GIT_SHA", "unknown")
 APP_BUILD_TIME = os.environ.get("APP_BUILD_TIME", "unknown")
 

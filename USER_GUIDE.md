@@ -1,6 +1,6 @@
-# TaskMaster2 — Przewodnik użytkownika
+# TaskMaster2 — Przewodnik użytkownika  <img src="https://img.shields.io/badge/version-1.0-success" alt="v1.0">
 
-Witaj w TaskMaster2 — aplikacji do zarządzania zadaniami zespołowymi. Ten przewodnik pomoże Ci zacząć i poznać najważniejsze funkcje.
+**v1.0** — Witaj w TaskMaster2, aplikacji do zarządzania zadaniami zespołowymi z izolacją multi‑tenant. Ten przewodnik pomoże Ci zacząć i poznać najważniejsze funkcje.
 
 > © 2026 Krzysztof Graczyk. Wszelkie prawa zastrzeżone.
 
