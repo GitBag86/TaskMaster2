@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './store/AuthContext'
 import { ThemeProvider } from './store/ThemeContext'
 import { ToastProvider } from './store/ToastContext'
 import { SocketProvider } from './store/SocketContext'
+import { QueryProvider } from './store/QueryProvider'
 import RoleRoute, { defaultPathForRole } from './components/common/RoleRoute'
 const AuthPage = lazy(() => import('./components/Auth/AuthPage'))
 import DashboardLayout from './components/Layout/DashboardLayout'
@@ -82,11 +83,13 @@ export default function App() {
     <ThemeProvider>
       <AuthProvider>
         <ToastProvider>
-          <ErrorBoundary>
-            <AppRoutes />
-          </ErrorBoundary>
-          <CommandPalette />
-          <Toaster />
+          <QueryProvider>
+            <ErrorBoundary>
+              <AppRoutes />
+            </ErrorBoundary>
+            <CommandPalette />
+            <Toaster />
+          </QueryProvider>
         </ToastProvider>
       </AuthProvider>
     </ThemeProvider>

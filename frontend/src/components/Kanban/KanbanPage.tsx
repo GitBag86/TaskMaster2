@@ -5,6 +5,7 @@ import { useToast } from "@/store/ToastContext";
 import { useSocket } from "@/store/SocketContext";
 import { KanbanSkeleton } from "@/components/common/Skeletons";
 import { priorityLabel, priorityClass, formatShortDate, isOverdue } from "@/utils/helpers";
+import { canPartiallyUpdate, replaceTaskInList } from "@/utils/taskEventHelpers";
 
 const columns = [
   {
@@ -54,32 +55,12 @@ export default function KanbanPage() {
   useEffect(() => {
     if (!lastTaskEvent) return;
 
-    if (
-      lastTaskEvent.task &&
-      [
-        "created",
-        "updated",
-        "completed",
-        "reopened",
-        "commented",
-        "mentioned",
-        "subtask_created",
-        "subtask_completed",
-        "subtask_reopened",
-        "subtask_deleted",
-        "dependency_added",
-        "dependency_removed",
-      ].includes(lastTaskEvent.action)
-    ) {
+    if (lastTaskEvent.task && canPartiallyUpdate(lastTaskEvent)) {
       const updatedTask = lastTaskEvent.task;
       setTasks((prev) => {
-        const index = prev.findIndex(
-          (task) => task.id === lastTaskEvent.task_id,
-        );
+        const index = prev.findIndex((task) => task.id === updatedTask.id);
         if (index === -1) return [updatedTask, ...prev];
-        const next = [...prev];
-        next[index] = updatedTask;
-        return next;
+        return replaceTaskInList(prev, updatedTask);
       });
       return;
     }

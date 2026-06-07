@@ -13,6 +13,8 @@ import Modal from '@/components/common/Modal'
 import { EmptyState } from '@/components/common/EmptyState'
 import { isOverdue } from '@/utils/helpers'
 import { useUrlFilters } from '@/utils/useUrlFilters'
+import { canPartiallyUpdate } from '@/utils/taskEventHelpers'
+import { useTasksQuery } from '@/hooks/useTasksQuery'
 
 interface TaskFormData {
   title: string;
@@ -80,9 +82,12 @@ export default function TasksPage() {
     })
   }, [page])
 
+  // Use React Query for caching; seed local state for socket-driven partial updates
+  const query = useTasksQuery(page, PER_PAGE)
+
   const fetchTasks = useCallback(async (targetPage: number) => {
+    setLoading(true)
     try {
-      setLoading(true)
       const res = await api.tasks.getAll(targetPage, PER_PAGE)
       setTasks(res.tasks)
       setTotal(res.total)
@@ -97,9 +102,16 @@ export default function TasksPage() {
     }
   }, [addToast, setFilter])
 
+  // Seed local state from query cache on page change, then do manual fetch as fallback
   useEffect(() => {
-    void fetchTasks(page)
-  }, [fetchTasks, page])
+    if (query.data) {
+      setTasks(query.data.tasks)
+      setTotal(query.data.total)
+      setLoading(false)
+    } else if (!query.isLoading) {
+      void fetchTasks(page)
+    }
+  }, [query.data, query.isLoading, page, fetchTasks])
 
   useEffect(() => {
     if (page > totalPages && totalPages >= 1) {
@@ -119,27 +131,31 @@ export default function TasksPage() {
     }
   }, [loading, selectedTask, tasks])
 
-  useEffect(() => {
-    if (!lastTaskEvent || lastTaskEvent.user === user?.username) return
+  const handleTaskEvent = useCallback((event: typeof lastTaskEvent) => {
+    if (!event || event.user === user?.username) return
 
-    if (lastTaskEvent.action === 'deleted' && lastTaskEvent.task_id) {
-      setTasks(prev => prev.filter(task => task.id !== lastTaskEvent.task_id))
+    if (event.action === 'deleted' && event.task_id) {
+      setTasks(prev => prev.filter(task => task.id !== event.task_id))
       setTotal(prev => Math.max(0, prev - 1))
       return
     }
 
-    if (lastTaskEvent.task && ['created', 'updated', 'completed', 'reopened', 'commented', 'mentioned', 'subtask_created', 'subtask_completed', 'subtask_reopened', 'subtask_deleted', 'dependency_added', 'dependency_removed'].includes(lastTaskEvent.action)) {
-      replaceTask(lastTaskEvent.task)
-      if (lastTaskEvent.action === 'created') {
+    if (event.task && canPartiallyUpdate(event)) {
+      replaceTask(event.task)
+      if (event.action === 'created') {
         setTotal(prev => prev + 1)
       }
       return
     }
 
-    if (lastTaskEvent.task_ids && ['bulk_deleted', 'bulk_completed', 'bulk_updated'].includes(lastTaskEvent.action)) {
+    if (event.task_ids && ['bulk_deleted', 'bulk_completed', 'bulk_updated'].includes(event.action)) {
       void fetchTasks(page)
     }
-  }, [fetchTasks, lastTaskEvent, page, replaceTask, user?.username])
+  }, [fetchTasks, page, replaceTask, user?.username])
+
+  useEffect(() => {
+    handleTaskEvent(lastTaskEvent)
+  }, [handleTaskEvent, lastTaskEvent])
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) {

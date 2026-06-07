@@ -34,6 +34,7 @@ COPY routes ./routes
 COPY utils ./utils
 COPY jobs ./jobs
 COPY migrations ./migrations
+COPY scripts ./scripts
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 RUN sed -i 's/\r$//' /app/start.sh && \

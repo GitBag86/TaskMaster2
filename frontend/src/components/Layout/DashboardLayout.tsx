@@ -7,6 +7,7 @@ import type { NotificationItem } from '@/types'
 import type { CSSProperties } from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useKeyboardShortcuts } from '@/utils/useKeyboardShortcuts'
+import { useSocketInvalidation } from '@/hooks/useSocketInvalidation'
 import OnboardingWizard, { isOnboardingDone } from '@/components/common/OnboardingWizard'
 
 const standardNavItems = [
@@ -34,6 +35,9 @@ export default function DashboardLayout() {
   const { dark, toggle } = useTheme();
   const { connected, lastNotification } = useSocket();
   const navigate = useNavigate();
+
+  // Wire up Socket.IO → React Query cache invalidation
+  useSocketInvalidation();
   const [showOnboarding, setShowOnboarding] = useState(false);
   const canUseNotifications = user?.role !== 'super_admin';
   const navItems = user?.role === 'super_admin'
