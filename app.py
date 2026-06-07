@@ -84,10 +84,13 @@ def _register_blueprints(app):
     app.register_blueprint(invites_bp)
     app.register_blueprint(projects_bp)
 
-    # Exempt public auth endpoints from CSRF (no session yet for login/signup)
-    from routes.auth import login, signup
+    # Exempt public auth endpoints from CSRF (no session yet for login/signup;
+    # logout must work even when the CSRF token has expired).
+    from routes.auth import login, logout, logout_all, signup
     csrf.exempt(login)
     csrf.exempt(signup)
+    csrf.exempt(logout)
+    csrf.exempt(logout_all)
 
 
 def _register_routes(app):
