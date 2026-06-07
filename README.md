@@ -137,7 +137,41 @@ Frontend Vite dziala zwykle na:
 http://localhost:3000
 ```
 
-### Opcja 2: Lokalnie przez Dockerfile
+### Opcja 2: Docker Compose (zalecane)
+
+Jedno polecenie — wszystko dziala od razu:
+
+```bash
+docker compose up -d
+```
+
+Aplikacja dostepna pod adresem **http://localhost:5000**.  
+Domyślne konto super-admina: `admin` / `dakos1admin2`.
+
+> **Dostosowanie:** skopiuj `.env.example` → `.env` i edytuj zmienne (SECRET_KEY, SIGNUP_MODE itp.)
+> przed `docker compose up`, jesli potrzebujesz zmienic domyslne ustawienia.
+
+Po pierwszym logowaniu jako super-admin:
+1. Przejdz do `/admin/teams` i utworz zespol.
+2. Wyloguj sie i zaloguj ponownie jako manager (lub zmien role swojego konta).
+3. Rozpocznij prace — utworz projekt, zapros czlonkow, dodaj zadania.
+
+**Zatrzymanie:**
+
+```bash
+docker compose down
+# Aby usunac rowniez baze danych:
+docker compose down -v
+```
+
+**Logi:**
+
+```bash
+docker compose logs -f app
+docker compose logs -f db
+```
+
+### Opcja 3: Lokalnie przez Dockerfile
 
 Aplikacja ma multi-stage `Dockerfile` (frontend build + Python runtime). Lokalnie zbudujesz i uruchomisz tak:
 
@@ -146,7 +180,7 @@ docker build -t taskmaster2 .
 docker run -p 5000:5000 --env-file .env taskmaster2
 ```
 
-### Wdrozenie
+### Wdrozenie na Railway
 
 Aplikacja dziala produkcyjnie na **Railway**. Railway wykrywa `Dockerfile`, buduje obraz i serwuje go za swoim edge proxy (SSL + WebSocket out-of-the-box). Konfiguracja:
 

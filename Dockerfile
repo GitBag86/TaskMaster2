@@ -4,7 +4,10 @@
 FROM node:20-alpine AS frontend-builder
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci
+# Using npm install (not npm ci) because lockfile version mismatches between
+# local npm and the container's npm cause ci to reject platform-specific optional
+# deps (esbuild). install --include=optional ensures all platform binaries are resolved.
+RUN npm install --include=optional
 COPY frontend/ .
 RUN npm run build
 

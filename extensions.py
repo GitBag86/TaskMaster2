@@ -1,3 +1,5 @@
+import os
+
 from flask_apscheduler import APScheduler
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -17,7 +19,7 @@ mail = Mail()
 migrate = Migrate()
 scheduler = APScheduler()
 socketio = SocketIO(
-    async_mode="threading",
+    async_mode=os.environ.get("SOCKETIO_ASYNC_MODE", "threading"),
     ping_interval=25,
     ping_timeout=60,
 )

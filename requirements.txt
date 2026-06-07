@@ -12,4 +12,5 @@ Flask-SocketIO
 simple-websocket
 Flask-APScheduler==1.13.1
 Flask-Mail==0.9.1
+Flask-WTF==1.2.2
 psycopg[binary]>=3.2,<4

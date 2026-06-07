@@ -1,0 +1,57 @@
+services:
+  db:
+    image: postgres:16-alpine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-taskmaster}"
+      POSTGRES_USER: "${POSTGRES_USER:-taskmaster}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-taskmaster}"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U taskmaster -d taskmaster"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      args:
+        APP_VERSION: "${APP_VERSION:-docker-compose}"
+        APP_GIT_SHA: "${APP_GIT_SHA:-local}"
+        APP_BUILD_TIME: "${APP_BUILD_TIME:-}"
+    ports:
+      - "${PORT:-5000}:5000"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-taskmaster}:${POSTGRES_PASSWORD:-taskmaster}@db:5432/${POSTGRES_DB:-taskmaster}"
+
+      # Security — generate a real secret with: python -c "import secrets; print(secrets.token_hex(32))"
+      # Generate a real secret: python -c "import secrets; print(secrets.token_hex(32))"
+      SECRET_KEY: "${SECRET_KEY:-change-me-to-random-64-char-hex}"
+
+      # Flask / CORS
+      FLASK_ENV: "${FLASK_ENV:-production}"
+      CORS_ORIGINS: "${CORS_ORIGINS:-http://localhost:5000}"
+      SESSION_COOKIE_SECURE: "${SESSION_COOKIE_SECURE:-false}"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+
+      # Signup — default_team lets anyone register, change to invite_only after first setup
+      SIGNUP_MODE: "${SIGNUP_MODE:-invite_only}"
+
+      # Default super-admin (created on first startup)
+      DEFAULT_ADMIN_USERNAME: "${DEFAULT_ADMIN_USERNAME:-admin}"
+      DEFAULT_ADMIN_PASSWORD: "${DEFAULT_ADMIN_PASSWORD:-dakos1admin2}"
+      DEFAULT_ADMIN_EMAIL: "${DEFAULT_ADMIN_EMAIL:-admin@taskmaster.local}"
+
+      # Email (optional — disable for now)
+      # Socket.IO async mode: gthread for Gunicorn, threading for Flask dev server
+      SOCKETIO_ASYNC_MODE: "${SOCKETIO_ASYNC_MODE:-gthread}"
+      MAIL_SUPPRESS_SEND: "${MAIL_SUPPRESS_SEND:-true}"
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
