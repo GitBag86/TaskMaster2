@@ -240,8 +240,16 @@ def _purge_user_data(user):
     Tag.query.filter_by(user_id=user.id).delete()
     TaskTemplate.query.filter_by(user_id=user.id).delete()
     CustomField.query.filter_by(user_id=user.id).delete()
-    # Notifications cascade via the User.notifications relationship.
 
+    # Detach FK references so the user row can be deleted without
+    # triggering IntegrityError on the referenced tables.
+    Project.query.filter_by(created_by_id=user.id).update({"created_by_id": None})
+    ProjectTemplate.query.filter_by(created_by_id=user.id).update({"created_by_id": None})
+    TeamInvite.query.filter_by(created_by_id=user.id).update({"created_by_id": None})
+    TeamInvite.query.filter_by(consumed_by_id=user.id).update({"consumed_by_id": None})
+    TeamAuditLog.query.filter_by(target_user_id=user.id).update({"target_user_id": None})
+    TeamAuditLog.query.filter_by(actor_id=user.id).update({"actor_id": None})
+    Notification.query.filter_by(user_id=user.id).delete()
 
 def _cascade_purge_team(team):
     """Hard-delete every resource bound to a team prior to deleting the team itself.
@@ -312,6 +320,17 @@ def _cascade_purge_team(team):
         )
         TeamInvite.query.filter(TeamInvite.created_by_id.in_(user_ids)).update(
             {"created_by_id": None}, synchronize_session=False
+        )
+        TeamInvite.query.filter(TeamInvite.consumed_by_id.in_(user_ids)).update(
+            {"consumed_by_id": None}, synchronize_session=False
+        )
+        # Audit log entries referencing these users must have target_user_id
+        # nullified before the user rows are deleted.
+        TeamAuditLog.query.filter(TeamAuditLog.target_user_id.in_(user_ids)).update(
+            {"target_user_id": None}, synchronize_session=False
+        )
+        TeamAuditLog.query.filter(TeamAuditLog.actor_id.in_(user_ids)).update(
+            {"actor_id": None}, synchronize_session=False
         )
 
         User.query.filter(User.id.in_(user_ids)).delete(synchronize_session=False)
