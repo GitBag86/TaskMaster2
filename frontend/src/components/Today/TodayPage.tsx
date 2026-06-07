@@ -5,6 +5,7 @@ import { useSocket } from '@/store/SocketContext'
 import { useToast } from '@/store/ToastContext'
 import { TasksPageSkeleton } from '@/components/common/Skeletons'
 import { priorityLabel, priorityClass, formatDate } from '@/utils/helpers'
+import { canPartiallyUpdate, removeTaskFromList, replaceTaskInList } from '@/utils/taskEventHelpers'
 
 const emptyToday: TodayTasksResponse = {
   overdue: [],
@@ -21,19 +22,6 @@ const emptyToday: TodayTasksResponse = {
   },
   generated_at: '',
 }
-
-const refreshActions = new Set([
-  'created',
-  'updated',
-  'completed',
-  'reopened',
-  'deleted',
-  'bulk_completed',
-  'bulk_deleted',
-  'bulk_updated',
-  'dependency_added',
-  'dependency_removed',
-])
 
 export default function TodayPage() {
   const [data, setData] = useState<TodayTasksResponse>(emptyToday)
@@ -57,14 +45,44 @@ export default function TodayPage() {
   }, [loadToday])
 
   useEffect(() => {
-    if (!lastTaskEvent || !refreshActions.has(lastTaskEvent.action)) return
+    if (!lastTaskEvent) return
+
+    // Partial update for deleted tasks
+    if (lastTaskEvent.action === 'deleted' && lastTaskEvent.task_id) {
+      setData(prev => ({
+        ...prev,
+        overdue: removeTaskFromList(prev.overdue, lastTaskEvent.task_id!),
+        today: removeTaskFromList(prev.today, lastTaskEvent.task_id!),
+        upcoming: removeTaskFromList(prev.upcoming, lastTaskEvent.task_id!),
+      }))
+      return
+    }
+
+    // Partial update for completed/reopened/updated tasks with payload
+    if (lastTaskEvent.task && canPartiallyUpdate(lastTaskEvent)) {
+      const task = lastTaskEvent.task
+      setData(prev => ({
+        ...prev,
+        overdue: replaceTaskInList(prev.overdue, task),
+        today: replaceTaskInList(prev.today, task),
+        upcoming: replaceTaskInList(prev.upcoming, task),
+      }))
+      return
+    }
+
+    // Fallback: full reload for bulk/complex changes
     void loadToday()
   }, [lastTaskEvent, loadToday])
 
   const completeTask = async (taskId: number) => {
     try {
-      await api.tasks.complete(taskId)
-      await loadToday()
+      const updatedTask = await api.tasks.complete(taskId)
+      setData(prev => ({
+        ...prev,
+        overdue: replaceTaskInList(prev.overdue, updatedTask),
+        today: replaceTaskInList(prev.today, updatedTask),
+        upcoming: replaceTaskInList(prev.upcoming, updatedTask),
+      }))
       addToast('Zadanie zakończone', 'success')
     } catch (err: unknown) {
       addToast(err instanceof Error ? err.message : 'Błąd zmiany stanu', 'error')
@@ -73,8 +91,13 @@ export default function TodayPage() {
 
   const startTask = async (taskId: number) => {
     try {
-      await api.tasks.update(taskId, { status: 'in_progress', completed: false })
-      await loadToday()
+      const updatedTask = await api.tasks.update(taskId, { status: 'in_progress', completed: false })
+      setData(prev => ({
+        ...prev,
+        overdue: replaceTaskInList(prev.overdue, updatedTask),
+        today: replaceTaskInList(prev.today, updatedTask),
+        upcoming: replaceTaskInList(prev.upcoming, updatedTask),
+      }))
       addToast('Zadanie rozpoczęte', 'success')
     } catch (err: unknown) {
       addToast(err instanceof Error ? err.message : 'Błąd zmiany statusu', 'error')

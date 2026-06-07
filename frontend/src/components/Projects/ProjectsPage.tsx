@@ -10,6 +10,7 @@ import Modal from "@/components/common/Modal";
 import TaskDetail from "@/components/Tasks/TaskDetail";
 import TaskForm from "@/components/Tasks/TaskForm";
 import { priorityLabel, priorityClass, formatShortDate } from "@/utils/helpers";
+import { updateTaskInProjects } from "@/utils/taskEventHelpers";
 import { EmptyState } from "@/components/common/EmptyState";
 
 type ProjectSummary = Project & {
@@ -34,12 +35,7 @@ type ProjectTaskFormData = {
   notes?: string;
 };
 
-const taskEventActions = new Set([
-  "created",
-  "updated",
-  "completed",
-  "reopened",
-  "deleted",
+const FULL_RELOAD_ACTIONS = new Set([
   "bulk_completed",
   "bulk_deleted",
   "bulk_updated",
@@ -107,7 +103,21 @@ export default function ProjectsPage() {
   }, [loadProjects, loadUsers]);
 
   useEffect(() => {
-    if (!lastTaskEvent || !taskEventActions.has(lastTaskEvent.action)) return;
+    if (!lastTaskEvent) return;
+
+    // Bulk/complex actions need a full reload
+    if (FULL_RELOAD_ACTIONS.has(lastTaskEvent.action)) {
+      void loadProjects();
+      return;
+    }
+
+    // Partial update for single task events — update task in the project's task list
+    if (lastTaskEvent.task || lastTaskEvent.action === 'deleted') {
+      setProjects(prev => updateTaskInProjects(prev, lastTaskEvent));
+      return;
+    }
+
+    // Fallback: full reload for anything else
     void loadProjects();
   }, [lastTaskEvent, loadProjects]);
 

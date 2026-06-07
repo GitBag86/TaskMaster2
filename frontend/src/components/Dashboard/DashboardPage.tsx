@@ -7,6 +7,7 @@ import type {
 } from "@/types";
 import { api } from "@/api/client";
 import { useToast } from "@/store/ToastContext";
+import { useAuth } from "@/store/AuthContext";
 import { useSocket } from "@/store/SocketContext";
 import {
   BarChart,
@@ -22,20 +23,19 @@ import {
 } from "recharts";
 import { DashboardSkeleton } from "@/components/common/Skeletons";
 import { priorityLabel, priorityClass, formatShortDate } from "@/utils/helpers";
+import { canPartiallyUpdate, replaceTaskInList } from "@/utils/taskEventHelpers";
 
 const COLORS = ["#ef4444", "#f59e0b", "#22c55e"];
-const dependencyRefreshActions = new Set([
+const AGGREGATE_REFRESH_ACTIONS = new Set([
   "created",
-  "updated",
+  "deleted",
   "completed",
   "reopened",
-  "deleted",
   "bulk_completed",
   "bulk_deleted",
   "bulk_updated",
   "dependency_added",
   "dependency_removed",
-  "mentioned",
 ]);
 
 export default function DashboardPage() {
@@ -46,6 +46,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const { addToast } = useToast();
   const { lastTaskEvent } = useSocket();
+  const { user } = useAuth();
 
   const fetchDashboard = useCallback(async () => {
     try {
@@ -69,10 +70,36 @@ export default function DashboardPage() {
   }, [fetchDashboard]);
 
   useEffect(() => {
-    if (!lastTaskEvent || !dependencyRefreshActions.has(lastTaskEvent.action))
+    if (!lastTaskEvent) return;
+
+    // Skip reload if the user triggered the change themselves
+    if (lastTaskEvent.user === user?.username) return;
+
+    // For single-task updates with payload, try partial update on dependency board
+    if (lastTaskEvent.task && canPartiallyUpdate(lastTaskEvent)) {
+      setDependencyBoard(prev => {
+        if (!prev) return prev;
+        const task = lastTaskEvent.task!;
+        const applyUpdate = (tasks: Task[]) => replaceTaskInList(tasks, task);
+        return {
+          ...prev,
+          blocked: applyUpdate(prev.blocked),
+          ready: applyUpdate(prev.ready),
+          blockers: prev.blockers.map(b =>
+            b.id === task.id
+              ? { ...b, ...task, blocking_count: b.blocking_count, blocking_tasks: b.blocking_tasks }
+              : b,
+          ),
+        };
+      });
       return;
-    void fetchDashboard();
-  }, [fetchDashboard, lastTaskEvent]);
+    }
+
+    // For tasks that affect aggregate stats, full reload
+    if (AGGREGATE_REFRESH_ACTIONS.has(lastTaskEvent.action)) {
+      void fetchDashboard();
+    }
+  }, [fetchDashboard, lastTaskEvent, user?.username]);
 
   if (loading) {
     return <DashboardSkeleton />;
