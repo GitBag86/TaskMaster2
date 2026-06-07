@@ -163,7 +163,7 @@ def export_csv():
     user_id = session.get('user_id')
     user = db.session.get(User, user_id)
 
-    tasks = visible_task_query(user).all()
+    tasks = visible_task_query(user).options(selectinload(Task.assignees)).all()
 
     output = StringIO()
     writer = csv.writer(output)

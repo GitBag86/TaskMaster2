@@ -235,7 +235,7 @@ First-login flow for new managers/users:
 |---|---|---|---|
 | **Sprint 1** 🔥 **COMPLETED** | 🔴 1.1 Refactoring | 3 days | ✅ `routes/tasks.py` split: projects → `routes/projects.py`, emit helpers → `utils/realtime.py` |
 | **Sprint 2** 🔥 **COMPLETED** | 🔴 1.2–1.5 Security | 3 days | ✅ Rate limiting, ✅ session hardening, ✅ N+1 fix, ✅ ErrorBoundary component |
-| **Sprint 3** | 🟡 2.1–2.2 Query + bundle | 3 days | N+1 fixes, component splitting |
+| **Sprint 3** 🔥 **COMPLETED** | 🟡 2.1 Query optimization | 1 day | ✅ Batch team resource counts (14*N → 14 total), ✅ export_csv eager loading, ✅ admin audit pagination |
 | **Sprint 4** | 🟡 2.3–2.4 Data fetching | 3 days | Partial state updates + React Query integration |
 | **Sprint 5** | 🟢 3.1–3.3 UX polish | 3 days | Skeletons, optimistic updates, inline validation |
 | **Sprint 6** | 🟢 3.4–3.7 Polish | 3 days | URL filters, keyboard shortcuts, mobile, onboarding |

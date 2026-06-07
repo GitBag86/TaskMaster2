@@ -73,36 +73,76 @@ def add_audit(action, target_team_id=None, target_user_id=None, source_team_id=N
     return entry
 
 
-def team_resource_counts(team_id):
-    return {
-        "members": User.query.filter_by(team_id=team_id).count(),
-        "tasks": Task.query.filter_by(team_id=team_id).count(),
-        "projects": Project.query.filter_by(team_id=team_id).count(),
-        "comments": Comment.query.filter_by(team_id=team_id).count(),
-        "subtasks": Subtask.query.filter_by(team_id=team_id).count(),
-        "tags": Tag.query.filter_by(team_id=team_id).count(),
-        "saved_filters": SavedFilter.query.filter_by(team_id=team_id).count(),
-        "task_templates": TaskTemplate.query.filter_by(team_id=team_id).count(),
-        "project_templates": ProjectTemplate.query.filter_by(team_id=team_id).count(),
-        "notifications": Notification.query.filter_by(team_id=team_id).count(),
-        "activity": ActivityLog.query.filter_by(team_id=team_id).count(),
-        "custom_fields": CustomField.query.filter_by(team_id=team_id).count(),
-        "dependencies": TaskDependency.query.filter_by(team_id=team_id).count(),
-        "invites": TeamInvite.query.filter_by(team_id=team_id).count(),
-    }
+from sqlalchemy.orm import selectinload
+
+_RESOURCE_MODELS = [
+    (Task, "tasks"),
+    (Project, "projects"),
+    (Comment, "comments"),
+    (Subtask, "subtasks"),
+    (Tag, "tags"),
+    (SavedFilter, "saved_filters"),
+    (TaskTemplate, "task_templates"),
+    (ProjectTemplate, "project_templates"),
+    (Notification, "notifications"),
+    (ActivityLog, "activity"),
+    (CustomField, "custom_fields"),
+    (TaskDependency, "dependencies"),
+    (TeamInvite, "invites"),
+]
 
 
-def serialize_team(team):
+def _batch_team_resource_counts(team_ids):
+    """Return {team_id: {resource_name: count}} for all teams in a constant
+    number of queries (one per resource type) instead of 14 queries per team."""
+    if not team_ids:
+        return {}
+    counts: dict[int, dict[str, int]] = {tid: {} for tid in team_ids}
+
+    for model, key in _RESOURCE_MODELS:
+        rows = (
+            db.session.query(model.team_id, func.count(model.id))
+            .filter(model.team_id.in_(team_ids))
+            .group_by(model.team_id)
+            .all()
+        )
+        for tid, cnt in rows:
+            counts[tid][key] = cnt
+        for tid in team_ids:
+            counts[tid].setdefault(key, 0)
+
+    # Members (from User, not a team-FK resource)
+    rows = (
+        db.session.query(User.team_id, func.count(User.id))
+        .filter(User.team_id.in_(team_ids))
+        .group_by(User.team_id)
+        .all()
+    )
+    for tid, cnt in rows:
+        counts[tid]["members"] = cnt
+    for tid in team_ids:
+        counts[tid].setdefault("members", 0)
+
+    return counts
+
+
+def serialize_team(team, batch_counts=None):
     data = team.to_dict(include_stats=True)
-    data["stats"]["resources"] = team_resource_counts(team.id)
+    if batch_counts is not None:
+        data["stats"]["resources"] = batch_counts.get(team.id, {})
+    else:
+        # Fallback for callers that don't supply batch data
+        data["stats"]["resources"] = _batch_team_resource_counts([team.id]).get(team.id, {})
     return data
 
 
 @admin_bp.route("/admin/teams", methods=["GET"])
 @require_super_admin
 def list_teams():
-    teams = Team.query.order_by(Team.archived.asc(), Team.name.asc()).all()
-    return jsonify({"teams": [serialize_team(team) for team in teams]})
+    teams = Team.query.options(selectinload(Team.members)).order_by(Team.archived.asc(), Team.name.asc()).all()
+    team_ids = [team.id for team in teams]
+    batch_counts = _batch_team_resource_counts(team_ids)
+    return jsonify({"teams": [serialize_team(team, batch_counts) for team in teams]})
 
 
 @admin_bp.route("/admin/teams", methods=["POST"])
@@ -285,7 +325,7 @@ def delete_team(team_id):
         return jsonify({"error": "Zespół nie znaleziony"}), 404
 
     cascade = request.args.get("cascade", "").lower() in {"1", "true", "yes"}
-    counts = team_resource_counts(team.id)
+    counts = _batch_team_resource_counts([team.id]).get(team.id, {})
 
     if any(counts.values()) and not cascade:
         raise TeamNotEmptyError()
@@ -397,21 +437,46 @@ def team_audit(team_id):
     team = db.session.get(Team, team_id)
     if not team:
         return jsonify({"error": "Zespół nie znaleziony"}), 404
-    entries = (
+
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 50, type=int)
+    per_page = min(per_page, 200)
+
+    pagination = (
         TeamAuditLog.query.filter(
             (TeamAuditLog.target_team_id == team.id) | (TeamAuditLog.source_team_id == team.id)
         )
         .order_by(TeamAuditLog.created_at.desc(), TeamAuditLog.id.desc())
-        .all()
+        .paginate(page=page, per_page=per_page, error_out=False)
     )
-    return jsonify({"audit": [entry.to_dict() for entry in entries]})
+    return jsonify({
+        "audit": [entry.to_dict() for entry in pagination.items],
+        "total": pagination.total,
+        "page": pagination.page,
+        "pages": pagination.pages,
+        "per_page": pagination.per_page,
+    })
 
 
 @admin_bp.route("/admin/audit", methods=["GET"])
 @require_super_admin
 def global_audit():
-    entries = TeamAuditLog.query.order_by(TeamAuditLog.created_at.desc(), TeamAuditLog.id.desc()).all()
-    return jsonify({"audit": [entry.to_dict() for entry in entries]})
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 50, type=int)
+    per_page = min(per_page, 200)
+
+    pagination = (
+        TeamAuditLog.query
+        .order_by(TeamAuditLog.created_at.desc(), TeamAuditLog.id.desc())
+        .paginate(page=page, per_page=per_page, error_out=False)
+    )
+    return jsonify({
+        "audit": [entry.to_dict() for entry in pagination.items],
+        "total": pagination.total,
+        "page": pagination.page,
+        "pages": pagination.pages,
+        "per_page": pagination.per_page,
+    })
 
 
 @admin_bp.route("/admin/users/<int:user_id>/team", methods=["POST"])
