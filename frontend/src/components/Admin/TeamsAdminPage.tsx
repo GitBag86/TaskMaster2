@@ -170,7 +170,50 @@ export default function TeamsAdminPage() {
       </form>
 
       <div className="card overflow-hidden">
-        <div className="overflow-x-auto">
+        {/* Mobile card view */}
+        <div className="divide-y divide-border sm:hidden">
+          {teams.map(team => {
+            const isEditing = editingTeam?.id === team.id;
+            const busy = actionTeamId === team.id;
+
+            return (
+              <div key={team.id} className="p-3">
+                {isEditing ? (
+                  <form id={`team-edit-${team.id}`} onSubmit={saveTeam} className="space-y-2">
+                    <input value={editingTeam.name} onChange={event => setEditingTeam({ ...editingTeam, name: event.target.value })} className="input h-9" maxLength={80} required />
+                    <input value={editingTeam.description} onChange={event => setEditingTeam({ ...editingTeam, description: event.target.value })} className="input h-9" maxLength={500} placeholder="Opis" />
+                    <div className="flex gap-2">
+                      <button type="submit" disabled={busy} className="btn btn-primary btn-sm flex-1">Zapisz</button>
+                      <button type="button" onClick={() => setEditingTeam(null)} className="btn btn-secondary btn-sm">Anuluj</button>
+                    </div>
+                  </form>
+                ) : (
+                  <>
+                    <div className="mb-2 flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <Link to={`/admin/teams/${team.id}`} className="font-medium text-primary hover:underline">{team.name}</Link>
+                        {team.description && <p className="text-xs text-muted-foreground truncate">{team.description}</p>}
+                      </div>
+                      <StatusBadge archived={team.archived} />
+                    </div>
+                    <div className="mb-2 flex gap-3 text-xs text-muted-foreground">
+                      <span>Slug: {team.slug}</span>
+                      <span>Członkowie: {team.stats?.members ?? 0}</span>
+                      <span>{team.created_at ? new Date(team.created_at).toLocaleDateString('pl-PL') : '—'}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" onClick={() => startEditing(team)} className="btn btn-secondary btn-sm">Zmień nazwę</button>
+                      <button type="button" onClick={() => void toggleArchive(team)} disabled={busy} className="btn btn-secondary btn-sm">{team.archived ? 'Przywróć' : 'Archiwizuj'}</button>
+                      <button type="button" onClick={() => void deleteTeam(team)} disabled={busy} className="btn btn-destructive btn-sm">Usuń</button>
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="hidden sm:block overflow-x-auto">
           <table className="w-full min-w-[940px]">
             <thead className="border-b border-border bg-gray-50 dark:bg-gray-800">
               <tr>

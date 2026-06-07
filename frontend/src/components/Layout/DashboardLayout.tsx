@@ -6,6 +6,7 @@ import { api } from '@/api/client'
 import type { NotificationItem } from '@/types'
 import type { CSSProperties } from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useKeyboardShortcuts } from '@/utils/useKeyboardShortcuts'
 
 const standardNavItems = [
   { label: 'Zadania', path: '/', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' },
@@ -42,11 +43,29 @@ export default function DashboardLayout() {
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
+  const [showShortcuts, setShowShortcuts] = useState(false)
   const notificationButtonRef = useRef<HTMLButtonElement | null>(null)
   const [notificationPanelStyle, setNotificationPanelStyle] = useState<CSSProperties>({
     left: 16,
     top: 64,
     width: 360,
+  })
+
+  useKeyboardShortcuts({
+    onNewTask: () => {
+      // Navigate to tasks page which has the "new task" button
+      navigate('/')
+      // Focus is on the page; user clicks the button
+    },
+    onSearchFocus: () => {
+      const input = document.getElementById('task-search-input')
+      if (input) {
+        input.focus()
+      } else {
+        navigate('/')
+      }
+    },
+    onShowHelp: () => setShowShortcuts(prev => !prev),
   })
 
   const handleLogout = async () => {
@@ -282,6 +301,12 @@ export default function DashboardLayout() {
             )}
 
             {/* Theme toggle */}
+            <button onClick={() => setShowShortcuts(true)} className="btn btn-ghost btn-sm" title="Skróty klawiszowe (?) " >
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a1.994 1.994 0 01-1.414-.586m0 0L11 14h4a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2v4l.586-.586z" />
+              </svg>
+            </button>
+
             <button onClick={toggle} className="btn btn-ghost btn-sm" title="Przełącz motyw">
               {dark ? (
                 <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -308,6 +333,35 @@ export default function DashboardLayout() {
           <Outlet />
         </main>
 
+        {/* Keyboard shortcuts help dialog */}
+        {showShortcuts && (
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
+            onClick={() => setShowShortcuts(false)}
+            onKeyDown={e => e.key === 'Escape' && setShowShortcuts(false)}
+          >
+            <div className="w-full max-w-lg rounded-lg border border-border bg-card p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Skróty klawiszowe</h3>
+                <button onClick={() => setShowShortcuts(false)} className="btn btn-ghost btn-sm">✕</button>
+              </div>
+              <div className="space-y-3">
+                <ShortcutRow keys="Ctrl+K" action="Paleta komend" />
+                <ShortcutRow keys="g → d" action="Statystyki" />
+                <ShortcutRow keys="g → t" action="Zadania" />
+                <ShortcutRow keys="g → k" action="Kanban" />
+                <ShortcutRow keys="g → c" action="Kalendarz" />
+                <ShortcutRow keys="g → p" action="Projekty" />
+                <ShortcutRow keys="g → a" action="Aktywność" />
+                <ShortcutRow keys="n" action="Nowe zadanie" />
+                <ShortcutRow keys="/" action="Szukaj" />
+                <ShortcutRow keys="?" action="Pokaż skróty" />
+              </div>
+              <button onClick={() => setShowShortcuts(false)} className="btn btn-primary mt-4 w-full btn-sm">Zamknij</button>
+            </div>
+          </div>
+        )}
+
         {/* Footer */}
         <footer className="border-t border-gray-200 dark:border-gray-800 px-4 py-3 text-center text-xs text-gray-500 dark:text-gray-400">
           © 2026 Krzysztof Graczyk. Wszelkie prawa zastrzeżone.
@@ -333,6 +387,15 @@ function notificationTitle(type: string) {
     mention: 'Wzmianka',
     unblocked: 'Odblokowano',
   }[type] || 'Powiadomienie')
+}
+
+function ShortcutRow({ keys, action }: { keys: string; action: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-sm text-gray-900 dark:text-white">{action}</span>
+      <kbd className="rounded-md border border-border bg-muted px-2 py-1 text-xs font-medium text-muted-foreground shadow-sm">{keys}</kbd>
+    </div>
+  )
 }
 
 function formatNotificationTime(value: string) {

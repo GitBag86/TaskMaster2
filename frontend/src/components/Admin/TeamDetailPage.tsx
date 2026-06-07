@@ -229,7 +229,50 @@ export default function TeamDetailPage() {
         <div className="border-b border-border p-4">
           <h3 className="font-semibold text-gray-900 dark:text-white">Członkowie</h3>
         </div>
-        <div className="overflow-x-auto">
+        {/* Mobile card view */}
+        <div className="divide-y divide-border sm:hidden">
+          {members.map(member => {
+            const roleBusy = actionKey === `role:${member.id}`;
+            const moveBusy = actionKey === `move:${member.id}`;
+            const deleteBusy = actionKey === `delete:${member.id}`;
+            const selectedTarget = moveTargets[member.id] ?? (moveOptions[0] ? String(moveOptions[0].id) : '');
+
+            return (
+              <div key={member.id} className="p-3">
+                <div className="mb-2">
+                  <p className="font-medium text-gray-900 dark:text-white">{member.username}</p>
+                  <p className="text-xs text-muted-foreground">{member.email}</p>
+                </div>
+                <div className="mb-2 flex items-center gap-2">
+                  <span className={`badge ${member.role === 'manager' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}>
+                    {member.role === 'manager' ? 'Manager' : 'User'}
+                  </span>
+                  <select
+                    value={selectedTarget}
+                    onChange={event => setMoveTargets(prev => ({ ...prev, [member.id]: event.target.value }))}
+                    disabled={moveOptions.length === 0}
+                    className="input h-8 flex-1 text-xs"
+                  >
+                    {moveOptions.length === 0 ? (
+                      <option value="">Brak aktywnych zespołów</option>
+                    ) : (
+                      moveOptions.map(option => (
+                        <option key={option.id} value={option.id}>{option.name}</option>
+                      ))
+                    )}
+                  </select>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={() => void changeRole(member)} disabled={roleBusy} className="btn btn-secondary btn-sm">{member.role === 'manager' ? 'Degraduj' : 'Awansuj'}</button>
+                  <button type="button" onClick={() => void moveUser(member)} disabled={!selectedTarget || moveBusy} className="btn btn-primary btn-sm">Przenieś</button>
+                  <button type="button" onClick={() => void deleteMember(member)} disabled={deleteBusy} className="btn btn-destructive btn-sm">Usuń</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="hidden sm:block overflow-x-auto">
           <table className="w-full min-w-[860px]">
             <thead className="border-b border-border bg-gray-50 dark:bg-gray-800">
               <tr>

@@ -12,6 +12,7 @@ import { TasksPageSkeleton } from '@/components/common/Skeletons'
 import Modal from '@/components/common/Modal'
 import { EmptyState } from '@/components/common/EmptyState'
 import { isOverdue } from '@/utils/helpers'
+import { useUrlFilters } from '@/utils/useUrlFilters'
 
 interface TaskFormData {
   title: string;
@@ -34,13 +35,22 @@ type BulkUpdates = {
 export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [filterPriority, setFilterPriority] = useState('')
-  const [filterProject, setFilterProject] = useState('')
-  const [filterStatus, setFilterStatus] = useState('')
+  const { filters, setFilter, resetFilters: resetUrlFilters, activeCount } = useUrlFilters({
+    q: '',
+    priority: '',
+    project: '',
+    status: '',
+    page: '1',
+  })
+
+  const searchQuery = filters.q
+  const filterPriority = filters.priority
+  const filterProject = filters.project
+  const filterStatus = filters.status
+  const page = Number(filters.page)
+
   const [showCreate, setShowCreate] = useState(false)
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
-  const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [isSearchMode, setIsSearchMode] = useState(false)
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<number>>(() => new Set())
@@ -77,7 +87,7 @@ export default function TasksPage() {
       setTasks(res.tasks)
       setTotal(res.total)
       if (res.page !== targetPage) {
-        setPage(res.page)
+        setFilter('page', String(res.page))
       }
       setIsSearchMode(false)
     } catch (err: unknown) {
@@ -85,17 +95,17 @@ export default function TasksPage() {
     } finally {
       setLoading(false)
     }
-  }, [addToast])
+  }, [addToast, setFilter])
 
   useEffect(() => {
     void fetchTasks(page)
   }, [fetchTasks, page])
 
   useEffect(() => {
-    if (page > totalPages) {
-      setPage(totalPages)
+    if (page > totalPages && totalPages >= 1) {
+      setFilter('page', String(totalPages))
     }
-  }, [page, totalPages])
+  }, [page, totalPages, setFilter])
 
   useEffect(() => {
     if (!selectedTask) return
@@ -133,7 +143,7 @@ export default function TasksPage() {
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) {
-      setPage(1)
+      setFilter('page', '1')
       void fetchTasks(1)
       return
     }
@@ -142,7 +152,7 @@ export default function TasksPage() {
       const res = await api.tasks.search(searchQuery)
       setTasks(res.tasks)
       setTotal(res.tasks.length)
-      setPage(1)
+      setFilter('page', '1')
       setIsSearchMode(true)
     } catch {
       addToast('Błąd wyszukiwania', 'error')
@@ -150,12 +160,8 @@ export default function TasksPage() {
   }
 
   const clearFilters = () => {
-    setFilterPriority('')
-    setFilterProject('')
-    setFilterStatus('')
-    setSearchQuery('')
+    resetUrlFilters()
     setSelectedTaskIds(new Set())
-    setPage(1)
     void fetchTasks(1)
   }
 
@@ -352,34 +358,36 @@ export default function TasksPage() {
         <div className="relative flex-1">
           <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          <input
-            type="text"
-            placeholder="Szukaj zadań..."
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && void handleSearch()}
-            className="input pl-10"
-          />
-        </div>
-        <select value={filterPriority} onChange={e => setFilterPriority(e.target.value)} className="input sm:w-40">
+          </svg>                        <input
+                          id="task-search-input"
+                          type="text"
+                          placeholder="Szukaj zadań..."
+                          value={searchQuery}
+                          onChange={e => setFilter('q', e.target.value)}
+                          onKeyDown={e => e.key === 'Enter' && void handleSearch()}
+                          className="input pl-10"
+                        />
+        </div>                        <select value={filterPriority} onChange={e => setFilter('priority', e.target.value)} className="input sm:w-40">
           <option value="">Priorytet</option>
           <option value="high">Wysoki</option>
           <option value="medium">Średni</option>
           <option value="low">Niski</option>
-        </select>
-        <select value={filterProject} onChange={e => setFilterProject(e.target.value)} className="input sm:w-40">
+        </select>                        <select value={filterProject} onChange={e => setFilter('project', e.target.value)} className="input sm:w-40">
           <option value="">Projekt</option>
           {projects.map(p => <option key={p} value={p}>{p}</option>)}
-        </select>
-        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="input sm:w-40">
+        </select>                        <select value={filterStatus} onChange={e => setFilter('status', e.target.value)} className="input sm:w-40">
           <option value="">Status</option>
           <option value="pending">Oczekujące</option>
           <option value="blocked">Zablokowane</option>
           <option value="completed">Zakończone</option>
         </select>
         <button onClick={() => void handleSearch()} className="btn btn-secondary btn-sm">Szukaj</button>
-        <button onClick={clearFilters} className="btn btn-ghost btn-sm">Wyczyść</button>
+        <button onClick={clearFilters} className="btn btn-ghost btn-sm">
+          {activeCount > 0 && (
+            <span className="mr-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-primary/20 text-[10px] font-semibold text-primary">{activeCount}</span>
+          )}
+          Wyczyść
+        </button>
       </div>
 
       {isAdminRole(user?.role) && (
@@ -497,14 +505,14 @@ export default function TasksPage() {
           <span className="text-sm text-muted-foreground">Strona {page} z {totalPages}</span>
           <div className="flex gap-2">
             <button
-              onClick={() => setPage(prev => Math.max(1, prev - 1))}
+              onClick={() => setFilter('page', String(Math.max(1, page - 1)))}
               disabled={page <= 1}
               className="btn btn-secondary btn-sm disabled:opacity-50"
             >
               Poprzednia
             </button>
             <button
-              onClick={() => setPage(prev => Math.min(totalPages, prev + 1))}
+              onClick={() => setFilter('page', String(Math.min(totalPages, page + 1)))}
               disabled={page >= totalPages}
               className="btn btn-secondary btn-sm disabled:opacity-50"
             >

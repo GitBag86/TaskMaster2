@@ -184,6 +184,21 @@ export default function KanbanPage() {
         </div>
       </div>
 
+      {/* Mobile scroll indicators */}
+      <div className="flex gap-1.5 self-center sm:hidden" role="tablist" aria-label="Kolumny">
+        {columns.map(column => {
+          const hasTasks = tasks.some(task => task.status === column.key)
+          return (
+            <div
+              key={column.key}
+              className={`h-1.5 rounded-full transition-all duration-300 ${hasTasks ? 'w-6 bg-primary/40' : 'w-2 bg-muted'}`}
+              role="tab"
+              aria-selected={false}
+            />
+          )
+        })}
+      </div>
+
       <div className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2 sm:snap-none" style={{ viewTransitionName: 'kanban-board' }}>
         {columns.map((column) => {
           const columnTasks = tasks.filter(
