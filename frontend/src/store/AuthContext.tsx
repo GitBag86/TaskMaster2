@@ -32,13 +32,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const u = await api.auth.me();
       setUser(u);
-      // Fetch CSRF token after confirming user is authenticated
-      void initCsrf();
+      // Fetch CSRF token before rendering — state-changing requests depend on it.
+      await initCsrf();
     } catch {
       setUser(null);
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  // Refresh the CSRF token periodically so it never goes stale mid-session.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      void initCsrf();
+    }, 20 * 60 * 1000); // every 20 minutes
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -64,7 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = async (username: string, password: string) => {
     const res = await api.auth.login(username, password);
     setUser(res.user);
-    void initCsrf();
+    await initCsrf();
     return res.user;
   };
 
@@ -79,7 +87,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }) => {
     const res = await api.auth.signup(data);
     setUser(res.user);
-    void initCsrf();
+    await initCsrf();
     return res.user;
   };
 
