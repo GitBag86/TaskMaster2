@@ -1,8 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { api } from '@/api/client'
+import { api, ApiError } from '@/api/client'
 import { useAuth } from '@/store/AuthContext'
 import { useToast } from '@/store/ToastContext'
+
+interface FieldErrors {
+  username?: string;
+  password?: string;
+  email?: string;
+  accept_terms?: string;
+  accept_privacy?: string;
+  _schema?: string;
+}
 
 type SignupInfo = {
   mode: 'disabled' | 'invite_only' | 'default_team';
@@ -19,6 +28,7 @@ export default function AuthPage() {
   const [acceptPrivacy, setAcceptPrivacy] = useState(false);
   const [acceptMarketing, setAcceptMarketing] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [signupInfoLoading, setSignupInfoLoading] = useState(true);
   const [signupInfo, setSignupInfo] = useState<SignupInfo | null>(null);
   const [signupInfoError, setSignupInfoError] = useState<string | null>(null);
@@ -89,8 +99,24 @@ export default function AuthPage() {
         navigate(loggedUser.role === 'super_admin' ? '/admin/teams' : '/');
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Błąd autoryzacji';
-      addToast(message, 'error');
+      if (err instanceof ApiError && typeof err.body === 'object' && err.body !== null) {
+        const body = err.body as Record<string, unknown>;
+        const extracted: FieldErrors = {};
+        if (body.username) extracted.username = String(body.username);
+        if (body.password) extracted.password = String(body.password);
+        if (body.email) extracted.email = String(body.email);
+        if (body.accept_terms) extracted.accept_terms = String(body.accept_terms);
+        if (body.accept_privacy) extracted.accept_privacy = String(body.accept_privacy);
+        if (body.error) extracted._schema = String(body.error);
+        if (body._schema) extracted._schema = String(body._schema);
+        if (Object.keys(extracted).length > 0) {
+          setFieldErrors(extracted);
+        } else {
+          addToast(err.message, 'error');
+        }
+      } else {
+        addToast(err instanceof Error ? err.message : 'Błąd autoryzacji', 'error');
+      }
     } finally {
       setLoading(false);
     }
@@ -134,12 +160,15 @@ export default function AuthPage() {
               <input
                 type="text"
                 value={username}
-                onChange={e => setUsername(e.target.value)}
-                className="input"
+                onChange={e => { setUsername(e.target.value); setFieldErrors(prev => ({ ...prev, username: undefined })); }}
+                className={`input ${fieldErrors.username ? 'border-destructive focus-visible:ring-destructive/50' : ''}`}
                 required
                 minLength={3}
                 autoFocus
+                aria-invalid={!!fieldErrors.username}
+                aria-describedby={fieldErrors.username ? 'auth-username-error' : undefined}
               />
+              {fieldErrors.username && <p id="auth-username-error" className="mt-1 text-xs text-destructive" role="alert">{fieldErrors.username}</p>}
             </div>
 
             <div>
@@ -149,11 +178,14 @@ export default function AuthPage() {
               <input
                 type="password"
                 value={password}
-                onChange={e => setPassword(e.target.value)}
-                className="input"
+                onChange={e => { setPassword(e.target.value); setFieldErrors(prev => ({ ...prev, password: undefined })); }}
+                className={`input ${fieldErrors.password ? 'border-destructive focus-visible:ring-destructive/50' : ''}`}
                 required
                 minLength={isSignup ? 6 : 1}
+                aria-invalid={!!fieldErrors.password}
+                aria-describedby={fieldErrors.password ? 'auth-password-error' : undefined}
               />
+              {fieldErrors.password && <p id="auth-password-error" className="mt-1 text-xs text-destructive" role="alert">{fieldErrors.password}</p>}
             </div>
 
             {isSignup && (
@@ -165,10 +197,13 @@ export default function AuthPage() {
                   <input
                     type="email"
                     value={email}
-                    onChange={e => setEmail(e.target.value)}
-                    className="input"
+                    onChange={e => { setEmail(e.target.value); setFieldErrors(prev => ({ ...prev, email: undefined })); }}
+                    className={`input ${fieldErrors.email ? 'border-destructive focus-visible:ring-destructive/50' : ''}`}
                     required
+                    aria-invalid={!!fieldErrors.email}
+                    aria-describedby={fieldErrors.email ? 'auth-email-error' : undefined}
                   />
+                  {fieldErrors.email && <p id="auth-email-error" className="mt-1 text-xs text-destructive" role="alert">{fieldErrors.email}</p>}
                 </div>
 
                 <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-3 text-sm">
@@ -213,6 +248,12 @@ export default function AuthPage() {
               </>
             )}
             </>
+            )}
+
+            {fieldErrors._schema && (
+              <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+                {fieldErrors._schema}
+              </div>
             )}
 
             {canShowSignupForm && (

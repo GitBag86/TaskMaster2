@@ -248,6 +248,7 @@ export default function ProjectsPage() {
         err instanceof Error ? err.message : "Błąd tworzenia zadania",
         "error",
       );
+      throw err;
     }
   };
 
@@ -777,7 +778,7 @@ export default function ProjectsPage() {
             submitLabel="Dodaj zadanie"
             lockedProjectName={selectedProject.name}
             availableAssignees={selectedProject.members}
-            onSubmit={(data) => void createTaskInSelectedProject(data)}
+            onSubmit={(data) => createTaskInSelectedProject(data)}
             onCancel={() => setShowNewProjectTask(false)}
           />
         </Modal>

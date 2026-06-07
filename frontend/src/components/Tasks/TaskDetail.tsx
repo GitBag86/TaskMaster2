@@ -50,6 +50,7 @@ export default function TaskDetail({
   const [blocking, setBlocking] = useState<TaskSummary[]>(task.blocking);
   const [availableTasks, setAvailableTasks] = useState<TaskSummary[]>([]);
   const [selectedDependencyId, setSelectedDependencyId] = useState("");
+  const [activityLoading, setActivityLoading] = useState(true);
   const { addToast } = useToast();
   const { user } = useAuth();
   const isAdmin = isAdminRole(user?.role);
@@ -70,11 +71,14 @@ export default function TaskDetail({
 
   useEffect(() => {
     const loadActivity = async () => {
+      setActivityLoading(true);
       try {
         const response = await api.activity.getForTask(task.id);
         setActivity(response.activity);
       } catch {
         setActivity([]);
+      } finally {
+        setActivityLoading(false);
       }
     };
 
@@ -211,8 +215,12 @@ export default function TaskDetail({
       setIsEditing(false);
       addToast("Zadanie zaktualizowane", "success");
       onClose();
-    } catch {
-      addToast("Błąd aktualizacji zadania", "error");
+    } catch (err: unknown) {
+      addToast(
+        err instanceof Error ? err.message : "Błąd aktualizacji zadania",
+        "error",
+      );
+      throw err;
     }
   };
 
@@ -274,7 +282,7 @@ export default function TaskDetail({
       <TaskForm
         initialData={editInitialData}
         submitLabel="Zapisz"
-        onSubmit={(data) => void handleUpdateTask(data)}
+        onSubmit={(data) => handleUpdateTask(data)}
         onCancel={() => setIsEditing(false)}
       />
     );
@@ -579,7 +587,16 @@ export default function TaskDetail({
           <h4 className="mb-3 text-sm font-semibold text-gray-900 dark:text-white">
             Historia zmian
           </h4>
-          {activity.length === 0 ? (
+          {activityLoading ? (
+            <div className="space-y-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="border-l-2 border-primary/10 pl-3">
+                  <div className="skeleton mb-1 h-4 w-3/4" />
+                  <div className="skeleton h-3 w-1/2" />
+                </div>
+              ))}
+            </div>
+          ) : activity.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               Brak zapisanej aktywności.
             </p>

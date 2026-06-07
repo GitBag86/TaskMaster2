@@ -302,6 +302,7 @@ export default function TasksPage() {
       addToast('Zadanie utworzone', 'success')
     } catch (err: unknown) {
       addToast(err instanceof Error ? err.message : 'Błąd tworzenia', 'error')
+      throw err
     }
   }
 

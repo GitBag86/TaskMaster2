@@ -310,6 +310,7 @@ export default function CalendarPage() {
         err instanceof Error ? err.message : "Błąd tworzenia zadania",
         "error",
       );
+      throw err;
     }
   };
 
@@ -709,7 +710,7 @@ export default function CalendarPage() {
             }}
             heading="Nowe zadanie"
             submitLabel="Utwórz"
-            onSubmit={(data) => void createTask(data)}
+            onSubmit={(data) => createTask(data)}
             onCancel={() => setShowCreate(false)}
           />
         </Modal>
