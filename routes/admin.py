@@ -380,14 +380,15 @@ def delete_user(user_id):
     source_team_id = target.team_id
 
     _purge_user_data(target)
-    db.session.delete(target)
 
     add_audit(
         "user.delete",
         target_team_id=source_team_id,
-        target_user_id=user_id,
-        details={"username": username, "role": target.role},
+        target_user_id=None,
+        details={"username": username, "role": target.role, "deleted_user_id": user_id},
     )
+
+    db.session.delete(target)
     db.session.commit()
     return "", 204
 

@@ -256,8 +256,10 @@ def test_super_admin_deletes_user_and_their_data(client, app):
         assert remaining == []
         # The team itself remains.
         assert Team.query.filter_by(name="UserDelete").count() == 1
-        audit = TeamAuditLog.query.filter_by(action="user.delete", target_user_id=target_id).one()
+        audit = TeamAuditLog.query.filter_by(action="user.delete").one()
         assert audit.details["username"] == "doomed"
+        assert audit.details["deleted_user_id"] == target_id
+        assert audit.target_user_id is None
 
 
 def test_super_admin_cannot_delete_self(client, app):
