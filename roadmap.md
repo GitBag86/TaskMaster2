@@ -238,7 +238,7 @@ First-login flow for new managers/users:
 | **Sprint 3** 🔥 **COMPLETED** | 🟡 2.1 Query optimization | 1 day | ✅ Batch team resource counts (14*N → 14 total), ✅ export_csv eager loading, ✅ admin audit pagination |
 | **Sprint 4** | 🟡 2.3–2.4 Data fetching | 3 days | Partial state updates + React Query integration |
 | **Sprint 5** | 🟢 3.1–3.3 UX polish | 3 days | ✅ TaskDetail skeleton, ✅ TaskForm double-submit guard, ✅ AuthPage inline validation, ✅ TaskForm inline validation |
-| **Sprint 6** | 🟢 3.4–3.7 Polish | 3 days | ✅ URL-persisted filters, ✅ keyboard shortcuts + help dialog, ✅ Kanban scroll dots, ✅ mobile table cards |
+| **Sprint 6** | 🟢 3.4–3.7 Polish | 3 days | ✅ URL-persisted filters, ✅ keyboard shortcuts + help dialog, ✅ Kanban scroll dots, ✅ mobile table cards, ✅ onboarding wizard |
 
 **Total: ~18 days of focused work**
 

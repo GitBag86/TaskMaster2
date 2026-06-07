@@ -7,6 +7,7 @@ import type { NotificationItem } from '@/types'
 import type { CSSProperties } from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useKeyboardShortcuts } from '@/utils/useKeyboardShortcuts'
+import OnboardingWizard, { isOnboardingDone } from '@/components/common/OnboardingWizard'
 
 const standardNavItems = [
   { label: 'Zadania', path: '/', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' },
@@ -29,10 +30,11 @@ const managerNavItems = [
 ];
 
 export default function DashboardLayout() {
-  const { user, logout } = useAuth();
+  const { user, loading: authLoading, logout } = useAuth();
   const { dark, toggle } = useTheme();
   const { connected, lastNotification } = useSocket();
   const navigate = useNavigate();
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const canUseNotifications = user?.role !== 'super_admin';
   const navItems = user?.role === 'super_admin'
     ? superAdminNavItems
@@ -50,6 +52,14 @@ export default function DashboardLayout() {
     top: 64,
     width: 360,
   })
+
+  // Show onboarding wizard for manager users on first login
+  useEffect(() => {
+    if (authLoading || !user) return
+    if (user.role === 'manager' && !isOnboardingDone()) {
+      setShowOnboarding(true)
+    }
+  }, [authLoading, user])
 
   useKeyboardShortcuts({
     onNewTask: () => {
@@ -327,6 +337,11 @@ export default function DashboardLayout() {
             </button>
           </div>
         </header>
+
+        {/* Onboarding wizard overlay for first-login managers */}
+        {showOnboarding && (
+          <OnboardingWizard onDone={() => setShowOnboarding(false)} />
+        )}
 
         {/* Page content */}
         <main className="flex-1 overflow-auto p-4 sm:p-6">
