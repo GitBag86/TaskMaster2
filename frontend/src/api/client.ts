@@ -484,6 +484,9 @@ export const api = {
       request<{ message: string }>(`/tags/${id}`, { method: "DELETE" }),
   },
 
+  version: () =>
+    request<{ version: string; git_sha: string; build_time: string; python: string }>("/version"),
+
   filters: {
     getAll: () => request<{ filters: SavedFilter[] }>("/filters"),
     create: (name: string, filters: Record<string, string>) =>

@@ -50,6 +50,7 @@ export default function DashboardLayout() {
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
   const [showShortcuts, setShowShortcuts] = useState(false)
+  const [versionInfo, setVersionInfo] = useState<{ version: string } | null>(null)
   const notificationButtonRef = useRef<HTMLButtonElement | null>(null)
   const [notificationPanelStyle, setNotificationPanelStyle] = useState<CSSProperties>({
     left: 16,
@@ -81,6 +82,10 @@ export default function DashboardLayout() {
     },
     onShowHelp: () => setShowShortcuts(prev => !prev),
   })
+
+  useEffect(() => {
+    api.version().then(setVersionInfo).catch(() => setVersionInfo({ version: '?' }))
+  }, [])
 
   const handleLogout = async () => {
     await logout();
@@ -203,7 +208,7 @@ export default function DashboardLayout() {
             ))}
           </nav>
 
-          <div className="border-t border-border p-4">
+          <div className="border-t border-border px-4 py-3">
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-sm font-medium text-primary">
                 {user?.username.charAt(0).toUpperCase()}
@@ -223,6 +228,9 @@ export default function DashboardLayout() {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
                 </svg>
               </button>
+            </div>
+            <div className="mt-2 border-t border-border/50 pt-2 text-[10px] text-gray-400 dark:text-gray-500">
+              {versionInfo ? `v${versionInfo.version}` : '…'}
             </div>
           </div>
         </div>
