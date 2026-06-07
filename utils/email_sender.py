@@ -326,6 +326,31 @@ def get_project_activity_body(project_name, recipient_username, actor_username, 
     )
 
 
+def get_password_reset_body(username, reset_link):
+    return _email_content(
+        eyebrow="Reset hasła",
+        title="Resetowanie hasła w TaskMaster",
+        greeting=f"Cześć {username},",
+        intro="Otrzymaliśmy prośbę o zresetowanie hasła do Twojego konta w TaskMaster. Kliknij poniższy przycisk, aby ustawić nowe hasło.",
+        details=[
+            _line("Konto", username),
+        ],
+        cta_label="Ustaw nowe hasło",
+        cta_url=reset_link,
+        tone="purple",
+        footer_note="Link resetowania hasła wygaśnie za 1 godzinę. Jeśli to nie Ty prosiłeś o reset, zignoruj tę wiadomość.",
+    )
+
+
+def send_password_reset_email(user, raw_token):
+    """Send a password reset email to the user with the given raw token."""
+    base_url = current_app.config.get("PUBLIC_BASE_URL", "")
+    reset_link = f"{base_url.rstrip('/')}/auth/reset-password?token={raw_token}"
+    subject = "Resetowanie hasła — TaskMaster"
+    body = get_password_reset_body(user.username, reset_link)
+    enqueue_email(user.email, subject, body)
+
+
 def get_deadline_warning_body(task_title, due_date, task_link):
     return _email_content(
         eyebrow="Termin blisko",

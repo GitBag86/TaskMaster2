@@ -243,6 +243,16 @@ export const api = {
     logoutAll: () =>
       request<{ message: string }>("/auth/logout-all", { method: "POST" }),
     me: () => request<User>("/auth/me"),
+    forgotPassword: (email: string) =>
+      request<{ message: string }>("/auth/forgot-password", {
+        method: "POST",
+        body: JSON.stringify({ email }),
+      }),
+    resetPassword: (token: string, password: string) =>
+      request<{ message: string }>("/auth/reset-password", {
+        method: "POST",
+        body: JSON.stringify({ token, password }),
+      }),
   },
 
   signup: {
