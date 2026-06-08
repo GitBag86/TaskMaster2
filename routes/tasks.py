@@ -1245,6 +1245,100 @@ def bulk_delete_tasks():
     emit_task_event("bulk_deleted", user, task_ids=task_ids)
     return jsonify({"message": f"Usunięto {count} zadań"}), 200
 
+@tasks_bp.route('/tasks/export', methods=['GET'])
+@login_required
+def export_tasks():
+    """Export all tasks for the current team as JSON."""
+    user_id = session.get('user_id')
+    user = db.session.get(User, user_id)
+
+    if g.get('current_role') not in ('manager', 'super_admin'):
+        return jsonify({"error": "Tylko administrator może eksportować zadania"}), 403
+
+    tasks = visible_task_query(user).options(*_eager_task_options()).all()
+    projects = team_scoped(Project.query, Project).all()
+
+    export_data = {
+        "version": "1.0",
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "team_id": g.get('current_team_id'),
+        "projects": [project.to_dict(include_tasks=False) for project in projects],
+        "tasks": [task.to_dict() for task in tasks],
+    }
+    return jsonify(export_data)
+
+
+@tasks_bp.route('/tasks/import', methods=['POST'])
+@login_required
+def import_tasks():
+    """Import tasks from a JSON export."""
+    user_id = session.get('user_id')
+    user = db.session.get(User, user_id)
+
+    if g.get('current_role') not in ('manager', 'super_admin'):
+        return jsonify({"error": "Tylko administrator może importować zadania"}), 403
+
+    data = request.get_json()
+    if not data or 'tasks' not in data:
+        return jsonify({"error": "Nieprawidłowy format danych. Wymagane pole: tasks"}), 400
+
+    imported_count = 0
+    errors = []
+
+    # Pre-create projects from the export if they don't exist
+    if 'projects' in data:
+        for proj_data in data['projects']:
+            existing = team_scoped(Project.query, Project).filter_by(name=proj_data['name']).first()
+            if not existing:
+                project = Project(
+                    name=proj_data['name'],
+                    description=proj_data.get('description', ''),
+                    color=proj_data.get('color', '#3b82f6'),
+                    team_id=g.get('current_team_id'),
+                    created_by_id=user_id,
+                )
+                db.session.add(project)
+
+    for task_data in data['tasks']:
+        try:
+            title = task_data.get('title', '').strip()
+            if not title:
+                errors.append({"title": "(brak)", "error": "Pominięto zadanie bez tytułu"})
+                continue
+
+            due_date = parse_due_date(task_data.get('due_date')) if task_data.get('due_date') else None
+
+            project, project_error = resolve_project(None, task_data.get('project', 'Ogólny'), user)
+            if project_error:
+                errors.append({"title": title, "error": str(project_error[0])})
+                continue
+
+            task = Task(
+                user_id=user_id,
+                title=title,
+                priority=task_data.get('priority', 'medium'),
+                project=project.name,
+                project_id=project.id,
+                due_date=due_date,
+                notes=task_data.get('notes', ''),
+                team_id=g.get('current_team_id'),
+            )
+            db.session.add(task)
+            imported_count += 1
+        except Exception as exc:
+            errors.append({"title": task_data.get('title', '(unknown)'), "error": str(exc)})
+
+    if imported_count > 0:
+        db.session.commit()
+        emit_team_event("tasks_imported", user, extra={"count": imported_count})
+
+    return jsonify({
+        "imported": imported_count,
+        "errors": errors,
+        "message": f"Zaimportowano {imported_count} zadań" + (f", {len(errors)} błędów" if errors else ""),
+    }), 201 if imported_count > 0 else 400
+
+
 @tasks_bp.route('/tasks/bulk/update', methods=['PUT'])
 @login_required
 def bulk_update_tasks():

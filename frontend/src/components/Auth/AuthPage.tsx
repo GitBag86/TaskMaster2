@@ -32,6 +32,10 @@ export default function AuthPage() {
   const [signupInfoLoading, setSignupInfoLoading] = useState(true);
   const [signupInfo, setSignupInfo] = useState<SignupInfo | null>(null);
   const [signupInfoError, setSignupInfoError] = useState<string | null>(null);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotSent, setForgotSent] = useState(false);
+  const [forgotLoading, setForgotLoading] = useState(false);
   const { login, signup } = useAuth();
   const { addToast } = useToast();
   const navigate = useNavigate();
@@ -150,7 +154,56 @@ export default function AuthPage() {
           ) : null}
 
           {(!isSignup || !signupInfoLoading) && (
-          <form onSubmit={handleSubmit} className="space-y-4">
+            showForgotPassword && !isSignup ? (
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  setForgotLoading(true);
+                  try {
+                    await api.auth.forgotPassword(forgotEmail.trim());
+                    setForgotSent(true);
+                  } catch (err: unknown) {
+                    addToast(err instanceof Error ? err.message : 'Błąd wysyłania prośby', 'error');
+                  } finally {
+                    setForgotLoading(false);
+                  }
+                }}
+                className="space-y-4"
+              >
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Adres e-mail
+                  </label>
+                  <input
+                    type="email"
+                    value={forgotEmail}
+                    onChange={e => setForgotEmail(e.target.value)}
+                    className="input"
+                    placeholder="Twój adres e-mail"
+                    required
+                    autoFocus
+                    disabled={forgotSent}
+                  />
+                </div>
+                {forgotSent ? (
+                  <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 text-sm text-gray-700 dark:text-gray-300">
+                    Jeśli konto o podanym adresie istnieje, otrzymasz e-mail z linkiem resetującym.
+                  </div>
+                ) : (
+                  <button type="submit" disabled={forgotLoading} className="btn btn-primary w-full">
+                    {forgotLoading ? 'Wysyłanie...' : 'Wyślij link resetujący'}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => { setShowForgotPassword(false); setForgotSent(false); setForgotEmail(''); }}
+                  className="w-full text-center text-sm text-primary hover:underline"
+                >
+                  Wróć do logowania
+                </button>
+              </form>
+            ) : (
+            <form onSubmit={handleSubmit} className="space-y-4">
             {canShowSignupForm && (
             <>
             <div>
@@ -273,11 +326,19 @@ export default function AuthPage() {
             </button>
             )}
           </form>
-          )}
+          ))}
 
-          <div className="mt-6 text-center">
+          <div className="mt-4 text-center space-y-2">
+            {!showForgotPassword && !isSignup && (
+              <button
+                onClick={() => setShowForgotPassword(true)}
+                className="block w-full text-sm text-primary hover:underline"
+              >
+                Zapomniałeś hasła?
+              </button>
+            )}
             <button
-              onClick={() => setIsSignup(!isSignup)}
+              onClick={() => { setIsSignup(!isSignup); setShowForgotPassword(false); }}
               className="text-sm text-primary hover:underline"
             >
               {isSignup ? 'Masz już konto? Zaloguj się' : 'Nie masz konta? Zarejestruj się'}
@@ -291,6 +352,8 @@ export default function AuthPage() {
           <a href="/privacy.html" target="_blank" rel="noreferrer" className="hover:text-teal-600 dark:hover:text-teal-400">Prywatność</a>
           <span className="mx-2">·</span>
           <a href="/terms.html" target="_blank" rel="noreferrer" className="hover:text-teal-600 dark:hover:text-teal-400">Regulamin</a>
+          <span className="mx-2">·</span>
+          <span>v1.0</span>
         </div>
       </div>
     </div>

@@ -150,6 +150,81 @@ def logout_all():
         session.pop(key, None)
     return jsonify({"message": "Wylogowano ze wszystkich urządzeń"})
 
+@auth_bp.route('/forgot-password', methods=['POST'])
+@limiter.limit("3 per minute")
+def forgot_password():
+    """Generate a password reset token and e-mail it to the user."""
+    from datetime import datetime, timedelta, timezone
+    import hashlib
+    import secrets
+
+    from models import PasswordResetToken
+    from utils.email_sender import send_password_reset_email
+
+    data = request.get_json() or {}
+    email = (data.get("email") or "").strip().lower()
+    if not email:
+        return jsonify({"error": "Adres e-mail jest wymagany"}), 400
+
+    user = User.query.filter_by(email=email).first()
+    # Don't reveal whether the email exists — always return 200
+    if user is None:
+        return jsonify({"message": "Jeśli konto o podanym adresie istnieje, otrzymasz e-mail z linkiem resetującym."}), 200
+
+    raw_token = secrets.token_urlsafe(48)
+    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+    ttl_hours = current_app.config.get("PASSWORD_RESET_TTL_HOURS", 1)
+
+    reset = PasswordResetToken(
+        user_id=user.id,
+        token_hash=token_hash,
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=ttl_hours),
+    )
+    db.session.add(reset)
+    db.session.commit()
+
+    try:
+        send_password_reset_email(user, raw_token)
+    except Exception:
+        logger.exception("Failed to send password reset email to %s", email)
+
+    return jsonify({"message": "Jeśli konto o podanym adresie istnieje, otrzymasz e-mail z linkiem resetującym."}), 200
+
+
+@auth_bp.route('/reset-password', methods=['POST'])
+@limiter.limit("5 per minute")
+def reset_password():
+    """Reset password using a valid reset token."""
+    import hashlib
+    from datetime import datetime, timezone
+    from models import PasswordResetToken
+
+    data = request.get_json() or {}
+    token = (data.get("token") or "").strip()
+    new_password = data.get("password", "")
+
+    if not token:
+        return jsonify({"error": "Token jest wymagany"}), 400
+    if len(new_password) < 6:
+        return jsonify({"error": "Hasło musi mieć co najmniej 6 znaków"}), 400
+
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    reset = PasswordResetToken.query.filter_by(token_hash=token_hash).first()
+
+    if reset is None or not reset.is_active():
+        return jsonify({"error": "Token resetowania hasła jest nieprawidłowy lub wygasł"}), 400
+
+    user = db.session.get(User, reset.user_id)
+    if user is None:
+        return jsonify({"error": "Użytkownik nie znaleziony"}), 404
+
+    user.set_password(new_password)
+    reset.consumed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    db.session.commit()
+
+    return jsonify({"message": "Hasło zostało zmienione. Możesz się teraz zalogować."}), 200
+
+
 @auth_bp.route('/me', methods=['GET'])
 @login_required
 def get_current_user():

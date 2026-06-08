@@ -517,6 +517,41 @@ class TeamAuditLog(db.Model):
 
 
 
+class PasswordResetToken(db.Model):
+    """One-time password reset token tied to a user.
+
+    Expires after PASSWORD_RESET_TTL_HOURS (default 1).
+    """
+    __tablename__ = 'password_reset_token'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    token_hash = db.Column(db.String(64), unique=True, nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    consumed_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=utcnow)
+
+    user = db.relationship('User', backref=db.backref('reset_tokens', lazy=True, cascade='all, delete-orphan'))
+
+    def is_active(self) -> bool:
+        if self.consumed_at is not None:
+            return False
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        expires = self.expires_at
+        if expires.tzinfo is not None:
+            expires = expires.astimezone(timezone.utc).replace(tzinfo=None)
+        return expires > now
+
+    def to_dict(self) -> dict:
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'expires_at': self.expires_at.isoformat() if self.expires_at else None,
+            'consumed_at': self.consumed_at.isoformat() if self.consumed_at else None,
+            'active': self.is_active(),
+        }
+
+
 class ProjectTemplate(db.Model):
     """Per-team copy of a project template, seeded from PROJECT_TEMPLATE_CATALOGUE.
 
