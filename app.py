@@ -216,6 +216,18 @@ def _register_routes(app):
         # Application-level errors with a stable code + HTTP status (R30, see utils/errors.py)
         return jsonify({"error": exc.message, "code": exc.code}), exc.http_status
 
+    @app.errorhandler(403)
+    def _handle_forbidden(_):
+        return jsonify({"error": "Brak uprawnień"}), 403
+
+    @app.errorhandler(429)
+    def _handle_rate_limit(_):
+        return jsonify({"error": "Zbyt wiele żądań — spróbuj później"}), 429
+
+    @app.errorhandler(500)
+    def _handle_internal_error(_):
+        return jsonify({"error": "Wewnętrzny błąd serwera"}), 500
+
 
 def _register_scheduler(app):
     if not app.config.get("ENABLE_SCHEDULER", True):

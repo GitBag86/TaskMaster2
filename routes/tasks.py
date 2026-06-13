@@ -756,6 +756,12 @@ def update_task(task_id):
         return jsonify({"error": "Task not found"}), 404
 
     data = request.get_json() or {}
+    schema = TaskSchema(partial=True)
+    try:
+        validated = schema.load(data)
+    except ValidationError as err:
+        return jsonify({"error": err.messages}), 400
+
     if g.get('current_role') not in ('manager', 'super_admin'):
         if not user_can_access_task(user, task) or not is_user_start_task_update(data):
             return jsonify({"error": "Only admins can update tasks"}), 403
@@ -777,8 +783,8 @@ def update_task(task_id):
     was_done = task_is_done(task)
     old_assignee_ids = {assignee.id for assignee in task.assignees}
 
-    for key, value in data.items():
-        if key in ('assignee_ids', 'assignees'):
+    for key, value in validated.items():
+        if key == 'assignees':
             if len(value or []) > 1:
                 return jsonify({"error": "Zadanie może mieć tylko jednego przypisanego użytkownika."}), 400
             update_task_assignees(task, value or [])
@@ -792,8 +798,6 @@ def update_task(task_id):
             project, _ = resolve_project(None, value, user)
             set_task_project(task, project)
         elif key in TASK_ALLOWED_FIELDS and hasattr(task, key):
-            if key == 'due_date':
-                value = parse_due_date(value)
             setattr(task, key, value)
 
     if not was_done and task_is_done(task) and task_blocks_completion(task):
@@ -805,7 +809,7 @@ def update_task(task_id):
     task_link = url_for('index', _external=True) + f'tasks/{task.id}' # Assuming tasks are viewed at /tasks/{id}
 
     # Send email for status change
-    if 'status' in data and old_status != task.status:
+    if 'status' in validated and old_status != task.status:
         if task.owner and task.owner.email:
             subject = f"Zmiana statusu zadania: {task.title}"
             body = email_sender.get_task_status_change_body(task.title, old_status, task.status, task_link)
@@ -813,7 +817,7 @@ def update_task(task_id):
 
     # Send email for new assignments
     assignment_notifications = []
-    if 'assignee_ids' in data or 'assignees' in data:
+    if 'assignees' in validated:
         for assignee_user in task.assignees:
             if assignee_user.id in old_assignee_ids:
                 continue
@@ -1380,13 +1384,16 @@ def bulk_update_tasks():
 
     data = request.get_json()
     task_ids = data.get('task_ids', [])
-    updates = data.get('updates', {})
+    updates_raw = data.get('updates', {})
+
+    schema = TaskSchema(partial=True)
+    try:
+        updates = schema.load(updates_raw)
+    except ValidationError as err:
+        return jsonify({"error": err.messages}), 400
 
     if len(task_ids) > BULK_MAX_TASKS:
         return jsonify({"error": f"Maksymalna liczba zadań w operacji masowej: {BULK_MAX_TASKS}"}), 400
-    for assignee_key in ('assignee_ids', 'assignees'):
-        if assignee_key in updates and len(updates.get(assignee_key) or []) > 1:
-            return jsonify({"error": "Zadanie może mieć tylko jednego przypisanego użytkownika."}), 400
 
     tasks = bulk_scoped_tasks_or_error(task_ids)
     marks_done = updates.get('completed') is True or updates.get('status') == 'done'
@@ -1399,7 +1406,7 @@ def bulk_update_tasks():
 
     for task in tasks:
         for key, value in updates.items():
-            if key in ('assignee_ids', 'assignees'):
+            if key == 'assignees':
                 update_task_assignees(task, value or [])
             elif key == 'project_id':
                 project, project_error = resolve_project(value, None, user)
@@ -1411,8 +1418,6 @@ def bulk_update_tasks():
                 project, _ = resolve_project(None, value, user)
                 set_task_project(task, project)
             elif key in TASK_ALLOWED_FIELDS and hasattr(task, key):
-                if key == 'due_date':
-                    value = parse_due_date(value)
                 setattr(task, key, value)
 
     db.session.commit()

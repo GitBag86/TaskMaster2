@@ -113,10 +113,10 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
     }
   }, [inviteLink, addToast])
 
-  const finish = useCallback(() => {
+  const finish = useCallback((path?: string) => {
     completeOnboarding()
     onDone()
-    navigate('/today')
+    navigate(path ?? '/')
   }, [onDone, navigate])
 
   return (
@@ -388,28 +388,28 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
                 icon="📋"
                 label="Przeglądaj zadania"
                 description="Lista wszystkich zadań z filtrowaniem i wyszukiwaniem"
-                onClick={() => { finish(); navigate('/'); }}
+                onClick={() => finish('/')}
               />
               <ChecklistItem
                 icon="📊"
                 label="Tablica Kanban"
                 description="Przeciągaj zadania między kolumnami statusów"
-                onClick={() => { finish(); navigate('/kanban'); }}
+                onClick={() => finish('/kanban')}
               />
               <ChecklistItem
                 icon="🗓️"
                 label="Widok kalendarza"
                 description="Sprawdź terminy w kalendarzu miesięcznym"
-                onClick={() => { finish(); navigate('/calendar'); }}
+                onClick={() => finish('/calendar')}
               />
               <ChecklistItem
                 icon="📈"
                 label="Statystyki"
                 description="Panel z metrykami i raportem tygodniowym"
-                onClick={() => { finish(); navigate('/dashboard'); }}
+                onClick={() => finish('/dashboard')}
               />
             </div>
-            <button onClick={finish} className="btn btn-primary w-full btn-sm">
+            <button onClick={() => finish()} className="btn btn-primary w-full btn-sm">
               Rozpocznij pracę
             </button>
           </div>

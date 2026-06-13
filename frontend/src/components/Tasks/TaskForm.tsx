@@ -175,7 +175,7 @@ export default function TaskForm({ onSubmit, onCancel, initialData, submitLabel 
                   <input
                     type="text"
                     value={customProject}
-                    onChange={e => { setCustomProject(e.target.value); setProject(e.target.value) }}
+                    onChange={e => setCustomProject(e.target.value)}
                     className="input"
                     placeholder="Nazwa nowego projektu"
                     autoFocus

@@ -37,6 +37,8 @@ export default function AuthPage() {
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotSent, setForgotSent] = useState(false);
   const [forgotLoading, setForgotLoading] = useState(false);
+  const [resetPassword, setResetPassword] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
   const { login, signup } = useAuth();
   const { dark, toggle: toggleTheme } = useTheme();
   const { addToast } = useToast();
@@ -45,6 +47,10 @@ export default function AuthPage() {
   const inviteToken = useMemo(
     () => new URLSearchParams(location.search).get('token'),
     [location.search],
+  );
+  const resetToken = useMemo(
+    () => new URLSearchParams(location.hash.replace(/^#/, '')).get('reset_token'),
+    [location.hash],
   );
 
   useEffect(() => {
@@ -170,7 +176,44 @@ export default function AuthPage() {
             </div>
           ) : null}
 
-          {(!isSignup || !signupInfoLoading) && (
+          {resetToken ? (
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setResetLoading(true);
+                try {
+                  await api.auth.resetPassword(resetToken, resetPassword);
+                  addToast('Hasło zostało zmienione', 'success');
+                  window.location.hash = '';
+                  navigate('/auth');
+                } catch (err: unknown) {
+                  addToast(err instanceof Error ? err.message : 'Błąd resetowania hasła', 'error');
+                } finally {
+                  setResetLoading(false);
+                }
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Nowe hasło
+                </label>
+                <input
+                  type="password"
+                  value={resetPassword}
+                  onChange={e => setResetPassword(e.target.value)}
+                  className="input"
+                  placeholder="Nowe hasło"
+                  required
+                  minLength={6}
+                  autoFocus
+                />
+              </div>
+              <button type="submit" disabled={resetLoading} className="btn btn-primary w-full">
+                {resetLoading ? 'Zmienianie...' : 'Zmień hasło'}
+              </button>
+            </form>
+          ) : (!isSignup || !signupInfoLoading) && (
             showForgotPassword && !isSignup ? (
               <form
                 onSubmit={async (e) => {

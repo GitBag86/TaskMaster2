@@ -345,7 +345,7 @@ def get_password_reset_body(username, reset_link):
 def send_password_reset_email(user, raw_token):
     """Send a password reset email to the user with the given raw token."""
     base_url = current_app.config.get("PUBLIC_BASE_URL", "")
-    reset_link = f"{base_url.rstrip('/')}/auth/reset-password?token={raw_token}"
+    reset_link = f"{base_url.rstrip('/')}/auth#reset_token={raw_token}"
     subject = "Resetowanie hasła — TaskMaster"
     body = get_password_reset_body(user.username, reset_link)
     enqueue_email(user.email, subject, body)

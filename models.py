@@ -46,7 +46,7 @@ class User(db.Model):
     )
     # Bumped on team move / team archival to invalidate active sessions (R7.7, R25.3).
     session_version = db.Column(db.Integer, nullable=False, default=0, server_default='0')
-    tasks = db.relationship('Task', backref='owner', lazy=True, cascade='all, delete-orphan')
+    tasks = db.relationship('Task', backref='owner', lazy=True, cascade='all')
     created_at = db.Column(db.DateTime, default=utcnow)
 
     # Backref `team` on User; backref `members` on Team. Foreign keys on team_id.

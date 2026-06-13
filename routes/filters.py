@@ -4,6 +4,7 @@ from routes import filters_bp
 from models import db, User, Task, Tag, SavedFilter, TaskTemplate, CustomField
 from schemas import TagSchema, FilterSchema, TemplateSchema, CustomFieldSchema
 from routes.auth import login_required
+from routes.tasks import user_can_access_task
 from utils.errors import CrossTeamReferenceError
 from utils.scoping import get_team_resource_or_404, team_scoped
 
@@ -169,9 +170,14 @@ def use_template(template_id):
 @filters_bp.route('/tasks/<int:task_id>/fields', methods=['POST'])
 @login_required
 def add_custom_field(task_id):
+    user_id = session.get('user_id')
+    user = db.session.get(User, user_id)
     task = get_team_resource_or_404(Task, task_id)
     if not task:
         return jsonify({"error": "Task not found"}), 404
+
+    if not user_can_access_task(user, task):
+        return jsonify({"error": "Permission denied"}), 403
 
     data = request.get_json()
     schema = CustomFieldSchema()

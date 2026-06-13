@@ -51,7 +51,7 @@ export default function TaskDetail({ task, onDelete, onComplete, onUpdate, onClo
     : hasOpenSubtasks
       ? `Najpierw zakończ podzadania: ${openSubtasks}`
       : undefined
-  const canStartTask = !isAdmin && !task.completed && task.status === "todo"
+  const canStartTask = !task.completed && task.status === "todo"
 
   useEffect(() => {
     setSubtasks(task.subtasks)

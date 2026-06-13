@@ -577,6 +577,11 @@ def change_user_role(user_id):
         target_user.team_id = team.id
 
     old_role = target_user.role
+    if old_role == "super_admin" and new_role != "super_admin":
+        remaining = User.query.filter(User.role == "super_admin", User.id != target_user.id).count()
+        if remaining == 0:
+            return jsonify({"error": "Nie można usunąć ostatniego super_admina"}), 400
+
     target_user.role = new_role
     target_user.session_version += 1
     add_audit(
