@@ -111,14 +111,14 @@ export default function TaskDetail({ task, onDelete, onComplete, onUpdate, onClo
     }
   }
 
-  const editInitialData: TaskFormData = {
+  const editInitialData: TaskFormData = useMemo(() => ({
     title: task.title,
     assignee_ids: task.assignees.map(a => a.id),
     priority: task.priority,
     project: task.project,
     due_date: task.due_date ?? "",
-    notes: task.notes,
-  }
+    notes: task.notes ?? "",
+  }), [task.title, task.assignees, task.priority, task.project, task.due_date, task.notes])
 
   const handleUpdateTask = async (data: TaskFormData) => {
     try {

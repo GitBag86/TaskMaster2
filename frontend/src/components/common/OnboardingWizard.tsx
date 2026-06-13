@@ -4,7 +4,6 @@ import { api } from '@/api/client'
 import { useToast } from '@/store/ToastContext'
 import { useAuth } from '@/store/AuthContext'
 import type { InviteToken } from '@/types'
-
 const STEPS = [
   'Witaj',
   'Projekt',
@@ -18,13 +17,21 @@ const ONBOARDING_KEY = 'taskmaster2_onboarding_done'
 /** Check if onboarding has been completed (localStorage). */
 export function isOnboardingDone(): boolean {
   if (typeof window === 'undefined') return true
-  return localStorage.getItem(ONBOARDING_KEY) === 'true'
+  try {
+    return localStorage.getItem(ONBOARDING_KEY) === 'true'
+  } catch {
+    return false
+  }
 }
 
 /** Mark onboarding as completed. */
 export function completeOnboarding(): void {
   if (typeof window === 'undefined') return
-  localStorage.setItem(ONBOARDING_KEY, 'true')
+  try {
+    localStorage.setItem(ONBOARDING_KEY, 'true')
+  } catch {
+    // localStorage unavailable (private browsing, quota exceeded) — non-fatal
+  }
 }
 
 export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
@@ -32,7 +39,6 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
   const [projectName, setProjectName] = useState('')
   const [projectDescription, setProjectDescription] = useState('')
   const [inviteLink, setInviteLink] = useState('')
-  const [rawToken, setRawToken] = useState<string | null>(null)
   const [quickAddText, setQuickAddText] = useState('')
   const [busy, setBusy] = useState(false)
   const { addToast } = useToast()
@@ -70,7 +76,6 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
       const invite: InviteToken = await api.invites.create()
       const link = `${window.location.origin}/auth?token=${encodeURIComponent(invite.raw_token ?? '')}`
       setInviteLink(link)
-      setRawToken(invite.raw_token ?? null)
       addToast('Link zaproszenia wygenerowany', 'success')
     } catch (err: unknown) {
       addToast(err instanceof Error ? err.message : 'Błąd generowania zaproszenia', 'error')
@@ -81,7 +86,6 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
 
   const skipInvite = useCallback(() => {
     setInviteLink('')
-    setRawToken(null)
     setStep(3)
   }, [])
 
@@ -285,12 +289,6 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
                     </button>
                   </div>
                 </div>
-                {rawToken && (
-                  <div className="rounded-lg border border-border bg-muted/30 p-3">
-                    <p className="mb-1 text-sm font-medium text-gray-900 dark:text-white">Token (widoczny raz)</p>
-                    <code className="block overflow-x-auto rounded-md bg-background p-2 text-xs">{rawToken}</code>
-                  </div>
-                )}
               </div>
             )}
 

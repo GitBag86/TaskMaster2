@@ -729,7 +729,7 @@ def create_task():
     notifications = create_assignment_notifications(task, user, assignees)
     db.session.commit()
 
-    task_link = url_for('index', _external=True) + f'tasks/{task.id}'
+    task_link = task_url(task)
     for assignee in assignees:
         if assignee.email:
             subject = f"Zostałeś przypisany do zadania: {task.title}"
@@ -765,7 +765,7 @@ def update_task(task_id):
         return jsonify({"error": err.messages}), 400
 
     if g.get('current_role') not in ('manager', 'super_admin'):
-        if not user_can_access_task(user, task) or not is_user_start_task_update(data):
+        if not user_can_access_task(user, task) or not is_user_start_task_update(validated):
             return jsonify({"error": "Only admins can update tasks"}), 403
         if task_is_done(task):
             return jsonify({"error": "Nie można rozpocząć zakończonego zadania"}), 409
@@ -808,7 +808,7 @@ def update_task(task_id):
 
     db.session.commit()
 
-    task_link = url_for('index', _external=True) + f'tasks/{task.id}' # Assuming tasks are viewed at /tasks/{id}
+    task_link = task_url(task)
 
     # Send email for status change
     if 'status' in validated and old_status != task.status:
