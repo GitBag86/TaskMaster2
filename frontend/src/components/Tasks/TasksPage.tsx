@@ -207,24 +207,23 @@ export default function TasksPage() {
     setSelectedTaskIds(selected ? new Set(visibleTaskIds) : new Set())
   }
 
-  const handleDelete = async (id: number) => {
+  const undoDelete = useCallback(async (task: Task) => {
     try {
-      await api.tasks.delete(id)
-      setTasks(prev => prev.filter(task => task.id !== id))
-      setSelectedTaskIds(prev => {
-        const next = new Set(prev)
-        next.delete(id)
-        return next
+      await api.tasks.create({
+        title: task.title,
+        assignee_ids: task.assignees?.map(a => a.id),
+        priority: task.priority,
+        project: task.project,
+        due_date: task.due_date ?? undefined,
+        notes: task.notes,
       })
-      setTotal(prev => Math.max(0, prev - 1))
-      if (selectedTask?.id === id) {
-        setSelectedTask(null)
-      }
-      addToast('Zadanie usunięte', 'success')
+      setTotal(prev => prev + 1)
+      await fetchTasks(page)
+      addToast('Usunięcie cofnięte', 'success')
     } catch {
-      addToast('Błąd usuwania', 'error')
+      addToast('Nie udało się cofnąć usunięcia', 'error')
     }
-  }
+  }, [addToast, fetchTasks, page])
 
   const handleBulkComplete = async () => {
     const taskIds = [...selectedTaskIds]
@@ -256,17 +255,43 @@ export default function TasksPage() {
     }
   }
 
+  const undoBulkDelete = useCallback(async (taskIds: number[], tasks: Task[]) => {
+    const deleted = tasks.filter(t => taskIds.includes(t.id))
+    let restored = 0
+    for (const task of deleted) {
+      try {
+        await api.tasks.create({
+          title: task.title,
+          assignee_ids: task.assignees?.map(a => a.id),
+          priority: task.priority,
+          project: task.project,
+          due_date: task.due_date ?? undefined,
+          notes: task.notes,
+        })
+        restored++
+      } catch {
+        // skip failed restores
+      }
+    }
+    if (restored > 0) {
+      setTotal(prev => prev + restored)
+      await fetchTasks(page)
+      addToast(`Przywrócono ${restored} zadań`, 'success')
+    }
+  }, [addToast, fetchTasks, page])
+
   const handleBulkDelete = async () => {
     const taskIds = [...selectedTaskIds]
     if (taskIds.length === 0) return
     if (!window.confirm(`Usunąć ${taskIds.length} zaznaczonych zadań?`)) return
 
+    const deletedTasks = tasks.filter(t => taskIds.includes(t.id))
     try {
       await api.tasks.bulkDelete(taskIds)
       setTasks(prev => prev.filter(task => !selectedTaskIds.has(task.id)))
       setTotal(prev => Math.max(0, prev - taskIds.length))
       setSelectedTaskIds(new Set())
-      addToast(`Usunięto ${taskIds.length} zadań`, 'success')
+      addToast(`Usunięto ${taskIds.length} zadań`, 'success', { undo: () => void undoBulkDelete(taskIds, deletedTasks) })
     } catch (err: unknown) {
       addToast(err instanceof Error ? err.message : 'Błąd usuwania masowego', 'error')
     }

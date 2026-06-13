@@ -33,6 +33,14 @@ export function Toaster() {
             {icons[toast.type]}
           </span>
           <span className="text-sm text-gray-900 dark:text-white">{toast.message}</span>
+          {toast.action && (
+            <button
+              onClick={() => { toast.action!.onClick(); removeToast(toast.id); }}
+              className="whitespace-nowrap text-sm font-semibold text-primary hover:text-primary/80"
+            >
+              {toast.action.label}
+            </button>
+          )}
           <button onClick={() => removeToast(toast.id)} className="ml-2 text-muted-foreground hover:text-gray-900 dark:hover:text-white">
             ✕
           </button>

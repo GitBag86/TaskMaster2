@@ -244,6 +244,7 @@ export interface Toast {
   id: string;
   message: string;
   type: "success" | "error" | "warning" | "info";
+  action?: { label: string; onClick: () => void };
 }
 
 // Role helpers — use these instead of hardcoded string comparisons.
