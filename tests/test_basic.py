@@ -724,6 +724,21 @@ def test_dependency_cycle_is_rejected(auth_client):
     assert response.status_code == 409
     assert "cykl" in response.get_json()["error"]
 
+def test_multi_hop_dependency_cycle_is_rejected(auth_client):
+    a = auth_client.post('/tasks', json={"title": "A"}).get_json()
+    b = auth_client.post('/tasks', json={"title": "B"}).get_json()
+    c = auth_client.post('/tasks', json={"title": "C"}).get_json()
+    auth_client.post(f'/tasks/{a["id"]}/dependencies', json={"depends_on_task_id": b["id"]})
+    auth_client.post(f'/tasks/{b["id"]}/dependencies', json={"depends_on_task_id": c["id"]})
+
+    response = auth_client.post(
+        f'/tasks/{c["id"]}/dependencies',
+        json={"depends_on_task_id": a["id"]},
+    )
+
+    assert response.status_code == 409
+    assert "cykl" in response.get_json()["error"]
+
 def test_dependency_delete_updates_task(auth_client, app):
     blocked = auth_client.post('/tasks', json={"title": "Remove dependency"}).get_json()
     blocker = auth_client.post('/tasks', json={"title": "No longer blocking"}).get_json()

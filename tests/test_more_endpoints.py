@@ -183,6 +183,64 @@ def test_import_tasks_requires_manager(client, app):
     assert response.status_code == 401
 
 
+def test_import_tasks_creates_tasks_and_projects(auth_client, app):
+    with app.app_context():
+        team_id = default_team_id(app)
+        admin = User.query.filter_by(username="admin").first()
+
+    response = auth_client.post("/tasks/import", json={
+        "projects": [{"name": "ImportedProj", "description": "From export"}],
+        "tasks": [
+            {"title": "Imported task 1", "priority": "high", "project": "ImportedProj"},
+            {"title": "Imported task 2", "priority": "medium", "project": "ImportedProj"},
+            {"title": "No project task"},
+        ],
+    })
+    assert response.status_code == 201
+    data = response.get_json()
+    assert data["imported"] == 3
+    assert data["errors"] == []
+
+    with app.app_context():
+        project = Project.query.filter_by(name="ImportedProj").one()
+        assert project.description == "From export"
+        assert Task.query.filter_by(project="ImportedProj").count() == 2
+        assert Task.query.filter_by(title="No project task").count() == 1
+
+
+def test_import_tasks_skips_duplicate_projects(auth_client, app):
+    with app.app_context():
+        team_id = default_team_id(app)
+        admin = User.query.filter_by(username="admin").first()
+        existing = Project(name="ExistingProj", team_id=team_id, created_by_id=admin.id)
+        db.session.add(existing)
+        db.session.commit()
+        existing_id = existing.id
+
+    response = auth_client.post("/tasks/import", json={
+        "projects": [{"name": "ExistingProj", "description": "Should be ignored"}],
+        "tasks": [{"title": "Task in existing", "project": "ExistingProj"}],
+    })
+    assert response.status_code == 201
+    data = response.get_json()
+    assert data["imported"] == 1
+
+    with app.app_context():
+        project = db.session.get(Project, existing_id)
+        assert project.description != "Should be ignored"
+        assert Task.query.filter_by(project="ExistingProj").count() == 1
+
+
+def test_import_tasks_reports_errors_for_missing_titles(auth_client, app):
+    response = auth_client.post("/tasks/import", json={
+        "tasks": [{"title": ""}, {"title": "  "}, {"title": "Valid"}],
+    })
+    assert response.status_code == 201
+    data = response.get_json()
+    assert data["imported"] == 1
+    assert len(data["errors"]) == 2
+
+
 def test_update_project_renames_and_updates(auth_client, app):
     with app.app_context():
         team_id = default_team_id(app)
