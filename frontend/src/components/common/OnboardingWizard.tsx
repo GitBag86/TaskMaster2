@@ -72,7 +72,6 @@ export default function OnboardingWizard({ onDone }: { onDone: () => void }) {
       setInviteLink(link)
       setRawToken(invite.raw_token ?? null)
       addToast('Link zaproszenia wygenerowany', 'success')
-      setStep(3)
     } catch (err: unknown) {
       addToast(err instanceof Error ? err.message : 'Błąd generowania zaproszenia', 'error')
     } finally {
