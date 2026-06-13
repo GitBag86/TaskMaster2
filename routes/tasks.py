@@ -1,4 +1,5 @@
 import re
+import threading
 
 from flask import current_app, g, request, jsonify, session, url_for
 from datetime import date, datetime, timedelta, timezone
@@ -25,8 +26,20 @@ from utils.delete_helpers import prepare_task_for_delete
 from utils.errors import CrossTeamReferenceError
 from utils.scoping import get_team_resource_or_404, team_scoped
 
+# Module-level lock that serialises task state transitions (complete / reopen / bulk
+# mark-done) so that dependency-blocked checks and the subsequent commit are
+# atomic within a single Gunicorn process (—w 1, many threads).
+# Eliminates the TOCTOU window between "check task_blocks_completion" and
+# "commit" that could let two mutually-blocking tasks complete concurrently.
+_TASK_STATE_LOCK = threading.Lock()
+
 TASK_ALLOWED_FIELDS = {'title', 'priority', 'project', 'project_id', 'due_date', 'notes', 'completed', 'status'}
 USER_START_TASK_FIELDS = {'status', 'completed'}
+# Per-endpoint request body size limit for import (1 MB, ~2000 tasks).
+# The global MAX_CONTENT_LENGTH (5 MB) in config.py is the last resort;
+# this tighter limit rejects overly large imports early, before any DB work.
+IMPORT_MAX_BYTES = 1 * 1024 * 1024  # 1 MB
+
 BULK_MAX_TASKS = 100
 
 def app_url(path=''):
@@ -804,11 +817,11 @@ def update_task(task_id):
         elif key in TASK_ALLOWED_FIELDS and hasattr(task, key):
             setattr(task, key, value)
 
-    if not was_done and task_is_done(task) and task_blocks_completion(task):
-        db.session.rollback()
-        return blocked_completion_response(task)
-
-    db.session.commit()
+    with _TASK_STATE_LOCK:
+        if not was_done and task_is_done(task) and task_blocks_completion(task):
+            db.session.rollback()
+            return blocked_completion_response(task)
+        db.session.commit()
 
     task_link = task_url(task)
 
@@ -870,24 +883,26 @@ def update_task(task_id):
 def complete_task(task_id):
     user_id = session.get('user_id')
     user = db.session.get(User, user_id)
-    task = get_team_resource_or_404(Task, task_id)
-    if not task:
-        return jsonify({"error": "Task not found"}), 404
 
-    if not user_can_access_task(user, task):
-        return jsonify({"error": "Can only complete tasks assigned to you"}), 403
+    with _TASK_STATE_LOCK:
+        task = get_team_resource_or_404(Task, task_id)
+        if not task:
+            return jsonify({"error": "Task not found"}), 404
 
-    if not task.completed and task_blocks_completion(task):
-        return blocked_completion_response(task)
+        if not user_can_access_task(user, task):
+            return jsonify({"error": "Can only complete tasks assigned to you"}), 403
 
-    will_complete = not task.completed
-    task.completed = not task.completed
-    task.status = 'done' if task.completed else 'todo'
-    notifications = create_unblocked_notifications(task, user) if will_complete else []
+        if not task.completed and task_blocks_completion(task):
+            return blocked_completion_response(task)
 
-    log = ActivityLog(user_id=user_id, task_id=task_id, team_id=task.team_id, action='completed' if task.completed else 'reopened')
-    db.session.add(log)
-    db.session.commit()
+        will_complete = not task.completed
+        task.completed = not task.completed
+        task.status = 'done' if task.completed else 'todo'
+        notifications = create_unblocked_notifications(task, user) if will_complete else []
+
+        log = ActivityLog(user_id=user_id, task_id=task_id, team_id=task.team_id, action='completed' if task.completed else 'reopened')
+        db.session.add(log)
+        db.session.commit()
 
     send_task_completion_emails(task, user)
     send_project_activity_emails(
@@ -1238,19 +1253,21 @@ def bulk_complete_tasks():
     if len(task_ids) > BULK_MAX_TASKS:
         return jsonify({"error": f"Maksymalna liczba zadań w operacji masowej: {BULK_MAX_TASKS}"}), 400
 
-    tasks = bulk_scoped_tasks_or_error(task_ids)
-    blocked_tasks = [task for task in tasks if not task_is_done(task) and task_blocks_completion(task)]
-    if blocked_tasks:
-        return jsonify({
-            "error": "Nie można zakończyć zadań, które mają otwarte zależności lub podzadania.",
-            "blocked_tasks": [task.summary_dict() for task in blocked_tasks],
-        }), 409
+    with _TASK_STATE_LOCK:
+        tasks = bulk_scoped_tasks_or_error(task_ids)
+        blocked_tasks = [task for task in tasks if not task_is_done(task) and task_blocks_completion(task)]
+        if blocked_tasks:
+            return jsonify({
+                "error": "Nie można zakończyć zadań, które mają otwarte zależności lub podzadania.",
+                "blocked_tasks": [task.summary_dict() for task in blocked_tasks],
+            }), 409
 
-    for task in tasks:
-        task.completed = True
-        task.status = 'done'
+        for task in tasks:
+            task.completed = True
+            task.status = 'done'
 
-    db.session.commit()
+        db.session.commit()
+
     emit_task_event("bulk_completed", user, task_ids=task_ids)
     return jsonify({"message": f"Zakończono {len(task_ids)} zadań"}), 200
 
@@ -1312,6 +1329,11 @@ def import_tasks():
 
     if g.get('current_role') not in ('manager', 'super_admin'):
         return jsonify({"error": "Tylko administrator może importować zadania"}), 403
+
+    if request.content_length and request.content_length > IMPORT_MAX_BYTES:
+        return jsonify({
+            "error": f"Przekroczono limit rozmiaru żądania ({IMPORT_MAX_BYTES // 1024} KB). Zmniejsz liczbę zadań."
+        }), 413
 
     data = request.get_json()
     if not data or 'tasks' not in data:
@@ -1396,31 +1418,33 @@ def bulk_update_tasks():
     if len(task_ids) > BULK_MAX_TASKS:
         return jsonify({"error": f"Maksymalna liczba zadań w operacji masowej: {BULK_MAX_TASKS}"}), 400
 
-    tasks = bulk_scoped_tasks_or_error(task_ids)
-    marks_done = updates.get('completed') is True or updates.get('status') == 'done'
-    blocked_tasks = [task for task in tasks if marks_done and not task_is_done(task) and task_blocks_completion(task)]
-    if blocked_tasks:
-        return jsonify({
-            "error": "Nie można zakończyć zadań, które mają otwarte zależności lub podzadania.",
-            "blocked_tasks": [task.summary_dict() for task in blocked_tasks],
-        }), 409
+    with _TASK_STATE_LOCK:
+        tasks = bulk_scoped_tasks_or_error(task_ids)
+        marks_done = updates.get('completed') is True or updates.get('status') == 'done'
+        blocked_tasks = [task for task in tasks if marks_done and not task_is_done(task) and task_blocks_completion(task)]
+        if blocked_tasks:
+            return jsonify({
+                "error": "Nie można zakończyć zadań, które mają otwarte zależności lub podzadania.",
+                "blocked_tasks": [task.summary_dict() for task in blocked_tasks],
+            }), 409
 
-    for task in tasks:
-        for key, value in updates.items():
-            if key == 'assignees':
-                update_task_assignees(task, value or [])
-            elif key == 'project_id':
-                project, project_error = resolve_project(value, None, user)
-                if project_error:
-                    message, status = project_error
-                    return jsonify({"error": message}), status
-                set_task_project(task, project)
-            elif key == 'project':
-                project, _ = resolve_project(None, value, user)
-                set_task_project(task, project)
-            elif key in TASK_ALLOWED_FIELDS and hasattr(task, key):
-                setattr(task, key, value)
+        for task in tasks:
+            for key, value in updates.items():
+                if key == 'assignees':
+                    update_task_assignees(task, value or [])
+                elif key == 'project_id':
+                    project, project_error = resolve_project(value, None, user)
+                    if project_error:
+                        message, status = project_error
+                        return jsonify({"error": message}), status
+                    set_task_project(task, project)
+                elif key == 'project':
+                    project, _ = resolve_project(None, value, user)
+                    set_task_project(task, project)
+                elif key in TASK_ALLOWED_FIELDS and hasattr(task, key):
+                    setattr(task, key, value)
 
-    db.session.commit()
+        db.session.commit()
+
     emit_task_event("bulk_updated", user, task_ids=task_ids)
     return jsonify({"message": f"Zaktualizowano {len(task_ids)} zadań"}), 200

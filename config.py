@@ -42,6 +42,12 @@ class Config:
     SESSION_COOKIE_SECURE = default_session_cookie_secure()
     SESSION_COOKIE_SAMESITE = os.environ.get("SESSION_COOKIE_SAMESITE", "Lax")
     PERMANENT_SESSION_LIFETIME = timedelta(hours=int(os.environ.get("SESSION_LIFETIME_HOURS", 24)))
+    # Global request body limit — 5 MB. Flask returns 413 Payload Too Large
+    # automatically for anything exceeding this. Protects against OOM attacks
+    # via large POST/PUT payloads (e.g. /tasks/import). Individual endpoints
+    # may enforce tighter limits.
+    MAX_CONTENT_LENGTH = 5 * 1024 * 1024  # 5 MB
+
     WTF_CSRF_TIME_LIMIT = None  # Match session lifetime; no shorter expiry to avoid mid-session lockouts
     SESSION_REFRESH_EACH_REQUEST = True
     ENABLE_SCHEDULER = os.environ.get("ENABLE_SCHEDULER", "true").lower() == "true"

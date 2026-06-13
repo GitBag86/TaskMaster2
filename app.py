@@ -90,6 +90,34 @@ def _register_blueprints(app):
     pass
 
 
+def _register_security_headers(app):
+    """Apply security headers to every response.
+
+    Content-Security-Policy restricts script/style sources to prevent XSS.
+    HSTS enforces HTTPS. Other headers disable framing, MIME sniffing, and
+    control referrer info. See security audit GHSA-* for rationale.
+    """
+    @app.after_request
+    def _apply_security_headers(response):
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'self'; "
+            "script-src 'self'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "connect-src 'self' ws: wss:; "
+            "img-src 'self' data:; "
+            "font-src 'self'; "
+            "frame-ancestors 'none'; "
+            "base-uri 'self'; "
+            "form-action 'self'",
+        )
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        return response
+
+
 def _register_routes(app):
     @app.route("/")
     def index():
@@ -111,6 +139,7 @@ def _register_routes(app):
         return send_from_directory(app.static_folder, "sw.js")
 
     @app.route("/health")
+    @limiter.exempt
     def health():
         return jsonify({
             "status": "healthy",
@@ -118,6 +147,7 @@ def _register_routes(app):
         }), 200
 
     @app.route("/version")
+    @limiter.exempt
     def version():
         return jsonify({
             "version": APP_VERSION,
@@ -127,6 +157,7 @@ def _register_routes(app):
         }), 200
 
     @app.route("/ready")
+    @limiter.exempt
     def ready():
         checks = {"database": False, "socketio": socketio is not None}
         try:
@@ -332,6 +363,7 @@ def create_app(config_object=Config):
 
     _register_blueprints(app)
     _register_routes(app)
+    _register_security_headers(app)
     register_auth_layer(app)
     register_request_logging(app)
     _log_mail_status(app)
