@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import type { Task, ActivityLog } from "@/types"
 import { isAdminRole } from "@/types"
 import { api } from "@/api/client"
@@ -84,6 +84,19 @@ export default function TaskDetail({ task, onDelete, onComplete, onUpdate, onClo
       setActivity([])
     }
   }
+
+  const refreshTask = useCallback(async () => {
+    try {
+      const updated = await api.tasks.get(task.id)
+      setSubtasks(updated.subtasks)
+      setComments(updated.comments)
+      setDependencies(updated.dependencies)
+      setBlockedBy(updated.blocked_by)
+      setBlocking(updated.blocking)
+    } catch {
+      // silently fail — next mount will reconcile
+    }
+  }, [task.id])
 
   const handleStartTask = async () => {
     try {
@@ -173,7 +186,7 @@ export default function TaskDetail({ task, onDelete, onComplete, onUpdate, onClo
           taskId={task.id}
           subtasks={subtasks}
           isAdmin={isAdmin}
-          onSubtaskChange={fetchActivity}
+          onSubtaskChange={refreshTask}
         />
 
         <TaskComments
