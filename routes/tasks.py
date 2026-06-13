@@ -724,17 +724,17 @@ def create_task():
     db.session.add(task)
     db.session.flush()
 
+    log = ActivityLog(user_id=user_id, task_id=task.id, team_id=task.team_id, action='created', details={'title': task.title})
+    db.session.add(log)
+    notifications = create_assignment_notifications(task, user, assignees)
+    db.session.commit()
+
     task_link = url_for('index', _external=True) + f'tasks/{task.id}'
     for assignee in assignees:
         if assignee.email:
             subject = f"Zostałeś przypisany do zadania: {task.title}"
             body = email_sender.get_task_assignment_body(task.title, assignee.username, task_link)
             email_sender.enqueue_email(assignee.email, subject, body)
-
-    log = ActivityLog(user_id=user_id, task_id=task.id, team_id=task.team_id, action='created', details={'title': task.title})
-    db.session.add(log)
-    notifications = create_assignment_notifications(task, user, assignees)
-    db.session.commit()
 
     send_project_activity_emails(
         task.project_record,

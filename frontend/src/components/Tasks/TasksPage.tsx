@@ -243,6 +243,7 @@ export default function TasksPage() {
   const undoBulkDelete = useCallback(async (taskIds: number[], tasks: Task[]) => {
     const deleted = tasks.filter(t => taskIds.includes(t.id))
     let restored = 0
+    let failed = 0
     for (const task of deleted) {
       try {
         await api.tasks.create({
@@ -255,15 +256,21 @@ export default function TasksPage() {
         })
         restored++
       } catch {
-        // skip failed restores
+        failed++
       }
     }
     if (restored > 0) {
       setTotal(prev => prev + restored)
-      await fetchTasks(page)
-      addToast(`Przywrócono ${restored} zadań`, 'success')
+      await fetchTasks(pageRef.current)
+      if (failed > 0) {
+        addToast(`Przywrócono ${restored} zadań, ${failed} nie powiodło się`, 'warning')
+      } else {
+        addToast(`Przywrócono ${restored} zadań`, 'success')
+      }
+    } else if (failed > 0) {
+      addToast('Nie udało się przywrócić żadnego zadania', 'error')
     }
-  }, [addToast, fetchTasks, page])
+  }, [addToast, fetchTasks])
 
   const handleBulkDelete = async () => {
     const taskIds = [...selectedTaskIds]

@@ -92,26 +92,33 @@ type AuthErrorHandler = (error: ApiError) => void;
 let authErrorHandler: AuthErrorHandler | null = null;
 
 let csrfToken: string | null = null;
+let csrfPromise: Promise<void> | null = null;
 
 /** Fetch a fresh CSRF token from the server and cache it. */
 export async function initCsrf(): Promise<void> {
-  try {
-    const response = await fetch(`${API_BASE}/csrf-token`, {
-      credentials: "include",
-    });
-    if (response.ok) {
-      const data = (await response.json()) as { csrf_token: string };
-      csrfToken = data.csrf_token;
+  if (csrfPromise) return csrfPromise;
+  csrfPromise = (async () => {
+    try {
+      const response = await fetch(`${API_BASE}/csrf-token`, {
+        credentials: "include",
+      });
+      if (response.ok) {
+        const data = (await response.json()) as { csrf_token: string };
+        csrfToken = data.csrf_token;
+      }
+    } catch {
+      csrfToken = null;
+    } finally {
+      csrfPromise = null;
     }
-  } catch {
-    // CSRF token fetch failure is non-fatal; requests will proceed without it
-    csrfToken = null;
-  }
+  })();
+  return csrfPromise;
 }
 
 /** Clear the cached CSRF token (e.g. on logout). */
 export function clearCsrf(): void {
   csrfToken = null;
+  csrfPromise = null;
 }
 
 export class ApiError extends Error {
@@ -143,16 +150,19 @@ const ERROR_FIELD_LABELS: Record<string, string> = {
   _schema: "Formularz",
 };
 
-function formatErrorValue(value: unknown): string {
+function formatErrorValue(value: unknown, seen?: WeakSet<object>): string {
   if (typeof value === "string") return value;
   if (Array.isArray(value)) {
-    return value.map(formatErrorValue).filter(Boolean).join(", ");
+    return value.map(v => formatErrorValue(v, seen)).filter(Boolean).join(", ");
   }
   if (value && typeof value === "object") {
+    seen = seen ?? new WeakSet<object>()
+    if (seen.has(value)) return "[Circular]"
+    seen.add(value)
     return Object.entries(value)
       .map(([field, fieldError]) => {
         const label = ERROR_FIELD_LABELS[field] ?? field;
-        const message = formatErrorValue(fieldError);
+        const message = formatErrorValue(fieldError, seen);
         return message ? `${label}: ${message}` : label;
       })
       .filter(Boolean)
