@@ -19,15 +19,15 @@
 
 ## 🟢 New Features (User-Visible)
 
-| # | Feature | Why |
-|---|---|---|
-| 8 | **Task detail route** `/tasks/:id` | Current modal-only approach breaks URL sharing, back button, and deep linking |
-| 9 | **User settings page** | No way to change password, email, notification prefs after login |
-| 10 | **Recurring tasks UI** | Backend model exists (`RecurringTask`) — no frontend to configure it |
-| 11 | **Project templates UI** | Backend has `ProjectTemplate` + seed catalogue — no frontend |
-| 12 | **Undo delete with toast** | Hard-delete is irreversible; soft-delete + 5-second undo is industry standard |
-| 13 | **Dark mode on auth pages** | Theme is only applied inside `DashboardLayout` — login/signup is always light |
-| 14 | **Bulk action bar UI** | Backend supports bulk complete/delete/update, but frontend has no multi-select UX |
+| # | Feature | Why | Status |
+|---|---|---|---|
+| 8 | **Task detail route** `/tasks/:id` | Current modal-only approach breaks URL sharing, back button, and deep linking | ✅ |
+| 9 | **User settings page** | No way to change password, email, notification prefs after login | ✅ |
+| 10 | **Recurring tasks UI** | Backend model exists (`RecurringTask`) — no frontend to configure it | ⬜ |
+| 11 | **Project templates UI** | Backend has `ProjectTemplate` + seed catalogue — no frontend | ⬜ |
+| 12 | **Undo delete with toast** | Hard-delete is irreversible; soft-delete + 5-second undo is industry standard | ⬜ |
+| 13 | **Dark mode on auth pages** | Theme is only applied inside `DashboardLayout` — login/signup is always light | ✅ |
+| 14 | **Bulk action bar UI** | Backend supports bulk complete/delete/update, but frontend has no multi-select UX | ⬜ |
 
 ## 🔵 Code Quality & DX
 

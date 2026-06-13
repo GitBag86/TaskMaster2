@@ -142,7 +142,8 @@ components/
   ├─ Dashboard/DashboardPage.tsx
   ├─ Kanban/KanbanPage.tsx
   ├─ Layout/DashboardLayout.tsx
-  ├─ Tasks/{TasksPage,TaskCard,TaskDetail,TaskForm}.tsx
+  ├─ Tasks/{TasksPage,TaskCard,TaskDetail,TaskDetailPage,TaskForm}.tsx
+  ├─ Settings/SettingsPage.tsx
   └─ common/{Skeletons,Toaster,CommandPalette}.tsx
 store/
   ├─ AuthContext.tsx    - User auth state & session
@@ -157,7 +158,7 @@ types/
 
 **State Management** (React Context API, not Redux)
 
-- `AuthContext` - Authentication, session validation, logout
+- `AuthContext` - Authentication, session validation, logout, `updateUser()` for profile updates
 - `SocketContext` - Socket.IO connection, connection state
 - `ThemeContext` - Dark mode (Tailwind `darkMode: 'class'`)
 - `ToastContext` - Toast notifications with `showToast(message, type)`

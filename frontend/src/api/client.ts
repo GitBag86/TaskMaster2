@@ -243,6 +243,16 @@ export const api = {
     logoutAll: () =>
       request<{ message: string }>("/auth/logout-all", { method: "POST" }),
     me: () => request<User>("/auth/me"),
+    updateProfile: (data: { email?: string; marketing_consent?: boolean }) =>
+      request<User>("/auth/me", {
+        method: "PUT",
+        body: JSON.stringify(data),
+      }),
+    changePassword: (currentPassword: string, newPassword: string) =>
+      request<{ message: string }>("/auth/change-password", {
+        method: "POST",
+        body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+      }),
     forgotPassword: (email: string) =>
       request<{ message: string }>("/auth/forgot-password", {
         method: "POST",

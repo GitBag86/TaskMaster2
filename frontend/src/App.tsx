@@ -16,6 +16,7 @@ const KanbanPage = lazy(() => import('./components/Kanban/KanbanPage'))
 const DashboardPage = lazy(() => import('./components/Dashboard/DashboardPage'))
 const CalendarPage = lazy(() => import('./components/Calendar/CalendarPage'))
 const ActivityPage = lazy(() => import('./components/Activity/ActivityPage'))
+const SettingsPage = lazy(() => import('./components/Settings/SettingsPage'))
 const TeamsAdminPage = lazy(() => import('./components/Admin/TeamsAdminPage'))
 const TeamDetailPage = lazy(() => import('./components/Admin/TeamDetailPage'))
 const AdminAuditPage = lazy(() => import('./components/Admin/AdminAuditPage'))
@@ -67,6 +68,7 @@ function AppRoutes() {
           <Route path="dashboard" element={<RoleRoute roles={['manager', 'user']}><DashboardPage /></RoleRoute>} />
           <Route path="calendar" element={<RoleRoute roles={['manager', 'user']}><CalendarPage /></RoleRoute>} />
           <Route path="activity" element={<RoleRoute roles={['manager', 'user']}><ActivityPage /></RoleRoute>} />
+          <Route path="settings" element={<RoleRoute roles={['manager', 'user']}><SettingsPage /></RoleRoute>} />
           <Route path="admin" element={<AdminRedirect />} />
           <Route path="admin/teams" element={<RoleRoute roles={['super_admin']}><TeamsAdminPage /></RoleRoute>} />
           <Route path="admin/teams/:id" element={<RoleRoute roles={['super_admin']}><TeamDetailPage /></RoleRoute>} />

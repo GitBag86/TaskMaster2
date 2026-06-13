@@ -228,15 +228,51 @@ def reset_password():
     return jsonify({"message": "Hasło zostało zmienione. Możesz się teraz zalogować."}), 200
 
 
-@auth_bp.route('/me', methods=['GET'])
+@auth_bp.route('/me', methods=['GET', 'PUT'])
 @login_required
 def get_current_user():
     user_id = session.get('user_id')
     user = db.session.get(User, user_id)
     if not user:
         return jsonify({"error": "Użytkownik nie znaleziony"}), 404
+
+    if request.method == 'PUT':
+        data = request.get_json() or {}
+        email = data.get('email', '').strip().lower()
+        if email and email != user.email:
+            if User.query.filter(User.email == email, User.id != user.id).first():
+                return jsonify({"error": "Ten adres e-mail jest już używany"}), 409
+            user.email = email
+        if 'marketing_consent' in data:
+            user.marketing_consent = bool(data['marketing_consent'])
+        db.session.commit()
+        return jsonify(user.to_dict(expand_team=True))
+
     # expand_team=True so the SPA gets `team` populated for the sidebar (Task 15).
     return jsonify(user.to_dict(expand_team=True))
+
+
+@auth_bp.route('/change-password', methods=['POST'])
+@login_required
+def change_password():
+    user_id = session.get('user_id')
+    user = db.session.get(User, user_id)
+    data = request.get_json() or {}
+    current_password = data.get('current_password', '')
+    new_password = data.get('new_password', '')
+
+    if not user.check_password(current_password):
+        return jsonify({"error": "Obecne hasło jest nieprawidłowe"}), 403
+
+    if len(new_password) < 6:
+        return jsonify({"error": "Nowe hasło musi mieć co najmniej 6 znaków"}), 400
+
+    user.set_password(new_password)
+    user.session_version += 1
+    db.session.commit()
+    _establish_session(user)
+
+    return jsonify({"message": "Hasło zostało zmienione"}), 200
 
 
 def _establish_session(user):
