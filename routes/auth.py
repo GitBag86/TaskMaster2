@@ -187,6 +187,9 @@ def forgot_password():
         send_password_reset_email(user, raw_token)
     except Exception:
         logger.exception("Failed to send password reset email to %s", email)
+        # Always return the same generic message to prevent email enumeration.
+        # The recipient won't know whether the account exists or the email failed,
+        # but the error is logged server-side for operational awareness.
 
     return jsonify({"message": "Jeśli konto o podanym adresie istnieje, otrzymasz e-mail z linkiem resetującym."}), 200
 

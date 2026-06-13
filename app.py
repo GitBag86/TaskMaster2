@@ -102,14 +102,14 @@ def _register_routes(app):
     def index():
         try:
             return send_from_directory(app.static_folder, "index.html")
-        except Exception:
+        except (FileNotFoundError, OSError):
             return jsonify({"error": "Frontend not built. Run: cd frontend && npm run build"}), 503
 
     @app.route("/auth")
     def auth_page():
         try:
             return send_from_directory(app.static_folder, "index.html")
-        except Exception:
+        except (FileNotFoundError, OSError):
             return jsonify({"error": "Frontend not built. Run: cd frontend && npm run build"}), 503
 
     @app.route("/manifest.json")
@@ -142,7 +142,7 @@ def _register_routes(app):
         try:
             db.session.execute(text("SELECT 1"))
             checks["database"] = True
-        except Exception:
+        except SQLAlchemyError:
             logger.exception("Readiness database check failed")
 
         status_code = 200 if all(checks.values()) else 503
@@ -207,7 +207,7 @@ def _register_routes(app):
         if "text/html" in accept:
             try:
                 return send_from_directory(app.static_folder, "index.html")
-            except Exception:
+            except (FileNotFoundError, OSError):
                 pass
         return jsonify({"error": "Not found"}), 404
 
