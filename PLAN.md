@@ -1,6 +1,6 @@
 # TaskMaster2 — Proposed Upgrades & Optimizations
 
-## ✅ Completed
+## ✅ Completed (Batch 1 — Bugfixes & Performance)
 
 | # | Item | Status |
 |---|---|---|
@@ -17,31 +17,31 @@
 | 27 | **Multi-hop dependency cycle** (A→B→C→A) | ✅ |
 | 22/23 | **Admin role/team move tests** — already covered in test_admin_endpoints.py | ✅ |
 
-## 🟢 New Features (User-Visible)
+## ✅ Completed (Batch 2 — Features)
 
 | # | Feature | Why | Status |
 |---|---|---|---|
 | 8 | **Task detail route** `/tasks/:id` | Current modal-only approach breaks URL sharing, back button, and deep linking | ✅ |
 | 9 | **User settings page** | No way to change password, email, notification prefs after login | ✅ |
-| 10 | **Recurring tasks UI** | Backend model exists (`RecurringTask`) — no frontend to configure it | ⬜ |
-| 11 | **Project templates UI** | Backend has `ProjectTemplate` + seed catalogue — no frontend | ⬜ |
-| 12 | **Undo delete with toast** | Hard-delete is irreversible; soft-delete + 5-second undo is industry standard | ⬜ |
+| 12 | **Undo delete with toast** | Hard-delete is irreversible; soft-delete + 5-second undo is industry standard | ✅ |
 | 13 | **Dark mode on auth pages** | Theme is only applied inside `DashboardLayout` — login/signup is always light | ✅ |
-| 14 | **Bulk action bar UI** | Backend supports bulk complete/delete/update, but frontend has no multi-select UX | ⬜ |
+| 14 | **Bulk action bar UI** | Backend supports bulk complete/delete/update — frontend already has multi-select UX | ✅ (pre-existing) |
 
-## 🔵 Code Quality & DX
+## ✅ Completed (Batch 3 — Code Quality, DX, Security)
 
-| # | Change | Location |
+| # | Change | Status |
 |---|---|---|
-| 15 | **Replace `npm install` with `npm ci`** in Dockerfile for deterministic builds | `Dockerfile:10` |
-| 16 | **Use explicit imports** instead of `from routes.auth import *` | `routes/__init__.py:13-21` |
-| 17 | **Add granular React Query key invalidation** — comment addition shouldn't refetch dashboard stats | `frontend/` query hooks |
-| 18 | **Fix `api/client.ts` network error handling** — unhandled fetch rejections bypass `ApiError` | `frontend/src/api/client.ts:196-200` |
-| 19 | **Add `ENV FLASK_ENV=production`** to Dockerfile — default in config.py is `development` | `Dockerfile` |
+| 15 | **Replace `npm install` with `npm ci`** in Dockerfile for deterministic builds | ✅ |
+| 16 | **Use explicit imports** instead of `from routes.auth import *` | ✅ |
+| 17 | **Add granular React Query key invalidation** — skipped (no React Query usage in app code) | ⏭️ |
+| 18 | **Fix `api/client.ts` network error handling** — unhandled fetch rejections now throw ApiError | ✅ |
+| 19 | **Add `ENV FLASK_ENV=production`** to Dockerfile | ✅ |
+| 20 | **Validate cross-team on assignee_ids** — reject users with `team_id=None` from being assigned | ✅ (pre-existing) |
+| 21 | **Add password complexity requirements** (uppercase, digit, special char) | ✅ |
 
-## 🟣 Security
+## ⬜ Not Implemented
 
-| # | Improvement | Location |
+| # | Item | Reason |
 |---|---|---|
-| 20 | **Validate cross-team on assignee_ids** — reject users with `team_id=None` (super_admin) from being assigned | `routes/tasks.py:232-233` |
-| 21 | **Add password complexity requirements** (uppercase, digit, special char) | `routes/auth.py:206-209` |
+| 10 | **Recurring tasks UI** | Backend model exists, no API endpoints yet — deferred |
+| 11 | **Project templates UI** | Skipped per request |

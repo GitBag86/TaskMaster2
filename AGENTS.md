@@ -413,6 +413,8 @@ Benchmark suite: `scripts/seed_perf.py` + `scripts/perf_bench.py`.
 - **Marshmallow v3.x compatibility** - Use `load_default` instead of `default` for field defaults in schemas.
 - **Decorator stacking** - `@app.route()` must come BEFORE `@login_required` in the decorator stack.
 - **Import-time binding** - `from utils.email_sender import enqueue_email` creates a local reference at import time. Monkeypatching `utils.email_sender.enqueue_email` won't affect calls in the importing module. Always use `from utils import email_sender` and call `email_sender.enqueue_email(...)` so lookups go through attribute access.
+- **Toast with undo action** — `addToast(message, type, { undo: () => ... })` shows a "Cofnij" button that stays visible for 6 seconds. Used after task/bulk deletion to allow client-side recreation of deleted resources.
+- **Password complexity** — Signup, admin create user, change-password, and reset-password enforce: uppercase letter, digit, special character (`!@#$%^&*(),.?":{}|<>_-+=`). Validation is in `schemas.py` (SignupSchema, AdminUserCreateSchema) and inline in `routes/auth.py`.
 - **WebSocket workers** - With Gunicorn use `gthread`. For local development, `threading` is preferred (avoid `eventlet`).
 - **Port Conflicts**: Port 5000 (Flask dev) - sprawdz przez `lsof -i :5000` / `netstat -ano | findstr :5000`. Na Railway Gunicorn binduje sie na `$PORT`.
 - **Frontend not built**: Flask serves `frontend/dist/`. After frontend edits run `npm run build` (or rebuild Docker image).
