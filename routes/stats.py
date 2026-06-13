@@ -42,28 +42,37 @@ def get_dashboard_stats():
     user_id = session.get('user_id')
     user = db.session.get(User, user_id)
 
-    tasks = visible_task_query(user).all()
+    base = visible_task_query(user)
 
-    total = len(tasks)
-    completed = len([t for t in tasks if t.completed])
+    total = base.count()
+    completed = base.filter(Task.completed.is_(True)).count()
     pending = total - completed
     today = datetime.now(timezone.utc).date()
-    overdue = len([t for t in tasks if t.due_date and not t.completed and t.due_date < today])
+    overdue = base.filter(
+        Task.due_date.isnot(None),
+        Task.due_date < today,
+        Task.completed.is_(False),
+    ).count()
 
+    priority_rows = base.with_entities(
+        Task.priority, db.func.count(Task.id)
+    ).group_by(Task.priority).all()
     by_priority = {
-        'high': len([t for t in tasks if t.priority == 'high']),
-        'medium': len([t for t in tasks if t.priority == 'medium']),
-        'low': len([t for t in tasks if t.priority == 'low'])
+        'high': 0, 'medium': 0, 'low': 0,
     }
+    for priority, count in priority_rows:
+        by_priority[priority] = count
 
-    by_project = {}
-    for task in tasks:
-        proj = task.project
-        if proj not in by_project:
-            by_project[proj] = {'total': 0, 'completed': 0}
-        by_project[proj]['total'] += 1
-        if task.completed:
-            by_project[proj]['completed'] += 1
+    project_rows = base.with_entities(
+        Task.project,
+        db.func.count(Task.id),
+        db.func.count(Task.id).filter(Task.completed.is_(True)),
+    ).group_by(Task.project).all()
+
+    by_project = {
+        row[0]: {'total': row[1], 'completed': row[2]}
+        for row in project_rows
+    }
 
     completion_rate = round((completed / total * 100), 1) if total > 0 else 0
 
@@ -74,7 +83,7 @@ def get_dashboard_stats():
         'overdue': overdue,
         'completion_rate': completion_rate,
         'by_priority': by_priority,
-        'by_project': by_project
+        'by_project': by_project,
     })
 
 @stats_bp.route('/reports/weekly', methods=['GET'])

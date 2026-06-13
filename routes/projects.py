@@ -9,6 +9,7 @@ from models import ActivityLog, Project, Task, TaskDependency, User, db
 from routes import projects_bp
 from routes.auth import login_required
 from routes.tasks import (
+    _eager_task_options,
     normalize_project_name,
     send_project_activity_emails,
     send_project_completed_emails,
@@ -24,9 +25,27 @@ from utils.errors import CrossTeamReferenceError
 from utils.scoping import get_team_resource_or_404, team_scoped
 
 
+def _eager_project_options():
+    return (
+        selectinload(Project.members),
+        selectinload(Project.tasks).selectinload(Task.assignees),
+        selectinload(Project.tasks).selectinload(Task.comments),
+        selectinload(Project.tasks).selectinload(Task.subtasks),
+        selectinload(Project.tasks).selectinload(Task.tags),
+        selectinload(Project.tasks).selectinload(Task.dependencies).selectinload(TaskDependency.depends_on_task),
+        selectinload(Project.tasks).selectinload(Task.dependent_links).selectinload(TaskDependency.task),
+        selectinload(Project.tasks).joinedload(Task.project_record),
+    )
+
+
 def visible_projects_for_user(user):
     if g.get('current_role') in ('manager', 'super_admin'):
-        return team_scoped(Project.query, Project).order_by(Project.archived.asc(), Project.name.asc()).all()
+        return (
+            team_scoped(Project.query, Project)
+            .options(*_eager_project_options())
+            .order_by(Project.archived.asc(), Project.name.asc())
+            .all()
+        )
 
     from routes.tasks import assigned_task_query
     project_ids = {
@@ -36,12 +55,20 @@ def visible_projects_for_user(user):
     }
     member_project_ids = {
         project.id
-        for project in team_scoped(Project.query, Project).filter(Project.members.any(User.id == user.id)).all()
+        for project in team_scoped(Project.query, Project)
+        .filter(Project.members.any(User.id == user.id))
+        .all()
     }
     project_ids.update(member_project_ids)
     if not project_ids:
         return []
-    return team_scoped(Project.query, Project).filter(Project.id.in_(project_ids)).order_by(Project.name.asc()).all()
+    return (
+        team_scoped(Project.query, Project)
+        .filter(Project.id.in_(project_ids))
+        .options(*_eager_project_options())
+        .order_by(Project.name.asc())
+        .all()
+    )
 
 
 def project_completion_status(project):

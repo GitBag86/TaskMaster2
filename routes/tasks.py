@@ -1097,6 +1097,10 @@ def filter_tasks():
     user_id = session.get('user_id')
     user = db.session.get(User, user_id)
 
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 500, type=int)
+    per_page = min(max(per_page, 1), 1000)
+
     query = visible_task_query(user)
 
     assigned_to = request.args.get('assigned_to')
@@ -1113,8 +1117,14 @@ def filter_tasks():
     if completed is not None:
         query = query.filter_by(completed=(completed.lower() == 'true'))
 
-    tasks = query.options(*_eager_task_options()).all()
-    return jsonify({"tasks": [t.to_dict() for t in tasks]})
+    total = query.count()
+    tasks = query.options(*_eager_task_options()).offset((page - 1) * per_page).limit(per_page).all()
+    return jsonify({
+        "tasks": [t.to_dict() for t in tasks],
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+    })
 
 @tasks_bp.route('/tasks/by-project', methods=['GET'])
 @login_required
@@ -1122,7 +1132,10 @@ def tasks_by_project():
     user_id = session.get('user_id')
     user = db.session.get(User, user_id)
 
-    tasks = visible_task_query(user).options(*_eager_task_options()).all()
+    limit = request.args.get('limit', 500, type=int)
+    limit = min(max(limit, 1), 1000)
+
+    tasks = visible_task_query(user).options(*_eager_task_options()).limit(limit).all()
 
     projects = {}
     if g.get('current_role') in ('manager', 'super_admin'):
@@ -1143,13 +1156,25 @@ def search_tasks():
     query_str = request.args.get('q', '').strip()
 
     if not query_str:
-        return jsonify({'tasks': []})
+        return jsonify({'tasks': [], 'total': 0})
 
-    tasks = visible_task_query(user).options(*_eager_task_options()).filter(
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+    per_page = min(max(per_page, 1), 200)
+
+    query = visible_task_query(user).filter(
         (Task.title.ilike(f'%{query_str}%')) | (Task.notes.ilike(f'%{query_str}%'))
-    ).all()
+    )
 
-    return jsonify({'tasks': [t.to_dict() for t in tasks]})
+    total = query.count()
+    tasks = query.options(*_eager_task_options()).offset((page - 1) * per_page).limit(per_page).all()
+
+    return jsonify({
+        'tasks': [t.to_dict() for t in tasks],
+        'total': total,
+        'page': page,
+        'per_page': per_page,
+    })
 
 @tasks_bp.route('/tasks/<int:task_id>/tags/<int:tag_id>', methods=['POST', 'DELETE'])
 @login_required
