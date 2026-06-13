@@ -8,6 +8,12 @@ VALID_ROLES = ('super_admin', 'manager', 'user')
 LEGACY_ROLES = ('admin',)
 ALL_ROLES_TRANSITIONAL = VALID_ROLES + LEGACY_ROLES
 
+PASSWORD_VALIDATORS = [
+    validate.Length(min=6, error="Hasło musi mieć co najmniej 6 znaków."),
+    validate.Regexp(r'(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>_\-+=])',
+                    error="Hasło musi zawierać wielką literę, cyfrę i znak specjalny."),
+]
+
 
 class UserSchema(Schema):
     id = fields.Int(dump_only=True)
@@ -24,6 +30,7 @@ class UserSchema(Schema):
 class TaskSchema(Schema):
     id = fields.Int(dump_only=True)
     title = fields.Str(required=True, validate=validate.Length(min=1, max=200))
+    # Accepts assignee_ids (int list) from JSON body, deserialises into assignees.
     assignees = fields.List(
         fields.Int(),
         load_default=[],
@@ -72,11 +79,7 @@ class SignupSchema(Schema):
     )
     password = fields.Str(
         required=True,
-        validate=[
-            validate.Length(min=6, error="Hasło musi mieć co najmniej 6 znaków."),
-            validate.Regexp(r'(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>_\-+=])',
-                            error="Hasło musi zawierać wielką literę, cyfrę i znak specjalny."),
-        ],
+        validate=PASSWORD_VALIDATORS,
         error_messages={"required": "Podaj hasło."},
     )
     email = fields.Email(
@@ -104,11 +107,7 @@ class AdminUserCreateSchema(Schema):
     )
     password = fields.Str(
         required=True,
-        validate=[
-            validate.Length(min=6, error="Hasło musi mieć co najmniej 6 znaków."),
-            validate.Regexp(r'(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>_\-+=])',
-                            error="Hasło musi zawierać wielką literę, cyfrę i znak specjalny."),
-        ],
+        validate=PASSWORD_VALIDATORS,
         error_messages={"required": "Podaj hasło."},
     )
     email = fields.Email(

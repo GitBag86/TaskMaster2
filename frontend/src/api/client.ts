@@ -22,8 +22,8 @@ import type {
 } from "@/types";
 
 const API_BASE =
-  (import.meta.env.VITE_API_BASE as string | undefined) ??
-  (import.meta.env.VITE_API_URL as string | undefined) ??
+  (typeof import.meta !== 'undefined' && (import.meta.env.VITE_API_BASE as string | undefined)) ??
+  (typeof import.meta !== 'undefined' && (import.meta.env.VITE_API_URL as string | undefined)) ??
   "";
 
 type TaskPayload = {
@@ -88,6 +88,9 @@ type TeamPayload = {
 };
 
 type AuthErrorHandler = (error: ApiError) => void;
+
+/** Sentinel status code for network errors (fetch itself failed, not HTTP). */
+const NETWORK_ERROR_STATUS = 0;
 
 let authErrorHandler: AuthErrorHandler | null = null;
 
@@ -211,7 +214,7 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
       credentials: "include",
     });
   } catch {
-    throw new ApiError("Błąd sieci — sprawdź połączenie", 0, null);
+    throw new ApiError("Błąd sieci — sprawdź połączenie", NETWORK_ERROR_STATUS, null);
   }
 
   if (!response.ok) {

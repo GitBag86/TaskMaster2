@@ -162,7 +162,6 @@ def _register_routes(app):
             "dependencies",
             "subtasks",
             "notifications",
-            "socket.io",
             "version",
             "project-templates",
         )

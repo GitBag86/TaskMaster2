@@ -39,7 +39,7 @@ export default function TaskForm({ onSubmit, onCancel, initialData, submitLabel 
   const [assignedUserId, setAssignedUserId] = useState(initialData?.assignee_ids?.[0] ? String(initialData.assignee_ids[0]) : '');
   const [priority, setPriority] = useState(initialData?.priority || 'medium');
   const [project, setProject] = useState(initialData?.project || '');
-  const [projectId] = useState<number | null | undefined>(initialData?.project_id);
+  const projectId = initialData?.project_id;
   const [dueDate, setDueDate] = useState(initialData?.due_date || '');
   const [notes, setNotes] = useState(initialData?.notes || '');
   const [users, setUsers] = useState<User[]>(availableAssignees ?? []);

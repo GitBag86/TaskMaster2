@@ -40,7 +40,9 @@ def manage_tags():
 @login_required
 def delete_tag(tag_id):
     tag = db.session.get(Tag, tag_id)
-    if not tag or tag.team_id != g.get('current_team_id') or tag.user_id != session.get('user_id'):
+    if not tag or tag.team_id != g.get('current_team_id'):
+        return jsonify({"error": "Not found"}), 404
+    if tag.user_id != session.get('user_id') and g.get('current_role') != 'manager':
         return jsonify({"error": "Not found"}), 404
     db.session.delete(tag)
     db.session.commit()
@@ -63,6 +65,9 @@ def manage_filters():
         validated = schema.load(data)
     except ValidationError as err:
         return jsonify({"error": err.messages}), 400
+
+    if validated['filters'] and not isinstance(validated['filters'], dict):
+        return jsonify({"error": "Filtr musi być obiektem."}), 400
 
     filter_obj = SavedFilter(
         user_id=user_id,

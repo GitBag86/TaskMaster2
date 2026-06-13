@@ -250,6 +250,12 @@ def _purge_user_data(user):
     TeamAuditLog.query.filter_by(target_user_id=user.id).update({"target_user_id": None})
     TeamAuditLog.query.filter_by(actor_id=user.id).update({"actor_id": None})
     Notification.query.filter_by(user_id=user.id).delete()
+    # RecurringTask has no FK to User — delete via tasks owned by user
+    RecurringTask.query.filter(
+        RecurringTask.task_id.in_(
+            db.session.query(Task.id).filter(Task.user_id == user.id).scalar_subquery()
+        )
+    ).delete(synchronize_session=False)
 
 def _cascade_purge_team(team):
     """Hard-delete every resource bound to a team prior to deleting the team itself.

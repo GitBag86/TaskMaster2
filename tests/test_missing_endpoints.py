@@ -168,7 +168,7 @@ def test_delete_tag(auth_client):
     assert "todelete" not in names
 
 
-def test_delete_other_users_tag_returns_404(auth_client, app):
+def test_delete_other_users_tag_returns_404(user_client, app):
     with app.app_context():
         team_id = Team.query.filter_by(slug="default").one().id
         other = User(username="tag_owner", email="tag_owner@example.com", role="user", team_id=team_id)
@@ -180,7 +180,7 @@ def test_delete_other_users_tag_returns_404(auth_client, app):
         db.session.commit()
         tag_id = tag.id
 
-    response = auth_client.delete(f"/tags/{tag_id}")
+    response = user_client.delete(f"/tags/{tag_id}")
     assert response.status_code == 404
 
 
