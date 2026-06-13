@@ -19,14 +19,7 @@ from models import (
 )
 from schemas import TaskSchema, CommentSchema, SubtaskSchema, DependencySchema
 from routes.auth import login_required
-from utils.email_sender import (
-    enqueue_email,
-    get_project_activity_body,
-    get_project_completed_body,
-    get_task_status_change_body,
-    get_task_assignment_body,
-    get_task_completion_body,
-)
+from utils import email_sender
 from utils.notifications import create_notification, emit_notifications
 from utils.delete_helpers import prepare_task_for_delete
 from utils.errors import CrossTeamReferenceError
@@ -77,10 +70,10 @@ def send_task_completion_emails(task, actor):
     link = task_url(task)
     action_label = "zakończone" if task.completed else "przywrócone"
     for recipient in task_email_users(task, actor=actor):
-        enqueue_email(
+        email_sender.enqueue_email(
             recipient.email,
             f"Zadanie {action_label}: {task.title}",
-            get_task_completion_body(task.title, recipient.username, actor.username, task.completed, link),
+            email_sender.get_task_completion_body(task.title, recipient.username, actor.username, task.completed, link),
         )
 
 def send_project_activity_emails(project, actor, activity, task=None, exclude_user_ids=None, extra_users=None):
@@ -93,10 +86,10 @@ def send_project_activity_emails(project, actor, activity, task=None, exclude_us
         *(extra_users or []),
     ]
     for recipient in unique_email_users(recipients, actor=actor, exclude_user_ids=exclude_user_ids):
-        enqueue_email(
+        email_sender.enqueue_email(
             recipient.email,
             f"Zmiana w projekcie: {project.name}",
-            get_project_activity_body(
+            email_sender.get_project_activity_body(
                 project.name,
                 recipient.username,
                 actor.username,
@@ -109,10 +102,10 @@ def send_project_activity_emails(project, actor, activity, task=None, exclude_us
 def send_project_completed_emails(project, actor):
     link = project_url(project)
     for recipient in project_email_users(project, actor=actor):
-        enqueue_email(
+        email_sender.enqueue_email(
             recipient.email,
             f"Projekt zakończony: {project.name}",
-            get_project_completed_body(project.name, recipient.username, actor.username, link),
+            email_sender.get_project_completed_body(project.name, recipient.username, actor.username, link),
         )
 
 def parse_due_date(value):
@@ -721,8 +714,8 @@ def create_task():
     for assignee in assignees:
         if assignee.email:
             subject = f"Zostałeś przypisany do zadania: {task.title}"
-            body = get_task_assignment_body(task.title, assignee.username, task_link)
-            enqueue_email(assignee.email, subject, body)
+            body = email_sender.get_task_assignment_body(task.title, assignee.username, task_link)
+            email_sender.enqueue_email(assignee.email, subject, body)
 
     log = ActivityLog(user_id=user_id, task_id=task.id, team_id=task.team_id, action='created', details={'title': task.title})
     db.session.add(log)
@@ -803,8 +796,8 @@ def update_task(task_id):
     if 'status' in data and old_status != task.status:
         if task.owner and task.owner.email:
             subject = f"Zmiana statusu zadania: {task.title}"
-            body = get_task_status_change_body(task.title, old_status, task.status, task_link)
-            enqueue_email(task.owner.email, subject, body)
+            body = email_sender.get_task_status_change_body(task.title, old_status, task.status, task_link)
+            email_sender.enqueue_email(task.owner.email, subject, body)
 
     # Send email for new assignments
     assignment_notifications = []
@@ -816,8 +809,8 @@ def update_task(task_id):
             if not assignee_user.email:
                 continue
             subject = f"Zostałeś przypisany do zadania: {task.title}"
-            body = get_task_assignment_body(task.title, assignee_user.username, task_link)
-            enqueue_email(assignee_user.email, subject, body)
+            body = email_sender.get_task_assignment_body(task.title, assignee_user.username, task_link)
+            email_sender.enqueue_email(assignee_user.email, subject, body)
 
     emit_task_event("updated", user, task=task)
 
@@ -1330,7 +1323,7 @@ def import_tasks():
 
     if imported_count > 0:
         db.session.commit()
-        emit_team_event("tasks_imported", user, extra={"count": imported_count})
+        emit_task_event("tasks_imported", user, extra={"count": imported_count})
 
     return jsonify({
         "imported": imported_count,
