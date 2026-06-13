@@ -75,7 +75,7 @@ def test_signup_handles_db_write_failure_gracefully(app, client, monkeypatch):
         "/auth/signup",
         json={
             "username": "db_fail_user",
-            "password": "password123",
+            "password": "P@ssw0rd!",
             "email": "db_fail@example.com",
             "accept_terms": True,
             "accept_privacy": True,
@@ -95,7 +95,7 @@ def test_integrity_error_on_duplicate_username(auth_client, app):
         "/users",
         json={
             "username": "admin",
-            "password": "another_pass",
+            "password": "P@ssw0rd!",
             "email": "admin2@example.com",
             "role": "user",
         },
@@ -262,7 +262,7 @@ def test_invite_token_invalid_on_signup(client, app):
         "/auth/signup",
         json={
             "username": "bad_token_user",
-            "password": "password123",
+            "password": "P@ssw0rd!",
             "email": "bad_token@example.com",
             "invite_token": "nonexistent-token",
             "accept_terms": True,
@@ -313,7 +313,7 @@ def test_rate_limit_on_signup_endpoint(rate_client, rate_limited_app):
             "/auth/signup",
             json={
                 "username": "rate_test",
-                "password": "password123",
+                "password": "P@ssw0rd!",
                 "email": "rate_test@example.com",
                 "accept_terms": True,
                 "accept_privacy": True,
@@ -326,7 +326,7 @@ def test_rate_limit_on_signup_endpoint(rate_client, rate_limited_app):
         "/auth/signup",
         json={
             "username": "rate_test_final",
-            "password": "password123",
+            "password": "P@ssw0rd!",
             "email": "rate_test_final@example.com",
             "accept_terms": True,
             "accept_privacy": True,

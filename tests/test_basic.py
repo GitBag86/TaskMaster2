@@ -163,7 +163,7 @@ def test_signup(client):
 
     response = client.post('/auth/signup', json={
         "username": "newuser",
-        "password": "password123",
+        "password": "P@ssw0rd!",
         "email": "newuser@example.com",
         "accept_terms": True,
         "accept_privacy": True,
@@ -181,7 +181,7 @@ def test_signup(client):
 def test_signup_requires_terms_and_privacy(client):
     response = client.post('/auth/signup', json={
         "username": "user_without_consents",
-        "password": "password123",
+        "password": "P@ssw0rd!",
         "email": "noconsent@example.com",
         "accept_terms": False,
         "accept_privacy": False,
@@ -191,16 +191,49 @@ def test_signup_requires_terms_and_privacy(client):
     assert "accept_terms" in error_payload
     assert "accept_privacy" in error_payload
 
+def test_signup_rejects_weak_password(client):
+    client.application.config["SIGNUP_MODE"] = "default_team"
+    with client.application.app_context():
+        from models import Team
+        if not Team.query.filter_by(name="Default").first():
+            db.session.add(Team(name="Default", slug="default"))
+            db.session.commit()
+
+    response = client.post('/auth/signup', json={
+        "username": "weakpass_user",
+        "password": "onlylowercase1",
+        "email": "weak@example.com",
+        "accept_terms": True,
+        "accept_privacy": True,
+        "accept_marketing": False
+    })
+    assert response.status_code == 400
+    error = response.get_json()["error"]
+    assert isinstance(error, dict)
+    assert any("wielk" in str(v) or "specjalny" in str(v) for v in error.values())
+
+    response = client.post('/auth/signup', json={
+        "username": "weakpass_user2",
+        "password": "OnlyLowercase",
+        "email": "weak2@example.com",
+        "accept_terms": True,
+        "accept_privacy": True,
+        "accept_marketing": False
+    })
+    assert response.status_code == 400
+    error = response.get_json()["error"]
+    assert isinstance(error, dict)
+    assert any("cyfr" in str(v) or "specjalny" in str(v) for v in error.values())
+
+
 def test_default_admin_bootstrap(app):
     from app import _ensure_default_admin
-    from models import db
 
     with app.app_context():
         _ensure_default_admin(app)
         admin = User.query.filter_by(username="admin").first()
 
         assert admin is not None
-        # Task 6: bootstrap account is the super_admin (R3.4); team_id is NULL.
         assert admin.role == "super_admin"
         assert admin.team_id is None
         assert admin.email == "admin@taskmaster.local"
@@ -884,7 +917,7 @@ def test_regular_user_cannot_create_task(user_client):
 def test_admin_can_create_user(auth_client, app):
     response = auth_client.post('/users', json={
         "username": "created_by_admin",
-        "password": "password123",
+        "password": "P@ssw0rd!",
         "email": "created_by_admin@example.com",
         "role": "manager",
     })
@@ -897,12 +930,12 @@ def test_admin_can_create_user(auth_client, app):
     with app.app_context():
         created = User.query.filter_by(username="created_by_admin").first()
         assert created is not None
-        assert created.check_password("password123")
+        assert created.check_password("P@ssw0rd!")
 
 def test_regular_user_cannot_manage_users(user_client):
     create_response = user_client.post('/users', json={
         "username": "blocked",
-        "password": "password123",
+        "password": "P@ssw0rd!",
         "email": "blocked@example.com",
     })
     delete_response = user_client.delete('/users/1')

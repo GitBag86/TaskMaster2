@@ -193,11 +193,16 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
     Object.assign(headers, options.headers);
   }
 
-  const response = await fetch(`${API_BASE}${url}`, {
-    ...options,
-    headers,
-    credentials: "include",
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${url}`, {
+      ...options,
+      headers,
+      credentials: "include",
+    });
+  } catch {
+    throw new ApiError("Błąd sieci — sprawdź połączenie", 0, null);
+  }
 
   if (!response.ok) {
     const error = await response

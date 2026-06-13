@@ -72,7 +72,11 @@ class SignupSchema(Schema):
     )
     password = fields.Str(
         required=True,
-        validate=validate.Length(min=6, error="Hasło musi mieć co najmniej 6 znaków."),
+        validate=[
+            validate.Length(min=6, error="Hasło musi mieć co najmniej 6 znaków."),
+            validate.Regexp(r'(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>_\-+=])',
+                            error="Hasło musi zawierać wielką literę, cyfrę i znak specjalny."),
+        ],
         error_messages={"required": "Podaj hasło."},
     )
     email = fields.Email(
@@ -100,7 +104,11 @@ class AdminUserCreateSchema(Schema):
     )
     password = fields.Str(
         required=True,
-        validate=validate.Length(min=6, error="Hasło musi mieć co najmniej 6 znaków."),
+        validate=[
+            validate.Length(min=6, error="Hasło musi mieć co najmniej 6 znaków."),
+            validate.Regexp(r'(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>_\-+=])',
+                            error="Hasło musi zawierać wielką literę, cyfrę i znak specjalny."),
+        ],
         error_messages={"required": "Podaj hasło."},
     )
     email = fields.Email(

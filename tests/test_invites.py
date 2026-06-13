@@ -38,7 +38,7 @@ def login_as(client, user: User) -> None:
 def signup_payload(username: str, token: str | None = None):
     payload = {
         "username": username,
-        "password": "password123",
+        "password": "P@ssw0rd!",
         "email": f"{username}@example.com",
         "accept_terms": True,
         "accept_privacy": True,

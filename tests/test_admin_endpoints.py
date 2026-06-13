@@ -149,7 +149,7 @@ def test_super_admin_creates_team_member(client, app):
         json={
             "username": "new_member",
             "email": "new_member@example.com",
-            "password": "haslo123",
+            "password": "P@ssw0rd!",
             "role": "user",
         },
     )
@@ -181,7 +181,7 @@ def test_super_admin_create_member_rejects_duplicate_username(client, app):
         json={
             "username": "existing",
             "email": "other@example.com",
-            "password": "haslo123",
+            "password": "P@ssw0rd!",
             "role": "user",
         },
     )
@@ -202,7 +202,7 @@ def test_super_admin_create_member_rejects_archived_team(client, app):
         json={
             "username": "no_one",
             "email": "no_one@example.com",
-            "password": "haslo123",
+            "password": "P@ssw0rd!",
             "role": "user",
         },
     )
@@ -221,7 +221,7 @@ def test_super_admin_post_users_redirects_to_admin_endpoint(client, app):
         json={
             "username": "should_fail",
             "email": "should_fail@example.com",
-            "password": "haslo123",
+            "password": "P@ssw0rd!",
             "role": "user",
         },
     )

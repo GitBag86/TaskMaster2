@@ -66,7 +66,7 @@ def test_forgot_password_creates_token_and_returns_success(auth_client, app, mon
 
 
 def test_reset_password_requires_token(client, app):
-    response = client.post("/auth/reset-password", json={"password": "newpassword123"})
+    response = client.post("/auth/reset-password", json={"password": "N3wp@ss!"})
     assert response.status_code == 400
     assert "token" in response.get_json()["error"].lower()
 
@@ -78,7 +78,7 @@ def test_reset_password_requires_minimum_length(client, app):
 
 
 def test_reset_password_rejects_invalid_token(client, app):
-    response = client.post("/auth/reset-password", json={"token": "invalid-token", "password": "validpassword123"})
+    response = client.post("/auth/reset-password", json={"token": "invalid-token", "password": "V@lid123!"})
     assert response.status_code == 400
     assert "token" in response.get_json()["error"].lower()
 
@@ -106,14 +106,14 @@ def test_reset_password_succeeds_with_valid_token(client, app):
 
     response = client.post("/auth/reset-password", json={
         "token": raw_token,
-        "password": "newsecurepassword123",
+        "password": "S3cur3P@ss!",
     })
     assert response.status_code == 200
     assert "zmienione" in response.get_json()["message"].lower()
 
     with app.app_context():
         user = db.session.get(User, user_id)
-        assert user.check_password("newsecurepassword123")
+        assert user.check_password("S3cur3P@ss!")
         reset = PasswordResetToken.query.filter_by(user_id=user_id).first()
         assert reset.consumed_at is not None
 
@@ -140,7 +140,7 @@ def test_reset_password_rejects_expired_token(client, app):
 
     response = client.post("/auth/reset-password", json={
         "token": raw_token,
-        "password": "newsecurepassword123",
+        "password": "S3cur3P@ss!",
     })
     assert response.status_code == 400
     assert "token" in response.get_json()["error"].lower()

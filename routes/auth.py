@@ -1,4 +1,5 @@
 import hashlib
+import re
 
 from flask import current_app, request, jsonify, session
 from marshmallow import ValidationError
@@ -210,6 +211,8 @@ def reset_password():
         return jsonify({"error": "Token jest wymagany"}), 400
     if len(new_password) < 6:
         return jsonify({"error": "Hasło musi mieć co najmniej 6 znaków"}), 400
+    if not re.search(r'(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>_\-+=])', new_password):
+        return jsonify({"error": "Hasło musi zawierać wielką literę, cyfrę i znak specjalny"}), 400
 
     token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
     reset = PasswordResetToken.query.filter_by(token_hash=token_hash).first()
@@ -266,6 +269,8 @@ def change_password():
 
     if len(new_password) < 6:
         return jsonify({"error": "Nowe hasło musi mieć co najmniej 6 znaków"}), 400
+    if not re.search(r'(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>_\-+=])', new_password):
+        return jsonify({"error": "Hasło musi zawierać wielką literę, cyfrę i znak specjalny"}), 400
 
     user.set_password(new_password)
     user.session_version += 1
