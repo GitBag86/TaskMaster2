@@ -386,6 +386,18 @@ def create_unblocked_notifications(blocker_task, actor):
             ))
     return notifications
 
+@tasks_bp.route('/tasks/<int:task_id>', methods=['GET'])
+@login_required
+def get_task(task_id):
+    user = db.session.get(User, session.get('user_id'))
+    task = get_team_resource_or_404(Task, task_id)
+    if not task:
+        return jsonify({"error": "Task not found"}), 404
+    if not user_can_access_task(user, task):
+        return jsonify({"error": "Permission denied"}), 403
+    return jsonify(task.to_dict())
+
+
 @tasks_bp.route('/tasks', methods=['GET'])
 @login_required
 def get_tasks():

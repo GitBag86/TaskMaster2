@@ -355,6 +355,7 @@ export const api = {
       request<PaginationResponse<Task>>(
         `/tasks?page=${page}&per_page=${perPage}`,
       ),
+    get: (id: number) => request<Task>(`/tasks/${id}`),
     blocked: () => request<{ tasks: Task[]; total: number }>("/tasks/blocked"),
     dependencyBoard: () =>
       request<DependencyBoardResponse>("/tasks/dependency-board"),

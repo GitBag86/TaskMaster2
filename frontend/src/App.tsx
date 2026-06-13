@@ -9,6 +9,7 @@ import RoleRoute, { defaultPathForRole } from './components/common/RoleRoute'
 const AuthPage = lazy(() => import('./components/Auth/AuthPage'))
 import DashboardLayout from './components/Layout/DashboardLayout'
 const TasksPage = lazy(() => import('./components/Tasks/TasksPage'))
+const TaskDetailPage = lazy(() => import('./components/Tasks/TaskDetailPage'))
 const TodayPage = lazy(() => import('./components/Today/TodayPage'))
 const ProjectsPage = lazy(() => import('./components/Projects/ProjectsPage'))
 const KanbanPage = lazy(() => import('./components/Kanban/KanbanPage'))
@@ -59,6 +60,7 @@ function AppRoutes() {
           }
         >
           <Route index element={<RoleRoute roles={['manager', 'user']}><TasksPage /></RoleRoute>} />
+          <Route path="tasks/:id" element={<RoleRoute roles={['manager', 'user']}><TaskDetailPage /></RoleRoute>} />
           <Route path="today" element={<RoleRoute roles={['manager', 'user']}><TodayPage /></RoleRoute>} />
           <Route path="projects" element={<RoleRoute roles={['manager', 'user']}><ProjectsPage /></RoleRoute>} />
           <Route path="kanban" element={<RoleRoute roles={['manager', 'user']}><KanbanPage /></RoleRoute>} />

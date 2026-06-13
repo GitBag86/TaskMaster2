@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import type { Task } from '@/types'
 import { isAdminRole } from '@/types'
 import { api } from '@/api/client'
@@ -7,7 +8,6 @@ import { useAuth } from '@/store/AuthContext'
 import { useSocket } from '@/store/SocketContext'
 import TaskCard from './TaskCard'
 import TaskForm from './TaskForm'
-import TaskDetail from './TaskDetail'
 import { TasksPageSkeleton } from '@/components/common/Skeletons'
 import Modal from '@/components/common/Modal'
 import { EmptyState } from '@/components/common/EmptyState'
@@ -52,7 +52,6 @@ export default function TasksPage() {
   const page = Number(filters.page)
 
   const [showCreate, setShowCreate] = useState(false)
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null)
   const [total, setTotal] = useState(0)
   const [isSearchMode, setIsSearchMode] = useState(false)
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<number>>(() => new Set())
@@ -60,6 +59,7 @@ export default function TasksPage() {
   const [bulkPriority, setBulkPriority] = useState<'' | Task['priority']>('')
   const [bulkProject, setBulkProject] = useState('')
 
+  const navigate = useNavigate()
   const { addToast } = useToast()
   const { user } = useAuth()
   const { lastTaskEvent } = useSocket()
@@ -118,18 +118,6 @@ export default function TasksPage() {
       setFilter('page', String(totalPages))
     }
   }, [page, totalPages, setFilter])
-
-  useEffect(() => {
-    if (!selectedTask) return
-    const syncedTask = tasks.find(task => task.id === selectedTask.id)
-    if (!syncedTask && !loading) {
-      setSelectedTask(null)
-      return
-    }
-    if (syncedTask && syncedTask !== selectedTask) {
-      setSelectedTask(syncedTask)
-    }
-  }, [loading, selectedTask, tasks])
 
   const handleTaskEvent = useCallback((event: typeof lastTaskEvent) => {
     if (!event || event.user === user?.username) return
@@ -506,7 +494,7 @@ export default function TasksPage() {
             <TaskCard
               key={task.id}
               task={task}
-              onClick={() => setSelectedTask(task)}
+              onClick={() => navigate(`/tasks/${task.id}`)}
               onComplete={() => void handleComplete(task.id)}
               selectable={isAdminRole(user?.role)}
               selected={selectedTaskIds.has(task.id)}
@@ -547,20 +535,7 @@ export default function TasksPage() {
         </Modal>
       )}
 
-      {selectedTask && (
-        <Modal onClose={() => setSelectedTask(null)}>
-          <TaskDetail
-            task={selectedTask}
-            onDelete={id => void handleDelete(id)}
-            onComplete={id => void handleComplete(id)}
-            onUpdate={updatedTask => {
-              replaceTask(updatedTask)
-              setSelectedTask(updatedTask)
-            }}
-            onClose={() => setSelectedTask(null)}
-          />
-        </Modal>
-      )}
+
     </div>
   )
 }
