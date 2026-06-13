@@ -1,5 +1,6 @@
 from html import escape
 
+import smtplib
 import socket
 import threading
 
@@ -115,7 +116,7 @@ def enqueue_email(to_email, subject, body):
         with app.app_context():
             try:
                 send_email(to_email, subject, body)
-            except Exception:  # noqa: BLE001 - log and swallow, never crash the worker
+            except (OSError, smtplib.SMTPException):
                 app.logger.exception("Async email worker crashed for %s", to_email)
 
     _get_executor().submit(_worker)

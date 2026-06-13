@@ -156,8 +156,9 @@ def task_blocks_completion(task):
 def would_create_dependency_cycle(task_id, depends_on_task_id):
     pending = [depends_on_task_id]
     visited = set()
+    depth = 0
 
-    while pending:
+    while pending and depth < 50:
         current_id = pending.pop()
         if current_id == task_id:
             return True
@@ -168,6 +169,7 @@ def would_create_dependency_cycle(task_id, depends_on_task_id):
             dependency.depends_on_task_id
             for dependency in team_scoped(TaskDependency.query, TaskDependency).filter_by(task_id=current_id).all()
         )
+        depth += 1
 
     return False
 

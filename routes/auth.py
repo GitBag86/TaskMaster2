@@ -1,10 +1,12 @@
 import hashlib
 import re
+import secrets
+import smtplib
 
 from flask import current_app, request, jsonify, session
 from marshmallow import ValidationError
 from routes import auth_bp
-from models import db, Team, TeamInvite, User
+from models import db, Team, TeamInvite, User, PasswordResetToken
 from schemas import LoginSchema, SignupSchema
 from utils.errors import InviteTokenInvalidError, SignupDisabledError, TeamArchivedError
 import logging
@@ -162,11 +164,8 @@ def logout_all():
 @limiter.limit("3 per minute")
 def forgot_password():
     """Generate a password reset token and e-mail it to the user."""
-    from datetime import datetime, timedelta, timezone
-    import hashlib
-    import secrets
+    from datetime import timedelta
 
-    from models import PasswordResetToken
     from utils.email_sender import send_password_reset_email
 
     data = request.get_json() or {}
@@ -193,7 +192,7 @@ def forgot_password():
 
     try:
         send_password_reset_email(user, raw_token)
-    except Exception:
+    except (smtplib.SMTPException, OSError):
         logger.exception("Failed to send password reset email to %s", email)
         # Always return the same generic message to prevent email enumeration.
         # The recipient won't know whether the account exists or the email failed,
@@ -207,10 +206,6 @@ def forgot_password():
 @limiter.limit("5 per minute")
 def reset_password():
     """Reset password using a valid reset token."""
-    import hashlib
-    from datetime import datetime, timezone
-    from models import PasswordResetToken
-
     data = request.get_json() or {}
     token = (data.get("token") or "").strip()
     new_password = data.get("password", "")

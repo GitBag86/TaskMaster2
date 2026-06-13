@@ -109,7 +109,6 @@ export default function TaskForm({ onSubmit, onCancel, initialData, submitLabel 
         if (body.error) extracted._schema = String(body.error);
         setFieldErrors(extracted);
       }
-      throw err; // re-throw so parent can show toast
     } finally {
       setSubmitting(false);
     }
