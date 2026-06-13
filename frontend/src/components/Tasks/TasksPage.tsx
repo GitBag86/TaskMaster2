@@ -207,24 +207,6 @@ export default function TasksPage() {
     setSelectedTaskIds(selected ? new Set(visibleTaskIds) : new Set())
   }
 
-  const undoDelete = useCallback(async (task: Task) => {
-    try {
-      await api.tasks.create({
-        title: task.title,
-        assignee_ids: task.assignees?.map(a => a.id),
-        priority: task.priority,
-        project: task.project,
-        due_date: task.due_date ?? undefined,
-        notes: task.notes,
-      })
-      setTotal(prev => prev + 1)
-      await fetchTasks(page)
-      addToast('Usunięcie cofnięte', 'success')
-    } catch {
-      addToast('Nie udało się cofnąć usunięcia', 'error')
-    }
-  }, [addToast, fetchTasks, page])
-
   const handleBulkComplete = async () => {
     const taskIds = [...selectedTaskIds]
     if (taskIds.length === 0) return

@@ -46,7 +46,7 @@ describe('ErrorBoundary', () => {
 
   it('retry button calls handleRetry and clears error state', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    const { container } = render(
+    render(
       <ErrorBoundary>
         <ThrowComponent shouldThrow={true} />
       </ErrorBoundary>,
