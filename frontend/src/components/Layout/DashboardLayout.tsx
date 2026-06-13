@@ -112,6 +112,13 @@ export default function DashboardLayout() {
     void loadNotifications()
   }, [loadNotifications])
 
+  // Poll fallback: refresh every 30s when Socket.IO is disconnected
+  useEffect(() => {
+    if (connected || !canUseNotifications) return
+    const interval = setInterval(() => void loadNotifications(), 30000)
+    return () => clearInterval(interval)
+  }, [connected, canUseNotifications, loadNotifications])
+
   useEffect(() => {
     if (!canUseNotifications || !lastNotification || lastNotification.user_id !== user?.id) return
     setNotifications(prev => [lastNotification, ...prev.filter(item => item.id !== lastNotification.id)].slice(0, 20))

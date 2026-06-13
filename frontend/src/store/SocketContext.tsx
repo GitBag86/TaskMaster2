@@ -54,7 +54,10 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
 
     socket.on('connect', () => setConnected(true));
     socket.on('disconnect', () => setConnected(false));
-    socket.on('connect_error', () => setConnected(false));
+    socket.on('connect_error', (err) => {
+      console.error('[Socket.IO] Connection error:', err.message);
+      setConnected(false);
+    });
 
     socket.on('task_action', (data: TaskEvent) => {
       setLastTaskEvent(data);
