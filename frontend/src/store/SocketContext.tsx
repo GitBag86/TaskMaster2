@@ -71,7 +71,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     });
 
     socket.on('notification', (notification: NotificationItem) => {
-      if (notification.user_id !== user.id) return;
+      if (notification.user_id != null && notification.user_id !== user.id) return;
       setLastNotification(notification);
       addToast(notification.message, 'info');
     });

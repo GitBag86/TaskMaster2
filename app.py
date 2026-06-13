@@ -100,10 +100,7 @@ def _register_routes(app):
 
     @app.route("/auth")
     def auth_page():
-        try:
-            return send_from_directory(app.static_folder, "index.html")
-        except (FileNotFoundError, OSError):
-            return jsonify({"error": "Frontend not built. Run: cd frontend && npm run build"}), 503
+        return index()
 
     @app.route("/manifest.json")
     def manifest():
@@ -262,7 +259,7 @@ def _ensure_default_admin(app):
                 logger.info("Default admin account is ready without password reset: %s", username)
         db.session.commit()
         logger.info("Default super-admin account is ready: %s", username)
-    except SQLAlchemyError:
+    except (SQLAlchemyError, OSError):
         db.session.rollback()
         logger.info("Default admin bootstrap skipped until database schema is ready")
 

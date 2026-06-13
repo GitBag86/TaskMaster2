@@ -335,6 +335,8 @@ def _cascade_purge_team(team):
 
         User.query.filter(User.id.in_(user_ids)).delete(synchronize_session=False)
 
+    db.session.expire_all()
+
 
 @admin_bp.route("/admin/teams/<int:team_id>", methods=["DELETE"])
 @require_super_admin
