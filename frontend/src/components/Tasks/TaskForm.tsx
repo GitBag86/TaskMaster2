@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api, ApiError } from '@/api/client'
 import { useToast } from '@/store/ToastContext'
-import type { User } from '@/types'
+import type { Project, User } from '@/types'
 
 interface FieldErrors {
   title?: string;
@@ -43,6 +43,8 @@ export default function TaskForm({ onSubmit, onCancel, initialData, submitLabel 
   const [dueDate, setDueDate] = useState(initialData?.due_date || '');
   const [notes, setNotes] = useState(initialData?.notes || '');
   const [users, setUsers] = useState<User[]>(availableAssignees ?? []);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [customProject, setCustomProject] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const { addToast } = useToast();
@@ -67,16 +69,33 @@ export default function TaskForm({ onSubmit, onCancel, initialData, submitLabel 
     fetchUsers();
   }, [addToast, availableAssignees, assignedUserId]);
 
+  useEffect(() => {
+    const fetchProjects = async () => {
+      try {
+        const response = await api.projects.getAll();
+        setProjects(response.projects.filter(p => !p.archived));
+      } catch {
+        // silently fail — project list is not critical
+      }
+    };
+    fetchProjects();
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (project === '__new__' && !customProject.trim()) {
+      setFieldErrors({ project: 'Podaj nazwę nowego projektu' });
+      return;
+    }
     setFieldErrors({});
     setSubmitting(true);
     try {
+      const resolvedProject = lockedProjectName ?? (project === '__new__' ? customProject.trim() : project);
       await onSubmit({
         title,
         assignee_ids: assignedUserId ? [Number(assignedUserId)] : [],
         priority,
-        project: lockedProjectName ?? project,
+        project: resolvedProject,
         project_id: lockedProjectName ? projectId : undefined,
         due_date: dueDate,
         notes,
@@ -137,7 +156,32 @@ export default function TaskForm({ onSubmit, onCancel, initialData, submitLabel 
                 {lockedProjectName}
               </div>
             ) : (
-              <input type="text" value={project} onChange={e => setProject(e.target.value)} className="input" placeholder="Ogólny" />
+              <div className="space-y-2">
+                <select
+                  value={project}
+                  onChange={e => {
+                    setProject(e.target.value)
+                    if (e.target.value !== '__new__') setCustomProject('')
+                  }}
+                  className="input"
+                >
+                  <option value="">Ogólny</option>
+                  {projects.map(p => (
+                    <option key={p.id} value={p.name}>{p.name}</option>
+                  ))}
+                  <option value="__new__">+ Nowy projekt...</option>
+                </select>
+                {project === '__new__' && (
+                  <input
+                    type="text"
+                    value={customProject}
+                    onChange={e => { setCustomProject(e.target.value); setProject(e.target.value) }}
+                    className="input"
+                    placeholder="Nazwa nowego projektu"
+                    autoFocus
+                  />
+                )}
+              </div>
             )}
           </div>
         </div>
