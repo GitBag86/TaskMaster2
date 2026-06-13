@@ -32,7 +32,10 @@ PUBLIC_PREFIXES: tuple[str, ...] = (
     "/auth/logout",
     "/auth/logout-all",
     "/auth/signup-info",  # added in Task 12
+    "/auth/forgot-password",
+    "/auth/reset-password",
     "/socket.io",  # WebSocket negotiation — handled by socketio handlers, not Flask
+    "/assets/",  # frontend static assets — no auth needed
 )
 
 

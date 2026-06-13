@@ -372,8 +372,8 @@ def delete_user(user_id):
     if target.id == g.current_user.id:
         return jsonify({"error": "Nie możesz usunąć własnego konta"}), 400
     if target.role == "super_admin":
-        active_admins = User.query.filter_by(role="super_admin").count()
-        if active_admins <= 1:
+        remaining = User.query.filter(User.role == "super_admin", User.id != target.id).count()
+        if remaining == 0:
             return jsonify({"error": "Nie można usunąć ostatniego super admina"}), 400
 
     username = target.username
@@ -389,6 +389,13 @@ def delete_user(user_id):
     )
 
     db.session.delete(target)
+
+    if target.role == "super_admin":
+        remaining = User.query.filter(User.role == "super_admin", User.id != target.id).count()
+        if remaining == 0:
+            db.session.rollback()
+            return jsonify({"error": "Nie można usunąć ostatniego super admina"}), 400
+
     db.session.commit()
     return "", 204
 

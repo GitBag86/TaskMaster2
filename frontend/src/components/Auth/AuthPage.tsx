@@ -48,10 +48,17 @@ export default function AuthPage() {
     () => new URLSearchParams(location.search).get('token'),
     [location.search],
   );
-  const resetToken = useMemo(
-    () => new URLSearchParams(location.hash.replace(/^#/, '')).get('reset_token'),
-    [location.hash],
-  );
+  const [hashToken, setHashToken] = useState<string | null>(() => {
+    const hash = location.hash.startsWith('#') ? location.hash.substring(1) : location.hash;
+    return new URLSearchParams(hash).get('reset_token');
+  });
+
+  useEffect(() => {
+    const hash = location.hash.startsWith('#') ? location.hash.substring(1) : location.hash;
+    setHashToken(new URLSearchParams(hash).get('reset_token'));
+  }, [location.hash]);
+
+  const resetToken = hashToken;
 
   useEffect(() => {
     if (inviteToken) {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Task } from '@/types'
 import { isAdminRole } from '@/types'
@@ -64,6 +64,9 @@ export default function TasksPage() {
   const { user } = useAuth()
   const { lastTaskEvent } = useSocket()
 
+  const pageRef = useRef(page)
+  useEffect(() => { pageRef.current = page }, [page])
+
   const totalPages = Math.max(1, Math.ceil(total / PER_PAGE))
   const completedCount = tasks.filter(task => task.completed).length
   const pendingCount = Math.max(0, tasks.length - completedCount)
@@ -74,13 +77,13 @@ export default function TasksPage() {
     setTasks(prev => {
       const existingIndex = prev.findIndex(task => task.id === updatedTask.id)
       if (existingIndex === -1) {
-        return page === 1 ? [updatedTask, ...prev].slice(0, PER_PAGE) : prev
+        return pageRef.current === 1 ? [updatedTask, ...prev].slice(0, PER_PAGE) : prev
       }
       const next = [...prev]
       next[existingIndex] = updatedTask
       return next
     })
-  }, [page])
+  }, [])
 
   // Use React Query for caching; seed local state for socket-driven partial updates
   const query = useTasksQuery(page, PER_PAGE)
@@ -137,9 +140,9 @@ export default function TasksPage() {
     }
 
     if (event.task_ids && ['bulk_deleted', 'bulk_completed', 'bulk_updated'].includes(event.action)) {
-      void fetchTasks(page)
+      void fetchTasks(pageRef.current)
     }
-  }, [fetchTasks, page, replaceTask, user?.username])
+  }, [fetchTasks, replaceTask, user?.username])
 
   useEffect(() => {
     handleTaskEvent(lastTaskEvent)

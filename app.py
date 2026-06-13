@@ -85,16 +85,9 @@ def _register_blueprints(app):
     app.register_blueprint(invites_bp)
     app.register_blueprint(projects_bp)
 
-    # Exempt public auth endpoints from CSRF (no session yet for login/signup;
-    # logout must work even when the CSRF token has expired;
-    # forgot/reset-password are accessed before the user is logged in).
-    from routes.auth import forgot_password, login, logout, logout_all, reset_password, signup
-    csrf.exempt(login)
-    csrf.exempt(signup)
-    csrf.exempt(logout)
-    csrf.exempt(logout_all)
-    csrf.exempt(forgot_password)
-    csrf.exempt(reset_password)
+    # CSRF exemption for auth endpoints is applied via @csrf.exempt decorator
+    # in routes/auth.py so that exemptions travel with the function definition.
+    pass
 
 
 def _register_routes(app):

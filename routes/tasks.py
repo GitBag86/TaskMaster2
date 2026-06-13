@@ -225,7 +225,9 @@ def assignee_names(task):
     return ', '.join(user.username for user in task.assignees)
 
 def update_task_assignees(task, assignee_ids):
-    assignee_ids = (assignee_ids or [])[:1]
+    assignee_ids = assignee_ids or []
+    if len(assignee_ids) > 1:
+        raise ValueError("Zadanie może mieć tylko jednego przypisanego użytkownika.")
     if not assignee_ids:
         task.assignees = []
         return []
@@ -1265,15 +1267,12 @@ def bulk_delete_tasks():
     if len(task_ids) > BULK_MAX_TASKS:
         return jsonify({"error": f"Maksymalna liczba zadań w operacji masowej: {BULK_MAX_TASKS}"}), 400
 
-    count = 0
-    for task_id in task_ids:
-        task = db.session.get(Task, task_id)
-        if task is not None and task.team_id != g.get('current_team_id'):
-            raise CrossTeamReferenceError()
-        if task:
-            prepare_task_for_delete(task)
-            db.session.delete(task)
-            count += 1
+    tasks = bulk_scoped_tasks_or_error(task_ids)
+
+    count = len(tasks)
+    for task in tasks:
+        prepare_task_for_delete(task)
+        db.session.delete(task)
 
     db.session.commit()
     emit_task_event("bulk_deleted", user, task_ids=task_ids)

@@ -9,8 +9,9 @@ from schemas import LoginSchema, SignupSchema
 from utils.errors import InviteTokenInvalidError, SignupDisabledError, TeamArchivedError
 import logging
 from datetime import datetime, timezone
+from sqlalchemy.exc import SQLAlchemyError
 
-from extensions import limiter
+from extensions import limiter, csrf
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,7 @@ def login_required(f):
     return decorated_function
 
 @auth_bp.route('/signup', methods=['POST'])
+@csrf.exempt
 @limiter.limit("5 per minute")
 def signup():
     data = request.get_json()
@@ -81,12 +83,13 @@ def signup():
             invite.consumed_at = datetime.now(timezone.utc).replace(tzinfo=None)
             invite.consumed_by_id = user.id
         db.session.commit()
-    except Exception:
+    except SQLAlchemyError:
         db.session.rollback()
         logger.exception("Signup failed while saving user '%s'", username)
         return jsonify({"error": "Nie udało się zapisać użytkownika w bazie danych"}), 500
 
     _establish_session(user)
+    session.permanent = True
     return jsonify({"message": "Rejestracja pomyślna", "user": user.to_dict(expand_team=True)}), 201
 
 
@@ -107,6 +110,7 @@ def signup_info():
     return jsonify(payload)
 
 @auth_bp.route('/login', methods=['POST'])
+@csrf.exempt
 @limiter.limit("5 per minute")
 def login():
     data = request.get_json()
@@ -125,6 +129,7 @@ def login():
     return jsonify({"message": "Logowanie pomyślne", "user": user.to_dict(expand_team=True)})
 
 @auth_bp.route('/logout', methods=['POST'])
+@csrf.exempt
 def logout():
     # Atomically clear every key set by _establish_session.
     for key in ('user_id', 'team_id', 'role', 'session_version'):
@@ -133,6 +138,7 @@ def logout():
 
 
 @auth_bp.route('/logout-all', methods=['POST'])
+@csrf.exempt
 @login_required
 def logout_all():
     """Bump session_version to invalidate ALL active sessions for this user.
@@ -152,6 +158,7 @@ def logout_all():
     return jsonify({"message": "Wylogowano ze wszystkich urządzeń"})
 
 @auth_bp.route('/forgot-password', methods=['POST'])
+@csrf.exempt
 @limiter.limit("3 per minute")
 def forgot_password():
     """Generate a password reset token and e-mail it to the user."""
@@ -196,6 +203,7 @@ def forgot_password():
 
 
 @auth_bp.route('/reset-password', methods=['POST'])
+@csrf.exempt
 @limiter.limit("5 per minute")
 def reset_password():
     """Reset password using a valid reset token."""

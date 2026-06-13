@@ -30,6 +30,13 @@ def _get_executor():
     return _email_executor
 
 
+def _reset_executor():
+    """Clear executor reference — call after Gunicorn fork to get a fresh pool."""
+    global _email_executor
+    with _pool_lock:
+        _email_executor = None
+
+
 def missing_mail_config():
     if current_app.config.get("MAIL_SUPPRESS_SEND"):
         return []
@@ -76,9 +83,9 @@ def send_email(to_email, subject, body):
         msg.body = str(body)
 
     timeout = current_app.config.get("MAIL_TIMEOUT", DEFAULT_MAIL_TIMEOUT_SECONDS)
-    previous_timeout = socket.getdefaulttimeout()
     if timeout:
-        socket.setdefaulttimeout(timeout)
+        msg.mail_options = [f"timeout={timeout}"]
+
     try:
         mail.send(msg)
         current_app.logger.info("Email sent to %s with subject: %s", to_email, subject)
@@ -86,9 +93,6 @@ def send_email(to_email, subject, body):
     except Exception as e:
         current_app.logger.error("Failed to send email to %s: %s", to_email, e)
         return False
-    finally:
-        if timeout:
-            socket.setdefaulttimeout(previous_timeout)
 
 
 def enqueue_email(to_email, subject, body):
