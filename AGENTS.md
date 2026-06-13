@@ -219,6 +219,7 @@ socketio.emit('task_action', {'action': 'dependency_added', 'task_id': 1})
 | [schemas.py](schemas.py)                                                                                 | Marshmallow v3.x validation                 | Request validation; uses `load_default` (not `default`)   |
 | [routes/auth.py](routes/auth.py)                                                                         | Auth + session                              | Input validation, error handling, custom decorators       |
 | [routes/tasks.py](routes/tasks.py)                                                                       | Task CRUD + Socket.IO emission + pagination | Real-time sync pattern: emit after mutations              |
+| [routes/stats.py](routes/stats.py)                                                                       | DB-side aggregation for dashboard           | Pattern: use `.count()` / `.group_by()` instead of `.all()` + Python loops |
 | [frontend/src/App.tsx](frontend/src/App.tsx)                                                             | Route protection + Suspense + Context       | Auth guard, lazy loading, provider nesting                |
 | [frontend/src/store/AuthContext.tsx](frontend/src/store/AuthContext.tsx)                                 | Context API + custom hook                   | Centralized auth state; clean hook interface              |
 | [frontend/src/api/client.ts](frontend/src/api/client.ts)                                                 | Typed fetch wrapper                         | DRY API calls; centralized error handling; type safety    |
@@ -374,11 +375,31 @@ Composite indexes from migration `2c8e44f754b0` cover the hot query paths:
 - `ix_notification_team_user_unread` (team_id, user_id) WHERE read=false
 - `ix_activity_team_created` (team_id, created_at DESC)
 
-When listing many tasks, use the `_eager_task_options()` helper in `routes/tasks.py` to avoid N+1 queries:
+**When listing many tasks**, use the `_eager_task_options()` helper in `routes/tasks.py` to avoid N+1 queries:
 
 ```python
 tasks = visible_task_query(user).options(*_eager_task_options()).all()
 ```
+
+**When listing projects**, use `_eager_project_options()` from `routes/projects.py` to preload tasks and their relationships:
+
+```python
+projects = team_scoped(Project.query, Project).options(*_eager_project_options()).all()
+```
+
+**Dashboard aggregation** — `/stats/dashboard` uses DB-level `.count()`, `.with_entities()`, and `.group_by()` instead of loading all tasks into Python memory. Follow this pattern for any new stats endpoints:
+
+```python
+base = visible_task_query(user)
+total = base.count()
+priority_rows = base.with_entities(Task.priority, db.func.count(Task.id)).group_by(Task.priority).all()
+```
+
+**Pagination defaults** — Unbounded list endpoints should be avoided. Current defaults:
+- `/tasks` — page=1, per_page=50 (max 100)
+- `/tasks/filter` — page=1, per_page=500 (max 1000)
+- `/tasks/search` — page=1, per_page=20 (max 200)
+- `/tasks/by-project` — limit=500 (max 1000)
 
 Benchmark suite: `scripts/seed_perf.py` + `scripts/perf_bench.py`.
 
@@ -387,9 +408,10 @@ Benchmark suite: `scripts/seed_perf.py` + `scripts/perf_bench.py`.
 - **Missing team_id on denormalized resources** - When creating `Comment`, `Subtask`, `TaskDependency`, `CustomField`, always set `child.team_id = parent_task.team_id`. Otherwise scoped queries silently exclude the row.
 - **Cross-team references** - When accepting `assignee_ids` / `member_ids` / `depends_on_task_id` from request bodies, validate every referenced entity has the current `team_id`. Raise `CrossTeamReferenceError` (400 `cross_team_reference`) on mismatch.
 - **Socket.IO room scope** - `socketio.emit('task_action', payload)` without `room=f'team:{team_id}'` leaks events to other teams. Always pass `room=`.
-- **N+1 in list endpoints** - Use `selectinload`/`joinedload` (`_eager_task_options()`) when serializing many tasks via `to_dict()`. Without it, `/tasks?per_page=50` issues 250+ queries.
+- **N+1 in list endpoints** - Use `selectinload`/`joinedload` (`_eager_task_options()` for tasks, `_eager_project_options()` for projects) when serializing many items via `to_dict()`. Without it, `/tasks?per_page=50` issues 250+ queries.
 - **Marshmallow v3.x compatibility** - Use `load_default` instead of `default` for field defaults in schemas.
 - **Decorator stacking** - `@app.route()` must come BEFORE `@login_required` in the decorator stack.
+- **Import-time binding** - `from utils.email_sender import enqueue_email` creates a local reference at import time. Monkeypatching `utils.email_sender.enqueue_email` won't affect calls in the importing module. Always use `from utils import email_sender` and call `email_sender.enqueue_email(...)` so lookups go through attribute access.
 - **WebSocket workers** - With Gunicorn use `gthread`. For local development, `threading` is preferred (avoid `eventlet`).
 - **Port Conflicts**: Port 5000 (Flask dev) - sprawdz przez `lsof -i :5000` / `netstat -ano | findstr :5000`. Na Railway Gunicorn binduje sie na `$PORT`.
 - **Frontend not built**: Flask serves `frontend/dist/`. After frontend edits run `npm run build` (or rebuild Docker image).
