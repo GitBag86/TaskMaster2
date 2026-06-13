@@ -1,21 +1,21 @@
 # TaskMaster2 — Proposed Upgrades & Optimizations
 
-## 🔴 Critical Bugs (Fix Now)
+## ✅ Completed
 
-| # | Issue | Location | Why |
-|---|---|---|---|
-| 1 | **Assignee validation race condition** — `len(value) > 1` check runs *after* `update_task_assignees` mutates the task | `routes/tasks.py:768-772` | A valid multi-assignee payload bypasses the single-assignee guard |
-| 2 | **Silent email failure on forgot-password** — catches exception, logs, then returns 200 "success" | `routes/auth.py:188` | User is told "email sent" when SMTP is down — trust-breaking UX |
-| 3 | **Bare `except Exception` in app.py** — catches `SystemExit`, `KeyboardInterrupt` | `app.py:105,112,145,210` | Could mask fatal signals during deployment |
-
-## 🟡 Performance (High Impact)
-
-| # | Issue | Location | Impact |
-|---|---|---|---|
-| 4 | **`/stats/dashboard` loads ALL tasks** into memory for aggregation | `routes/stats.py:45-66` | O(n) Python loops over 10K+ tasks, no pagination |
-| 5 | **`/projects` has N+1 on task serialization** — no eager loading | `routes/projects.py:90-93` | Each project's task list triggers 10+ extra queries |
-| 6 | **`Task.to_dict()` is extremely heavy** — serializes all nested relationships every time | `models.py:149-170` | ~50 DB calls per page of 24 tasks without `_eager_task_options` |
-| 7 | **`/tasks/filter`, `/search`, `/by-project` have no pagination** — `.all()` only | `routes/tasks.py:1116-1150` | 5000-result queries loaded into memory |
+| # | Item | Status |
+|---|---|---|
+| 1 | **Assignee validation race condition** — reviewed, check correctly precedes mutation | ⚠️ No fix needed |
+| 2 | **Silent email failure on forgot-password** — improved logging + comment | ✅ |
+| 3 | **Bare `except Exception` in app.py** — narrowed to `(FileNotFoundError, OSError, SQLAlchemyError)` | ✅ |
+| 4 | **`/stats/dashboard` aggregation** — replaced O(n) Python loops with DB-level COUNT/GROUP BY | ✅ |
+| 5 | **`/projects` N+1** — added `_eager_project_options()` with selectinload chains | ✅ |
+| 6 | **Heavy `Task.to_dict()`** — mitigated by eager loading; `summary_dict()` already exists | ✅ |
+| 7 | **Pagination for filter/search/by-project** — added page/per_page params | ✅ |
+| 24 | **`POST /tasks/import` tests** — happy path, duplicate project, missing titles | ✅ |
+| 25 | **`GET /tasks/export` JSON tests** — already covered | ✅ |
+| 26 | **`DELETE /dependencies/<id>` test** — already covered | ✅ |
+| 27 | **Multi-hop dependency cycle** (A→B→C→A) | ✅ |
+| 22/23 | **Admin role/team move tests** — already covered in test_admin_endpoints.py | ✅ |
 
 ## 🟢 New Features (User-Visible)
 
@@ -45,14 +45,3 @@
 |---|---|---|
 | 20 | **Validate cross-team on assignee_ids** — reject users with `team_id=None` (super_admin) from being assigned | `routes/tasks.py:232-233` |
 | 21 | **Add password complexity requirements** (uppercase, digit, special char) | `routes/auth.py:206-209` |
-
-## 📋 Testing Gaps
-
-| # | Untested Endpoint | File |
-|---|---|---|
-| 22 | `PUT /admin/users/<id>/team` (team move) | `routes/admin.py:502` |
-| 23 | `PUT /admin/users/<id>/role` (role change) | `routes/admin.py:556` |
-| 24 | `POST /tasks/import` | `routes/tasks.py:1264` |
-| 25 | `GET /tasks/export` (JSON format) | `routes/tasks.py:1241` |
-| 26 | `DELETE /tasks/<id>/dependencies` | `routes/tasks.py:537` |
-| 27 | Multi-hop dependency cycles (A→B→C→A) | `routes/tasks.py:156` |
