@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### ✨ Frontend
+
+- **Super Admin Console** — `/admin` is now the default super-admin landing page with retro/hackerman UI.
+- Added super-admin console navigation entry and identity matrix for loaded users across workspaces.
+- Super-admin console supports adding users into a selected active workspace and terminating user accounts.
+
 ## v1.0 (2026-06-07)
 
 ### 🏢 Multi-Tenancy (Team Workspaces)

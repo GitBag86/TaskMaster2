@@ -480,10 +480,9 @@ When modifying this codebase, agents should follow these domain-specific guideli
 
 ## Available Agent Skills
 
-- [Socket.IO Patterns](.vscode/prompts/socketio-patterns.prompt.md) - Real-time sync implementation guide.
-- [Frontend Responsive Check](.vscode/prompts/frontend-responsive-check.prompt.md) - Validates responsive design and prevents UI overflow.
-- [Post-Migration Check](.vscode/prompts/post-migration-check.prompt.md) - Ensures schema integrity after `flask db upgrade`.
-- [Backend Test Generator](.vscode/prompts/backend-test-generator.prompt.md) - Scaffolds pytest suites for new endpoints.
+- [Socket.IO Patterns](.github/instructions/socketio-patterns.instructions.md) - Real-time sync implementation guide.
+- [Frontend TypeScript Guidelines](.github/instructions/frontend-typescript-guidelines.instructions.md) - Frontend best practices.
+- [Python Test Guidelines](.github/instructions/python-test-guidelines.instructions.md) - TDD requirements for tests.
 
 ## Refactoring & Code Quality
 

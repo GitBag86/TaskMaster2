@@ -1,7 +1,0 @@
-{
-    "chat.useNestedAgentsMdFiles": true,
-    "python.defaultInterpreterPath": "/mnt/c/Users/krzys/CODE/TaskMaster2/.venv/bin/python",
-    "python.terminal.activateEnvironment": true,
-    "python.terminal.useEnvFile": true,
-    "terminal.integrated.defaultProfile.windows": "Ubuntu (WSL)"
-}

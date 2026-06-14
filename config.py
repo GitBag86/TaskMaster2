@@ -64,7 +64,7 @@ class Config:
     #   default_team - new accounts land in the Default team with role=user
     SIGNUP_MODE = os.environ.get("SIGNUP_MODE", "invite_only").strip().lower()
     INVITE_TOKEN_TTL_DAYS = int(os.environ.get("INVITE_TOKEN_TTL_DAYS", 7))
-    SUPER_ADMIN_LANDING = os.environ.get("SUPER_ADMIN_LANDING", "/admin/teams")
+    SUPER_ADMIN_LANDING = os.environ.get("SUPER_ADMIN_LANDING", "/admin")
 
     # Email configuration (optional)
     MAIL_SERVER = os.environ.get("MAIL_SERVER")

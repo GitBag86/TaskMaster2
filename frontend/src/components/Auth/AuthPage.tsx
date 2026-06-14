@@ -111,11 +111,11 @@ export default function AuthPage() {
           invite_token: inviteToken,
         });
         addToast('Rejestracja pomyślna', 'success');
-        navigate(createdUser.role === 'super_admin' ? '/admin/teams' : '/');
+        navigate(createdUser.role === 'super_admin' ? '/admin' : '/');
       } else {
         const loggedUser = await login(username, password);
         addToast('Logowanie pomyślne', 'success');
-        navigate(loggedUser.role === 'super_admin' ? '/admin/teams' : '/');
+        navigate(loggedUser.role === 'super_admin' ? '/admin' : '/');
       }
     } catch (err: unknown) {
       if (err instanceof ApiError && typeof err.body === 'object' && err.body !== null) {

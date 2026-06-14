@@ -89,4 +89,4 @@ def test_config_invite_token_ttl_default_is_seven_days(app):
 
 
 def test_config_super_admin_landing_default(app):
-    assert app.config["SUPER_ADMIN_LANDING"] == "/admin/teams"
+    assert app.config["SUPER_ADMIN_LANDING"] == "/admin"

@@ -5,7 +5,7 @@
 ### ✨ Nowości w wersji 1.0
 
 - **Multi‑tenancy (Team Workspaces)** — pełna izolacja danych między zespołami z trzema poziomami uprawnień (super_admin / manager / user).
-- **Panel super‑admina** — zarządzanie zespołami, użytkownikami i rolami z globalnym audit logiem.
+- **Panel super‑admina** — retro/hackerman console do zarządzania zespołami, użytkownikami i globalnym audit logiem.
 - **Archiwizacja zespołów** — możliwość zamrożenia zespołu bez utraty danych.
 - **Przenoszenie użytkowników** między zespołami z atomicznym przeniesieniem filtrów, powiadomień i aktywności.
 - **PostgreSQL** jako baza produkcyjna (Railway managed obok SQLite dla lokalnego dev).
@@ -84,7 +84,7 @@ Super admin moze:
 - przegladac globalny audit log (`/admin/audit`),
 - przegladac audit log per zespol.
 
-Po zalogowaniu super admin laduje na `/admin/teams` (konfigurowalne przez `SUPER_ADMIN_LANDING`).
+Po zalogowaniu super admin laduje na `/admin` — retro `Super Admin Console` — a stamtąd może przejść do `/admin/teams` albo `/admin/audit`.
 
 ### Manager (Menedżer Zespołu)
 
@@ -165,9 +165,10 @@ Domyślne konto super-admina: `admin` / `dakos1admin2`.
 > przed `docker compose up`, jesli potrzebujesz zmienic domyslne ustawienia.
 
 Po pierwszym logowaniu jako super-admin:
-1. Przejdz do `/admin/teams` i utworz zespol.
-2. Wyloguj sie i zaloguj ponownie jako manager (lub zmien role swojego konta).
-3. Rozpocznij prace — utworz projekt, zapros czlonkow, dodaj zadania.
+1. Przejdz do `/admin` i otworz `Super Admin Console`.
+2. Utworz pierwszy zespol w `Konsola` albo w `/admin/teams`.
+3. Wyloguj sie i zaloguj ponownie jako manager (lub zmien role swojego konta).
+4. Rozpocznij prace — utworz projekt, zapros czlonkow, dodaj zadania.
 
 **Zatrzymanie:**
 
@@ -214,7 +215,7 @@ http://localhost:5000
 1. Otworz aplikacje w przegladarce.
 2. Utworz konto.
 3. Pierwszy uzytkownik moze zostac administratorem, zaleznie od konfiguracji i bootstrapu aplikacji.
-4. Admin moze dodac kolejnych uzytkownikow w widoku `Uzytkownicy`.
+4. Super-admin moze dodac kolejnych uzytkownikow w widoku `Konsola`, wybierajac aktywny zespol.
 5. Utworz projekt albo skorzystaj z szablonu projektu.
 6. Przypisz czlonkow projektu.
 7. Dodaj zadania i przypisz po jednym wykonawcy do kazdego zadania.
@@ -361,15 +362,17 @@ Widok `Aktywnosc` pokazuje ostatnie zdarzenia w aplikacji:
 - zakonczenia i przywrocenia,
 - zmiany zaleznosci.
 
-### Uzytkownicy
+### Konsola super-admina
 
-Widok dostepny dla admina.
+Widok dostepny dla `super_admin` pod `/admin`. Jest to domyslny landing super-admina i ma retro/hackerman styl.
 
-Admin moze:
-
-- dodawac uzytkownikow,
-- ustawic role,
-- usuwac konta, z zachowaniem zabezpieczen przed usunieciem siebie lub ostatniego admina.
+Super admin moze:
+- zobaczyc liczniki tozsamosci: wszystkie konta, `ROOT`, managerowie i konta przypisane do zespolow,
+- dodac nowego uzytkownika do wybranego aktywnego zespolu,
+- zobaczyc macierz uzytkownikow z workspace, rola, czasem utworzenia i statusem sesji,
+- usunac konto, z zachowaniem zabezpieczenia przed usunieciem wlasnej aktywnej sesji,
+- przejsc do `/admin/teams` do zarzadzania zespolami,
+- przejsc do `/admin/audit` do globalnego audit logu.
 
 ## Zadania i Zaleznosci
 
@@ -642,12 +645,21 @@ Token wazny przez `INVITE_TOKEN_TTL_DAYS` (domyslnie 7 dni). Manager nie moze wy
 
 ### Admin (super_admin)
 
+Frontend route:
+- `/admin` — `Super Admin Console` (domyślny landing super_admina),
+- `/admin/teams` — zarządzanie zespołami,
+- `/admin/teams/<id>` — szczegóły zespołu,
+- `/admin/audit` — globalny audit log.
+
+Backend endpoints:
 - `GET /admin/teams` - lista zespolow z statystykami,
 - `POST /admin/teams` - utworzenie zespolu (auto-seed szablonow projektow),
 - `PUT /admin/teams/<id>` - zmiana nazwy/opisu,
 - `POST /admin/teams/<id>/archive` - archiwizacja (zwraca 403 `team_archived` przy logowaniu czlonkom),
 - `DELETE /admin/teams/<id>` - usuniecie pustego zespolu (409 `team_not_empty` jesli ma zasoby),
 - `GET /admin/teams/<id>/members` - czlonkowie zespolu,
+- `POST /admin/teams/<id>/members` - dodanie uzytkownika do zespolu,
+- `DELETE /admin/users/<id>` - usuniecie uzytkownika przez super_admina,
 - `GET /admin/teams/<id>/audit` - audit log per zespol,
 - `GET /admin/audit` - globalny audit log,
 - `POST /admin/users/<id>/team` - przeniesienie uzytkownika do innego zespolu (bump session_version, wyrzuca z assignees w starym zespole, przenosi powiadomienia/filtry/aktywnosc),

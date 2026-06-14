@@ -47,7 +47,7 @@ Jeśli aplikacja działa w trybie `invite_only` (najczęściej):
 
 ### Pierwsze logowanie super-admina
 
-Super-admin (rola domyślnie przypisana do bootstrap konta `admin`) po zalogowaniu trafia od razu do panelu **Zespoły** (`/admin/teams`).
+Super-admin (rola domyślnie przypisana do bootstrap konta `admin`) po zalogowaniu trafia od razu do **Super Admin Console** (`/admin`).
 
 ---
 
@@ -58,7 +58,9 @@ W TaskMaster2 są trzy poziomy uprawnień:
 ### 👑 Super Admin
 
 - Operuje **ponad zespołami** (nie należy do żadnego, `team_id = NULL`).
+- Po zalogowaniu widzi **Super Admin Console** (`/admin`) — retro/hackerman dashboard.
 - Zarządza zespołami: tworzy, archiwizuje, usuwa, zmienia nazwy.
+- Dodaje użytkowników do wybranego aktywnego zespołu.
 - Przenosi użytkowników między zespołami.
 - Zmienia role (super_admin / manager / user).
 - Przegląda audit log (historia operacji administracyjnych).
@@ -423,9 +425,38 @@ Manager **nie może** wystawiać zaproszeń z `default_role='manager'`. Promocja
 
 ## 15. Panel super-admina
 
-Domyślny landing po loginie: `/admin/teams`.
+Domyślny landing po loginie: `/admin`.
+
+### Super Admin Console
+
+Widok `/admin` to retro/hackerman dashboard super-admina. Na górze pokazują się liczniki:
+- wszystkie załadowane tożsamości,
+- konta `ROOT` (`super_admin`),
+- managerowie,
+- konta przypisane do zespołów.
+
+W panelu **create_user()** możesz dodać nowego użytkownika do wybranego aktywnego zespołu:
+1. Wpisz nazwę użytkownika.
+2. Wpisz e-mail.
+3. Wpisz hasło zgodne z wymaganiami aplikacji.
+4. Wybierz rolę: `user` albo `manager`.
+5. Wybierz zespół docelowy.
+6. Kliknij **EXECUTE**.
+
+Macierz tożsamości pokazuje:
+- identyfikator użytkownika,
+- nazwę użytkownika,
+- e-mail,
+- zespół,
+- rolę,
+- datę utworzenia,
+- akcję **TERMINATE** do usunięcia konta.
+
+Nie możesz usunąć własnej aktywnej sesji.
 
 ### Zarządzanie zespołami
+
+Przejdź do `/admin/teams`.
 
 Lista wszystkich zespołów:
 - Nazwa, slug, opis.

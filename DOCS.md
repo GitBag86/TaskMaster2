@@ -41,6 +41,7 @@
 - Szablony projektów (per-team, edytowalne)
 - Invite tokens dla self-signup w trybie `invite_only`
 - Audit log dla operacji administracyjnych
+- Super Admin Console (`/admin`) — retro/hackerman dashboard do zarządzania tożsamościami i zespołami
 - Powiadomienia: w-app + e-mail
 - PWA (manifest, service worker)
 - Dark mode (Tailwind class-based)
@@ -373,8 +374,9 @@ Wszystkie endpointy zwracają JSON. Errory: `{"error": "msg", "code": "stable_co
 | `/admin/teams`              | GET, POST   | Lista / tworzenie zespołu (auto-seed templates).                   |
 | `/admin/teams/<id>`         | PUT, DELETE | Update / usunięcie (`team_not_empty` jeśli nie pusty).             |
 | `/admin/teams/<id>/archive` | POST        | Archiwizacja (bumpuje session_version członkom).                   |
-| `/admin/teams/<id>/members` | GET         | Członkowie zespołu.                                                |
+| `/admin/teams/<id>/members` | GET, POST   | Członkowie zespołu / dodanie użytkownika do zespołu.               |
 | `/admin/teams/<id>/audit`   | GET         | Audit log per team.                                                |
+| `/admin/users/<id>`         | DELETE      | Usunięcie użytkownika przez super_admina.                          |
 | `/admin/audit`              | GET         | Globalny audit log.                                                |
 | `/admin/users/<id>/team`    | POST        | Move user — atomicznie: team_id, session_version, reasign content. |
 | `/admin/users/<id>/role`    | POST        | Zmiana roli (validacja team_id).                                   |
@@ -490,7 +492,16 @@ frontend/src/
 
 Lazy-loaded routes w `App.tsx` z `<RoleRoute roles={[...]}>` jako guard:
 
+Frontend routes:
 ```tsx
+<Route
+  path="/admin"
+  element={
+    <RoleRoute roles={["super_admin"]}>
+      <AdminPage />
+    </RoleRoute>
+  }
+/>
 <Route
   path="/admin/teams"
   element={
@@ -500,6 +511,8 @@ Lazy-loaded routes w `App.tsx` z `<RoleRoute roles={[...]}>` jako guard:
   }
 />
 ```
+
+`AdminPage` loads all active workspaces, reads members for every team, includes the current `super_admin` identity, and exposes identity injection into a selected workspace through `api.teams.addMember(...)`.
 
 ### State management
 
@@ -617,7 +630,7 @@ CORS_ORIGINS=https://app.example.com
 ```env
 SIGNUP_MODE=invite_only             # disabled | invite_only | default_team
 INVITE_TOKEN_TTL_DAYS=7
-SUPER_ADMIN_LANDING=/admin/teams
+SUPER_ADMIN_LANDING=/admin
 DEFAULT_ADMIN_USERNAME=admin
 DEFAULT_ADMIN_PASSWORD=<silne haslo>
 DEFAULT_ADMIN_EMAIL=admin@example.com
@@ -838,9 +851,6 @@ tasks = team_scoped(Task.query, Task).options(*_eager_task_options()).all()
 | [USER_GUIDE.md](USER_GUIDE.md) | Przewodnik dla końcowych użytkowników             |
 | [AGENTS.md](AGENTS.md)         | Wytyczne dla AI agentów / nowych developerów      |
 | [LICENSE](LICENSE)             | Licencja zastrzeżona                              |
-| [AGENTS.md](AGENTS.md)         | Wytyczne dla AI agentów / nowych developerów      |
-| [LICENSE](LICENSE)             | Licencja zastrzeżona                              |
-| `.kiro/specs/team-workspaces/` | Spec multi-tenancy: requirements + design + tasks |
 
 ---
 

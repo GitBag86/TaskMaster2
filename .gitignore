@@ -36,3 +36,15 @@ output.txt
 
 # Logs (rotating files)
 logs/
+
+# IDE
+.kiro/
+.vscode/
+.opencode/
+.kilocode/
+.zed/
+.idea/
+
+# Test/Cache
+.pytest_cache/
+.mypy_cache/
