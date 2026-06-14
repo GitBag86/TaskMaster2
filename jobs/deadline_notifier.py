@@ -29,14 +29,14 @@ def task_link(task):
 def run_deadline_check():
     current_app.logger.info("Running deadline check job.")
 
-    now = datetime.now(timezone.utc)
-    upcoming_deadline = now + timedelta(hours=24)
+    now = datetime.now(timezone.utc).date()
+    upcoming_deadline = now + timedelta(days=1)
 
     tasks = Task.query.filter(
         Task.due_date.isnot(None),
         Task.completed == False,
-        Task.due_date <= upcoming_deadline.date(),
-        Task.due_date >= now.date()
+        Task.due_date <= upcoming_deadline,
+        Task.due_date >= now
     ).all()
 
     sent_count = 0
