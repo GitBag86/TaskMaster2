@@ -339,8 +339,9 @@ def create_app(config_object=Config):
     setup_logging(app)
 
     # Trust X-Forwarded-* headers from one reverse proxy (Nginx).
-    # Pozwala Flaskowi poprawnie wykrywac HTTPS i prawdziwe IP klienta.
-    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+    # Only enable in production to prevent header spoofing in development.
+    if os.environ.get("FLASK_ENV", "development").lower() == "production":
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
     sentry_dsn = os.environ.get("SENTRY_DSN")
     if sentry_dsn:

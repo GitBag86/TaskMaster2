@@ -145,3 +145,12 @@ class CustomFieldSchema(Schema):
     field_name = fields.Str(required=True, validate=validate.Length(min=1, max=100))
     field_value = fields.Str(load_default='', allow_none=True)
     created_at = fields.DateTime(dump_only=True)
+
+
+class ProfileUpdateSchema(Schema):
+    """Schema for validating profile updates via PUT /auth/me."""
+    email = fields.Email(
+        required=False,
+        error_messages={"invalid": "Podaj prawidłowy adres e-mail."},
+    )
+    marketing_consent = fields.Bool(required=False)

@@ -12,6 +12,8 @@
 - **Usprawnione usuwanie** — bezpieczne kaskadowe usuwanie użytkowników i zespołów z obsługą FK w PostgreSQL.
 - **CSRF protection** z auto‑odświeżaniem tokena co 20 minut i wydłużonym timeoutem.
 - **Docker Compose** do lokalnego developmentu.
+- **Socket.IO session invalidation** — połączenia Socket.IO są unieważniane przy zmianie roli/zespołu/archiwizacji.
+- **Password reset session security** — resetowanie hasła teraz unieważnia wszystkie aktywne sesje.
 
 ---
 

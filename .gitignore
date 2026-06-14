@@ -33,6 +33,7 @@ debug-59c6ac.log
 assets/
 taskmaster2.tar
 output.txt
+.todo
 
 # Logs (rotating files)
 logs/
@@ -44,6 +45,8 @@ logs/
 .kilocode/
 .zed/
 .idea/
+.kimchi/
+
 
 # Test/Cache
 .pytest_cache/

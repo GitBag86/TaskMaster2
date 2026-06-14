@@ -678,7 +678,8 @@ SESSION_COOKIE_SECURE=true           # false dla devu po HTTP
 
 - Cookie `session` HttpOnly, Secure, SameSite=Lax.
 - Klucz sesji `SECRET_KEY` z `.env` — **nigdy** nie commituj.
-- Bump `User.session_version` unieważnia sesje przy: team move, role change, team archive.
+- Bump `User.session_version` unieważnia sesje przy: team move, role change, team archive, **password reset**.
+- Socket.IO połączenia są unieważniane przy niezgodności `session_version`.
 
 ### Rate limiting
 

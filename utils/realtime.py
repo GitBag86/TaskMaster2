@@ -43,6 +43,11 @@ def socket_connect_handler():
     if user is None:
         return False
 
+    # Session version check (H1): invalidate socket connections on team move/role change/archive
+    session_version = session.get("session_version", 0)
+    if user.session_version != session_version:
+        return False
+
     if user.is_super_admin():
         join_room("super_admin")
         return None

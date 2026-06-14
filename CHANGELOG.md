@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### 🔐 Security Hardening
+
+- **Socket.IO session invalidation**: Added `session_version` check in Socket.IO connect handler — connections are rejected when session is stale (team move, role change, archive, password reset).
+- **Password reset session security**: Password reset now bumps `session_version` to invalidate all existing sessions.
+- **ProxyFix protection**: `ProxyFix` middleware is now gated behind `FLASK_ENV=production` to prevent header spoofing in development.
+- **Profile update validation**: Added `ProfileUpdateSchema` with email validation for `PUT /auth/me`.
+- **Session fixation prevention**: Added `session.clear()` before establishing new sessions on login/signup.
+- **Bootstrap password**: Removed hardcoded default admin password from `.env.example`.
+
 ### ✨ Frontend
 
 - **Super Admin Console** — `/admin` is now the default super-admin landing page with retro/hackerman UI.

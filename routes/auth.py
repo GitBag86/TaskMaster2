@@ -7,7 +7,7 @@ from flask import current_app, request, jsonify, session
 from marshmallow import ValidationError
 from routes import auth_bp
 from models import db, Team, TeamInvite, User, PasswordResetToken
-from schemas import LoginSchema, SignupSchema
+from schemas import LoginSchema, SignupSchema, ProfileUpdateSchema
 from utils.errors import InviteTokenInvalidError, SignupDisabledError, TeamArchivedError
 import logging
 from datetime import datetime, timezone
@@ -54,7 +54,7 @@ def signup():
     mode = current_app.config.get('SIGNUP_MODE', 'invite_only')
     if mode == 'disabled':
         raise SignupDisabledError()
-    if mode == 'invite_only':
+if mode == 'invite_only':
         invite = resolve_invite_token(validated.get('invite_token'))
         target_team = invite.team
         target_role = invite.default_role
@@ -90,6 +90,7 @@ def signup():
         logger.exception("Signup failed while saving user '%s'", username)
         return jsonify({"error": "Nie udało się zapisać użytkownika w bazie danych"}), 500
 
+    session.clear()  # L2: Prevent session fixation
     _establish_session(user)
     session.permanent = True
     return jsonify({"message": "Rejestracja pomyślna", "user": user.to_dict(expand_team=True)}), 201
@@ -126,6 +127,7 @@ def login():
     if not user or not user.check_password(validated['password']):
         return jsonify({"error": "Błędne dane logowania"}), 401
 
+    session.clear()  # L2: Prevent session fixation
     _establish_session(user)
     session.permanent = True
     return jsonify({"message": "Logowanie pomyślne", "user": user.to_dict(expand_team=True)})
@@ -227,6 +229,8 @@ def reset_password():
     if user is None:
         return jsonify({"error": "Użytkownik nie znaleziony"}), 404
 
+    # Bump session_version to invalidate all existing sessions (H2)
+    user.session_version += 1
     user.set_password(new_password)
     reset.consumed_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db.session.commit()
@@ -244,13 +248,19 @@ def get_current_user():
 
     if request.method == 'PUT':
         data = request.get_json() or {}
-        email = data.get('email', '').strip().lower()
+        schema = ProfileUpdateSchema()
+        try:
+            validated = schema.load(data)
+        except ValidationError as err:
+            return jsonify({"error": err.messages}), 400
+
+        email = validated.get('email', '').strip().lower() if validated.get('email') else ''
         if email and email != user.email:
             if User.query.filter(User.email == email, User.id != user.id).first():
                 return jsonify({"error": "Ten adres e-mail jest już używany"}), 409
             user.email = email
-        if 'marketing_consent' in data:
-            user.marketing_consent = bool(data['marketing_consent'])
+        if 'marketing_consent' in validated:
+            user.marketing_consent = bool(validated['marketing_consent'])
         db.session.commit()
         return jsonify(user.to_dict(expand_team=True))
 
