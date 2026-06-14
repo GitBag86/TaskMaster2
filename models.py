@@ -100,6 +100,7 @@ class Task(db.Model):
     notes = db.Column(db.Text, default='')
     completed = db.Column(db.Boolean, default=False)
     status = db.Column(db.String(20), default='todo')
+    archived = db.Column(db.Boolean, default=False)
     comments = db.relationship('Comment', backref='task', lazy=True, cascade='all, delete-orphan')
     subtasks = db.relationship('Subtask', backref='task', lazy=True, cascade='all, delete-orphan')
     dependencies = db.relationship(

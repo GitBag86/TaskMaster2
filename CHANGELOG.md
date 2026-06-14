@@ -14,6 +14,7 @@
 ### ✨ Features
 
 - **Auto-archive completed tasks**: Tasks marked as done are automatically archived after 3 days (daily scheduler job).
+- **Project member saving**: Fixed save button - now properly detects member changes before enabling save.
 
 ### ✨ Frontend
 

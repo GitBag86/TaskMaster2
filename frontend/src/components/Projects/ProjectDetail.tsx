@@ -48,11 +48,13 @@ export default function ProjectDetail({
   const [selectedProjectMemberIds, setSelectedProjectMemberIds] = useState<string[]>(
     () => project.members.map(m => String(m.id)),
   )
+  const [hasMemberChanges, setHasMemberChanges] = useState(false)
   const [taskToAssignId, setTaskToAssignId] = useState("")
   const [targetProjectId, setTargetProjectId] = useState(String(project.id))
 
   useEffect(() => {
     setSelectedProjectMemberIds(project.members.map(m => String(m.id)))
+    setHasMemberChanges(false)
     setTargetProjectId(String(project.id))
   }, [project.id, project.members])
 
@@ -232,30 +234,31 @@ export default function ProjectDetail({
                   key={member.id}
                   className="flex items-center gap-2 rounded-md px-2 py-1 text-sm text-gray-700 hover:bg-muted dark:text-gray-200"
                 >
-                  <input
-                    type="checkbox"
-                    checked={selectedProjectMemberIds.includes(String(member.id))}
-                    onChange={() =>
-                      setSelectedProjectMemberIds(ids =>
-                        ids.includes(String(member.id))
-                          ? ids.filter(i => i !== String(member.id))
-                          : [...ids, String(member.id)],
-                      )
-                    }
-                    className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
-                  />
+<input
+                     type="checkbox"
+                     checked={selectedProjectMemberIds.includes(String(member.id))}
+                     onChange={() => {
+                       setSelectedProjectMemberIds(ids =>
+                         ids.includes(String(member.id))
+                           ? ids.filter(i => i !== String(member.id))
+                           : [...ids, String(member.id)],
+                       )
+                       setHasMemberChanges(true)
+                     }}
+                     className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
+                   />
                   <span className="truncate">{member.username}</span>
                 </label>
               ))}
             </div>
           )}
-          <button
-            onClick={updateProjectMembers}
-            disabled={project.archived}
-            className="btn btn-secondary btn-sm mt-3 w-full disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            Zapisz członków
-          </button>
+<button
+             onClick={updateProjectMembers}
+             disabled={project.archived || !hasMemberChanges}
+             className="btn btn-secondary btn-sm mt-3 w-full disabled:cursor-not-allowed disabled:opacity-60"
+           >
+             Zapisz członków
+           </button>
         </div>
       )}
 

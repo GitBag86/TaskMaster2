@@ -66,20 +66,19 @@ def run_deadline_check():
 def check_deadlines(app=None):
     if app is not None:
         with app.app_context():
-            run_deadline_check()
+            return run_deadline_check()
     elif has_app_context():
-        run_deadline_check()
+        return run_deadline_check()
     else:
         scheduler_app = getattr(scheduler, "app", None)
         if scheduler_app is None:
             logger.error("Deadline check skipped: no Flask application context is available.")
             return 0
         with scheduler_app.app_context():
-            run_deadline_check()
+            return run_deadline_check()
 
 
 def archive_completed_tasks(app=None):
-    """Archive tasks completed more than 3 days ago (R22: auto-archive)."""
     now = datetime.now(timezone.utc)
     cutoff = now - timedelta(days=3)
 
@@ -103,7 +102,6 @@ def archive_completed_tasks(app=None):
 
 
 def run_scheduler_jobs(app=None):
-    """Run all scheduled jobs (deadline check + archive)."""
     if app is not None:
         with app.app_context():
             check_deadlines()
