@@ -21,10 +21,10 @@ export default function AdminPage() {
   const fetchUsers = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await api.get('/admin/users');
-      setUsers(response.data);
-    } catch (error: any) {
-      addToast(error.message || 'Error fetching users', 'error');
+      const response = await api.users.getAll();
+      setUsers(response.users);
+    } catch (error: unknown) {
+      addToast(error instanceof Error ? error.message : 'Błąd ładowania użytkowników', 'error');
     } finally {
       setLoading(false);
     }
@@ -38,32 +38,32 @@ export default function AdminPage() {
     e.preventDefault();
     setSaving(true);
     try {
-      await api.post('/admin/users', {
-        username: newUsername,
-        email: newEmail,
+      await api.users.create({
+        username: newUsername.trim(),
+        email: newEmail.trim(),
         password: newPassword,
-        role: newRole
+        role: newRole,
       });
       addToast('User created successfully', 'success');
       setNewUsername('');
       setNewEmail('');
       setNewPassword('');
       fetchUsers();
-    } catch (error: any) {
-      addToast(error.message || 'Error creating user', 'error');
+    } catch (error: unknown) {
+      addToast(error instanceof Error ? error.message : 'Error creating user', 'error');
     } finally {
       setSaving(false);
     }
   };
 
-  const handleDeleteUser = async (userId: string) => {
+  const handleDeleteUser = async (userId: number) => {
     if (!confirm('Are you sure you want to delete this user?')) return;
     try {
-      await api.delete(`/admin/users/${userId}`);
+      await api.users.delete(userId);
       addToast('User deleted successfully', 'success');
       fetchUsers();
-    } catch (error: any) {
-      addToast(error.message || 'Error deleting user', 'error');
+    } catch (error: unknown) {
+      addToast(error instanceof Error ? error.message : 'Error deleting user', 'error');
     }
   };
 
