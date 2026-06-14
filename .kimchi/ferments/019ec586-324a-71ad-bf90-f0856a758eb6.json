@@ -1,0 +1,17 @@
+{
+  "id": "019ec586-324a-71ad-bf90-f0856a758eb6",
+  "name": "do a comprehensive frontend audit",
+  "description": "do a comprehensive frontend audit",
+  "status": "draft",
+  "worktree": {
+    "path": "/home/dakos/CODE/TaskMaster2",
+    "branch": "main",
+    "commit": "7765bc694d661b334f8359d7824656e4bbc09959"
+  },
+  "scoping": {},
+  "phases": [],
+  "decisions": [],
+  "memories": [],
+  "createdAt": "2026-06-14T09:46:06.794Z",
+  "updatedAt": "2026-06-14T09:46:06.794Z"
+}

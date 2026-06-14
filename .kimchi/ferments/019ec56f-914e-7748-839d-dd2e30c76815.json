@@ -1,0 +1,17 @@
+{
+  "id": "019ec56f-914e-7748-839d-dd2e30c76815",
+  "name": "review thoroughly the whole app, write a debug plan and",
+  "description": "review thoroughly the whole app, write a debug plan and hardening plan",
+  "status": "draft",
+  "worktree": {
+    "path": "/home/dakos/CODE/TaskMaster2",
+    "branch": "main",
+    "commit": "7765bc694d661b334f8359d7824656e4bbc09959"
+  },
+  "scoping": {},
+  "phases": [],
+  "decisions": [],
+  "memories": [],
+  "createdAt": "2026-06-14T09:21:23.790Z",
+  "updatedAt": "2026-06-14T09:21:23.790Z"
+}
