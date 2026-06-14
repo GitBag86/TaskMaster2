@@ -46,8 +46,10 @@ logs/
 .zed/
 .idea/
 .kimchi/
+.todo/
 
 
 # Test/Cache
 .pytest_cache/
 .mypy_cache/
+.todo

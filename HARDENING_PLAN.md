@@ -121,3 +121,12 @@ The following security items are already implemented correctly in the codebase:
 ---
 
 *End of Security Hardening Plan*
+
+---
+
+## 🔄 Recent Feature: Auto-Archive Completed Tasks
+
+**Behavior:** Tasks marked as done are automatically archived after 3 days.  
+**Migration:** New `completed_at` column on Task model.  
+**Scheduler job:** `archive_completed_tasks` runs daily.  
+**API:** Archived tasks are filtered from `visible_task_query()` results.

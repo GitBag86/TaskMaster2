@@ -66,15 +66,56 @@ def run_deadline_check():
 def check_deadlines(app=None):
     if app is not None:
         with app.app_context():
-            return run_deadline_check()
+            run_deadline_check()
+    elif has_app_context():
+        run_deadline_check()
+    else:
+        scheduler_app = getattr(scheduler, "app", None)
+        if scheduler_app is None:
+            logger.error("Deadline check skipped: no Flask application context is available.")
+            return 0
+        with scheduler_app.app_context():
+            run_deadline_check()
 
-    if has_app_context():
-        return run_deadline_check()
 
-    scheduler_app = getattr(scheduler, "app", None)
-    if scheduler_app is None:
-        logger.error("Deadline check skipped: no Flask application context is available.")
-        return 0
+def archive_completed_tasks(app=None):
+    """Archive tasks completed more than 3 days ago (R22: auto-archive)."""
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=3)
 
-    with scheduler_app.app_context():
-        return run_deadline_check()
+    archived_count = 0
+    query = Task.query.filter(
+        Task.completed == True,
+        Task.archived == False,
+        Task.completed_at.isnot(None),
+        Task.completed_at <= cutoff,
+    )
+    for task in query.all():
+        task.archived = True
+        archived_count += 1
+
+    if archived_count:
+        db.session.commit()
+        db.session.remove()
+
+    current_app.logger.info("Archived %s completed tasks older than 3 days.", archived_count)
+    return archived_count
+
+
+def run_scheduler_jobs(app=None):
+    """Run all scheduled jobs (deadline check + archive)."""
+    if app is not None:
+        with app.app_context():
+            check_deadlines()
+            archive_completed_tasks()
+    elif has_app_context():
+        check_deadlines()
+        archive_completed_tasks()
+    else:
+        scheduler_app = getattr(scheduler, "app", None)
+        if scheduler_app is None:
+            logger.error("Scheduler jobs skipped: no Flask application context.")
+            return
+        with scheduler_app.app_context():
+            check_deadlines()
+            archive_completed_tasks()

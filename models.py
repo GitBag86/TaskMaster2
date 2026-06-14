@@ -117,6 +117,7 @@ class Task(db.Model):
         cascade='all, delete-orphan',
     )
     created_at = db.Column(db.DateTime, default=utcnow)
+    completed_at = db.Column(db.DateTime, nullable=True)
 
     def summary_dict(self):
         return {
@@ -160,6 +161,8 @@ class Task(db.Model):
             'notes': self.notes,
             'completed': self.completed,
             'status': self.status,
+            'completed_at': self.completed_at.isoformat() if self.completed_at else None,
+            'archived': self.archived,
             'comments': [c.to_dict() for c in self.comments],
             'subtasks': [s.to_dict() for s in self.subtasks],
             'dependencies': [dependency.to_dict() for dependency in self.dependencies],

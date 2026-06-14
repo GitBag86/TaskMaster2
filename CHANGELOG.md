@@ -11,6 +11,10 @@
 - **Session fixation prevention**: Added `session.clear()` before establishing new sessions on login/signup.
 - **Bootstrap password**: Removed hardcoded default admin password from `.env.example`.
 
+### ✨ Features
+
+- **Auto-archive completed tasks**: Tasks marked as done are automatically archived after 3 days (daily scheduler job).
+
 ### ✨ Frontend
 
 - **Super Admin Console** — `/admin` is now the default super-admin landing page with retro/hackerman UI.

@@ -215,8 +215,8 @@ def assigned_task_query(user):
 
 def visible_task_query(user):
     if g.get('current_role') in ('manager', 'super_admin'):
-        return team_scoped(Task.query, Task)
-    return assigned_task_query(user)
+        return team_scoped(Task.query, Task).filter(Task.archived == False)
+    return assigned_task_query(user).filter(Task.archived == False)
 
 
 def _eager_task_options():
@@ -898,6 +898,10 @@ def complete_task(task_id):
         will_complete = not task.completed
         task.completed = not task.completed
         task.status = 'done' if task.completed else 'todo'
+        if task.completed:
+            task.completed_at = datetime.now(timezone.utc)
+        else:
+            task.completed_at = None
         notifications = create_unblocked_notifications(task, user) if will_complete else []
 
         log = ActivityLog(user_id=user_id, task_id=task_id, team_id=task.team_id, action='completed' if task.completed else 'reopened')
@@ -1265,6 +1269,7 @@ def bulk_complete_tasks():
         for task in tasks:
             task.completed = True
             task.status = 'done'
+            task.completed_at = datetime.now(timezone.utc)
 
         db.session.commit()
 

@@ -44,6 +44,7 @@ class TaskSchema(Schema):
     notes = fields.Str(load_default='', allow_none=True)
     completed = fields.Bool(load_default=False)
     status = fields.Str(load_default='todo', validate=validate.OneOf(['todo', 'in_progress', 'done']))
+    completed_at = fields.DateTime(load_default=None, allow_none=True)
     created_at = fields.DateTime(dump_only=True)
 
 class ProjectSchema(Schema):

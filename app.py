@@ -22,7 +22,7 @@ load_dotenv(".env.local", override=True)
 
 from config import Config
 from extensions import csrf, limiter, mail, migrate, scheduler, socketio
-from jobs.deadline_notifier import check_deadlines
+from jobs.deadline_notifier import check_deadlines, archive_completed_tasks
 from models import User, db
 import sentry_sdk
 from utils.errors import TaskMasterError
@@ -255,6 +255,7 @@ def _register_scheduler(app):
     if scheduler.get_job("check_deadlines"):
         return
     scheduler.add_job(id="check_deadlines", func=check_deadlines, args=[app], trigger="interval", days=1)
+    scheduler.add_job(id="archive_completed_tasks", func=archive_completed_tasks, args=[app], trigger="interval", days=1)
     scheduler.start()
 
 
