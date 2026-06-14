@@ -28,13 +28,7 @@ def upgrade():
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('token_hash')
     )
-    with op.batch_alter_table('task', schema=None) as batch_op:
-        batch_op.add_column(sa.Column('completed_at', sa.DateTime(), nullable=True))
-        batch_op.add_column(sa.Column('archived', sa.Boolean(), nullable=False, server_default=sa.false()))
 
 
 def downgrade():
     op.drop_table('password_reset_token')
-    with op.batch_alter_table('task', schema=None) as batch_op:
-        batch_op.drop_column('archived')
-        batch_op.drop_column('completed_at')
