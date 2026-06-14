@@ -8,7 +8,7 @@ type RoleRouteProps = {
 };
 
 export function defaultPathForRole(role: Role | undefined): string {
-  if (role === 'super_admin') return '/admin/teams';
+  if (role === 'super_admin') return '/admin';
   return '/';
 }
 

@@ -5,7 +5,7 @@ import { ThemeProvider } from './store/ThemeContext'
 import { ToastProvider } from './store/ToastContext'
 import { SocketProvider } from './store/SocketContext'
 import { QueryProvider } from './store/QueryProvider'
-import RoleRoute, { defaultPathForRole } from './components/common/RoleRoute'
+import RoleRoute from './components/common/RoleRoute'
 const AuthPage = lazy(() => import('./components/Auth/AuthPage'))
 import DashboardLayout from './components/Layout/DashboardLayout'
 const TasksPage = lazy(() => import('./components/Tasks/TasksPage'))
@@ -20,6 +20,7 @@ const SettingsPage = lazy(() => import('./components/Settings/SettingsPage'))
 const TeamsAdminPage = lazy(() => import('./components/Admin/TeamsAdminPage'))
 const TeamDetailPage = lazy(() => import('./components/Admin/TeamDetailPage'))
 const AdminAuditPage = lazy(() => import('./components/Admin/AdminAuditPage'))
+const AdminPage = lazy(() => import('./components/Admin/AdminPage'))
 const TeamMembersPage = lazy(() => import('./components/Team/TeamMembersPage'))
 import ErrorBoundary from './components/common/ErrorBoundary'
 import { Toaster } from './components/common/Toaster'
@@ -38,11 +39,6 @@ function LoadingScreen() {
       <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
     </div>
   )
-}
-
-function AdminRedirect() {
-  const { user } = useAuth()
-  return <Navigate to={defaultPathForRole(user?.role)} replace />
 }
 
 function AppRoutes() {
@@ -69,7 +65,7 @@ function AppRoutes() {
           <Route path="calendar" element={<RoleRoute roles={['manager', 'user']}><CalendarPage /></RoleRoute>} />
           <Route path="activity" element={<RoleRoute roles={['manager', 'user']}><ActivityPage /></RoleRoute>} />
           <Route path="settings" element={<RoleRoute roles={['manager', 'user']}><SettingsPage /></RoleRoute>} />
-          <Route path="admin" element={<AdminRedirect />} />
+          <Route path="admin" element={<RoleRoute roles={['super_admin']}><AdminPage /></RoleRoute>} />
           <Route path="admin/teams" element={<RoleRoute roles={['super_admin']}><TeamsAdminPage /></RoleRoute>} />
           <Route path="admin/teams/:id" element={<RoleRoute roles={['super_admin']}><TeamDetailPage /></RoleRoute>} />
           <Route path="admin/audit" element={<RoleRoute roles={['super_admin']}><AdminAuditPage /></RoleRoute>} />

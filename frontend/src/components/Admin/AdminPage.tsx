@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
-import type { User } from '@/types'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { Team, User } from '@/types'
 import { api } from '@/api/client'
 import { useToast } from '@/store/ToastContext'
 import { useAuth } from '@/store/AuthContext'
@@ -7,48 +7,140 @@ import { AdminSkeleton } from '@/components/common/Skeletons'
 
 type ManageableRole = 'manager' | 'user';
 
+function formatId(id: number) {
+  return `#${String(id).padStart(3, '0')}`;
+}
+
+function formatTimestamp(value: string | null) {
+  if (!value) return 'never synced';
+  const date = new Date(value);
+  return date.toLocaleString('pl-PL', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function roleLabel(role: User['role']) {
+  if (role === 'super_admin') return 'ROOT';
+  if (role === 'manager') return 'MANAGER';
+  return 'USER';
+}
+
+function roleClass(role: User['role']) {
+  if (role === 'super_admin') {
+    return 'border-red-500/30 bg-red-500/10 text-red-300 shadow-red-500/10';
+  }
+  if (role === 'manager') {
+    return 'border-purple-500/30 bg-purple-500/10 text-purple-300 shadow-purple-500/10';
+  }
+  return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300 shadow-emerald-500/10';
+}
+
+function teamLabel(user: User) {
+  return user.team?.name ?? (user.team_id ? `team #${user.team_id}` : 'ROOT');
+}
+
 export default function AdminPage() {
   const [users, setUsers] = useState<User[]>([]);
+  const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [newUsername, setNewUsername] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newRole, setNewRole] = useState<ManageableRole>('user');
+  const [newTeamId, setNewTeamId] = useState('');
   const { addToast } = useToast();
   const { user: currentUser } = useAuth();
+
+  const teamOptions = useMemo(
+    () => teams.filter(team => !team.archived),
+    [teams],
+  );
+
+  const selectedTeam = useMemo(
+    () => teamOptions.find(team => String(team.id) === newTeamId) ?? teamOptions[0],
+    [teamOptions, newTeamId],
+  );
+
+  const stats = useMemo(() => {
+    const managers = users.filter(user => user.role === 'manager').length;
+    const superAdmins = users.filter(user => user.role === 'super_admin').length;
+    const teamScoped = users.filter(user => user.team_id !== null).length;
+
+    return [
+      { label: 'IDENTITIES', value: users.length, hint: 'loaded identities' },
+      { label: 'ROOT', value: superAdmins, hint: 'super admin accounts' },
+      { label: 'MANAGERS', value: managers, hint: 'team operators' },
+      { label: 'TEAM SCOPED', value: teamScoped, hint: 'bound to workspaces' },
+    ];
+  }, [users]);
+
+  const latestUser = users[users.length - 1];
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await api.users.getAll();
-      setUsers(response.users);
+      const [teamsResponse, meResponse] = await Promise.all([
+        api.teams.list(),
+        api.auth.me(),
+      ]);
+      const firstActiveTeamId = teamsResponse.teams.find(team => !team.archived)?.id;
+      setNewTeamId(prev => prev || (firstActiveTeamId ? String(firstActiveTeamId) : ''));
+      setTeams(teamsResponse.teams);
+
+      const memberRows = await Promise.all(
+        teamsResponse.teams.map(async team => {
+          try {
+            const response = await api.teams.members(team.id);
+            return response.members.map(member => ({ ...member, team }));
+          } catch {
+            return [];
+          }
+        }),
+      );
+
+      const byId = new Map<number, User>();
+      [meResponse, ...memberRows.flat()].forEach(user => byId.set(user.id, user));
+      setUsers(
+        Array.from(byId.values()).sort((a, b) => a.username.localeCompare(b.username)),
+      );
     } catch (error: unknown) {
-      addToast(error instanceof Error ? error.message : 'Błąd ładowania użytkowników', 'error');
+      addToast(error instanceof Error ? error.message : 'Błąd ładowania konsoli', 'error');
+      setUsers([]);
+      setTeams([]);
     } finally {
       setLoading(false);
     }
   }, [addToast]);
 
   useEffect(() => {
-    fetchUsers();
+    void fetchUsers();
   }, [fetchUsers]);
 
-  const handleCreateUser = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleCreateUser = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selectedTeam) {
+      addToast('Wybierz aktywny zespół dla nowego użytkownika', 'error');
+      return;
+    }
+
     setSaving(true);
     try {
-      await api.users.create({
+      await api.teams.addMember(selectedTeam.id, {
         username: newUsername.trim(),
         email: newEmail.trim(),
         password: newPassword,
         role: newRole,
       });
-      addToast('User created successfully', 'success');
+      addToast('User injected into workspace', 'success');
       setNewUsername('');
       setNewEmail('');
       setNewPassword('');
-      fetchUsers();
+      await fetchUsers();
     } catch (error: unknown) {
       addToast(error instanceof Error ? error.message : 'Error creating user', 'error');
     } finally {
@@ -57,11 +149,13 @@ export default function AdminPage() {
   };
 
   const handleDeleteUser = async (userId: number) => {
-    if (!confirm('Are you sure you want to delete this user?')) return;
+    const target = users.find(user => user.id === userId);
+    if (!confirm(`Terminate ${target?.username ?? 'user'} from the matrix?`)) return;
+
     try {
-      await api.users.delete(userId);
-      addToast('User deleted successfully', 'success');
-      fetchUsers();
+      await api.teams.deleteUser(userId);
+      addToast('User terminated', 'success');
+      await fetchUsers();
     } catch (error: unknown) {
       addToast(error instanceof Error ? error.message : 'Error deleting user', 'error');
     }
@@ -71,118 +165,212 @@ export default function AdminPage() {
     return <AdminSkeleton />;
   }
 
-  return (
-    <div className="space-y-6 page-enter">
-      <div className="relative overflow-hidden rounded-2xl border border-green-500/20 bg-gradient-to-r from-gray-950 via-green-950/30 to-gray-950 p-6 shadow-2xl shadow-green-950/20">
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(34,197,94,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(34,197,94,0.03)_1px,transparent_1px)] bg-[size:20px_20px]"></div>
-        <div className="relative">
-          <div className="mb-2 flex items-center gap-2 text-green-400">
-            <span className="h-2 w-2 rounded-full bg-green-400 animate-pulse"></span>
-            <span className="text-xs font-mono uppercase tracking-[0.3em]">system.override</span>
-          </div>
-          <h2 className="text-2xl font-bold text-white">Super Admin Console</h2>
-          <p className="mt-1 text-sm text-green-200/70 font-mono">zarądzańąśe urethninkowych // root access</p>
-        </div>
-      </div>
+  const clock = new Date().toLocaleTimeString('pl-PL', { hour12: false });
 
-      <form onSubmit={handleCreateUser} className="card border border-green-500/20 bg-gray-950/90 p-4 shadow-lg shadow-green-950/10">
-        <div className="mb-4 flex items-center justify-between">
+  return (
+    <div className="relative min-h-full space-y-6 overflow-hidden bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.18),transparent_32rem),radial-gradient(circle_at_bottom_right,rgba(124,58,237,0.16),transparent_30rem),#020617] p-1 page-enter">
+      <div className="pointer-events-none fixed inset-0 bg-[linear-gradient(rgba(52,211,153,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(52,211,153,0.035)_1px,transparent_1px)] bg-[size:24px_24px]"></div>
+
+      <section className="relative overflow-hidden rounded-3xl border border-emerald-400/20 bg-gray-950/90 p-5 shadow-2xl shadow-emerald-950/40">
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(16,185,129,0.05)_1px,transparent_1px)] bg-[size:18px_18px]"></div>
+        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-emerald-300 to-transparent"></div>
+        <div className="relative grid gap-6 lg:grid-cols-[1.4fr_0.6fr]">
           <div>
-            <h3 className="font-mono text-lg text-green-300">&gt; create_user()</h3>
-            <p className="text-sm text-muted-foreground">Utwórz konto i wybierz poczatkową rolę.</p>
+            <div className="mb-3 flex flex-wrap items-center gap-2 text-emerald-300">
+              <span className="h-2.5 w-2.5 rounded-full bg-emerald-300 shadow-[0_0_18px_rgba(52,211,153,0.9)] animate-pulse"></span>
+              <span className="font-mono text-xs uppercase tracking-[0.42em]">system.override // root session</span>
+            </div>
+            <h1 className="font-mono text-3xl font-black uppercase tracking-tight text-white sm:text-4xl">
+              Super Admin Console
+            </h1>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-emerald-100/70 font-mono">
+              Retro control panel for identity injection, workspace oversight, and audit-ready user operations.
+            </p>
+            <div className="mt-5 flex flex-wrap gap-2 text-[11px] font-mono text-emerald-200/70">
+              <span className="rounded border border-emerald-400/20 bg-emerald-400/10 px-2 py-1">CLOCK {clock}</span>
+              <span className="rounded border border-purple-400/20 bg-purple-400/10 px-2 py-1">MODE WRITE</span>
+              <span className="rounded border border-cyan-400/20 bg-cyan-400/10 px-2 py-1">SYNC LIVE</span>
+            </div>
           </div>
-          <span className="rounded-full bg-green-500/10 px-3 py-1 text-xs font-mono text-green-400">WRITE_MODE</span>
+
+          <div className="rounded-2xl border border-emerald-400/20 bg-black/35 p-4 font-mono">
+            <div className="mb-3 flex items-center justify-between text-xs text-emerald-200/70">
+              <span>last_identity</span>
+              <span className="animate-pulse text-emerald-300">ONLINE</span>
+            </div>
+            {latestUser ? (
+              <div className="space-y-1">
+                <p className="truncate text-lg font-bold text-emerald-100">{latestUser.username}</p>
+                <p className="text-xs text-emerald-200/60">{latestUser.email}</p>
+                <p className="text-xs text-purple-200/70">{formatTimestamp(latestUser.created_at)}</p>
+              </div>
+            ) : (
+              <p className="text-sm text-emerald-200/50">no identities loaded</p>
+            )}
+          </div>
         </div>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[1fr_1fr_1fr_180px_auto]">
-          <input
-            type="text"
-            value={newUsername}
-            onChange={e => setNewUsername(e.target.value)}
-            className="input bg-gray-900/50 font-mono text-green-100 placeholder:text-green-800/50"
-            placeholder="Nazwa użytkownika"
-            minLength={3}
-            required
-          />
-          <input
-            type="email"
-            value={newEmail}
-            onChange={e => setNewEmail(e.target.value)}
-            className="input bg-gray-900/50 font-mono text-green-100 placeholder:text-green-800/50"
-            placeholder="E-mail"
-            required
-          />
-          <input
-            type="password"
-            value={newPassword}
-            onChange={e => setNewPassword(e.target.value)}
-            className="input bg-gray-900/50 font-mono text-green-100 placeholder:text-green-800/50"
-            placeholder="Hasło"
-            required
-          />
-          <select
-            value={newRole}
-            onChange={e => setNewRole(e.target.value as ManageableRole)}
-            className="input bg-gray-900/50 font-mono text-green-100"
-          >
-            <option value="user">user</option>
-            <option value="manager">manager</option>
-          </select>
-          <button
-            type="submit"
-            disabled={saving}
-            className="btn btn-primary whitespace-nowrap font-mono text-green-400 bg-green-900/20 hover:bg-green-900/40 border border-green-500/30"
-          >
-            {saving ? '...' : 'EXECUTE'}
-          </button>
+      </section>
+
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {stats.map(item => (
+          <div key={item.label} className="relative overflow-hidden rounded-2xl border border-emerald-400/20 bg-gray-950/85 p-4 shadow-lg shadow-emerald-950/20">
+            <div className="absolute right-3 top-3 h-2 w-2 rounded-full bg-emerald-300 shadow-[0_0_12px_rgba(52,211,153,0.9)] animate-pulse"></div>
+            <p className="font-mono text-[10px] uppercase tracking-[0.35em] text-emerald-200/60">{item.label}</p>
+            <p className="mt-3 font-mono text-4xl font-black text-emerald-100">{item.value}</p>
+            <p className="mt-1 text-xs text-emerald-200/50">{item.hint}</p>
+          </div>
+        ))}
+      </section>
+
+      <form onSubmit={handleCreateUser} className="relative overflow-hidden rounded-3xl border border-emerald-400/20 bg-gray-950/90 p-5 shadow-2xl shadow-emerald-950/30">
+        <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(16,185,129,0.04)_1px,transparent_1px)] bg-[size:16px_16px]"></div>
+        <div className="relative">
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="font-mono text-xl font-bold text-emerald-200">&gt; create_user()</h2>
+              <p className="mt-1 text-sm text-emerald-100/60">Inject a new identity into an active workspace.</p>
+            </div>
+            <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 font-mono text-xs text-emerald-300">WRITE_MODE</span>
+          </div>
+
+          <div className="grid gap-3 xl:grid-cols-[1fr_1fr_1fr_180px_180px_auto]">
+            <input
+              type="text"
+              value={newUsername}
+              onChange={event => setNewUsername(event.target.value)}
+              className="input bg-black/30 font-mono text-emerald-100 placeholder:text-emerald-800/60"
+              placeholder="username"
+              minLength={3}
+              required
+            />
+            <input
+              type="email"
+              value={newEmail}
+              onChange={event => setNewEmail(event.target.value)}
+              className="input bg-black/30 font-mono text-emerald-100 placeholder:text-emerald-800/60"
+              placeholder="email@domain"
+              required
+            />
+            <input
+              type="password"
+              value={newPassword}
+              onChange={event => setNewPassword(event.target.value)}
+              className="input bg-black/30 font-mono text-emerald-100 placeholder:text-emerald-800/60"
+              placeholder="password"
+              minLength={6}
+              required
+            />
+            <select
+              value={newRole}
+              onChange={event => setNewRole(event.target.value as ManageableRole)}
+              className="input bg-black/30 font-mono text-emerald-100"
+            >
+              <option value="user">user</option>
+              <option value="manager">manager</option>
+            </select>
+            <select
+              value={newTeamId}
+              onChange={event => setNewTeamId(event.target.value)}
+              className="input bg-black/30 font-mono text-emerald-100"
+              disabled={teamOptions.length === 0}
+            >
+              {teamOptions.length === 0 ? (
+                <option value="">no workspaces</option>
+              ) : (
+                teamOptions.map(team => (
+                  <option key={team.id} value={team.id}>{team.name}</option>
+                ))
+              )}
+            </select>
+            <button
+              type="submit"
+              disabled={saving || teamOptions.length === 0}
+              className="btn whitespace-nowrap border border-emerald-400/30 bg-emerald-500/15 font-mono text-emerald-200 shadow-[0_0_24px_rgba(16,185,129,0.12)] hover:bg-emerald-500/25 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {saving ? 'INJECTING...' : 'EXECUTE'}
+            </button>
+          </div>
         </div>
       </form>
 
-      <div className="card overflow-hidden border border-green-500/20 bg-gray-950/90">
+      <section className="relative overflow-hidden rounded-3xl border border-emerald-400/20 bg-gray-950/90 shadow-2xl shadow-emerald-950/30">
+        <div className="border-b border-emerald-400/20 bg-black/30 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="h-3 w-3 rounded-full bg-red-500"></span>
+              <span className="h-3 w-3 rounded-full bg-yellow-400"></span>
+              <span className="h-3 w-3 rounded-full bg-emerald-400"></span>
+              <span className="ml-2 font-mono text-sm text-emerald-200/70">identity_matrix — read/write</span>
+            </div>
+            <span className="rounded border border-purple-400/20 bg-purple-400/10 px-2 py-1 font-mono text-[11px] text-purple-200/80">
+              {users.length} rows indexed
+            </span>
+          </div>
+        </div>
+
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] font-mono text-sm">
-            <thead className="border-b border-green-500/20 bg-green-900/10">
-              <tr className="text-green-400">
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">u_identifier</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">u_email</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">u_role</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">u_actions</th>
+          <table className="w-full min-w-[920px] font-mono text-sm">
+            <thead className="border-b border-emerald-400/20 bg-emerald-400/5">
+              <tr className="text-left text-[11px] uppercase tracking-[0.28em] text-emerald-200/70">
+                <th className="px-4 py-3">u_identifier</th>
+                <th className="px-4 py-3">username</th>
+                <th className="px-4 py-3">email</th>
+                <th className="px-4 py-3">workspace</th>
+                <th className="px-4 py-3">role</th>
+                <th className="px-4 py-3">created_at</th>
+                <th className="px-4 py-3 text-right">actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-green-500/10">
-              {users.map(u => (
-                <tr key={u.id} className="hover:bg-green-500/5 transition-colors">
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-green-500/10 text-green-400 font-bold border border-green-500/20">
-                        {u.username.charAt(0).toUpperCase()}
+            <tbody className="divide-y divide-emerald-400/10">
+              {users.map(user => {
+                const isCurrentUser = currentUser?.id === user.id;
+
+                return (
+                  <tr key={user.id} className="transition-colors hover:bg-emerald-400/5">
+                    <td className="px-4 py-3 text-xs text-emerald-300/60">{formatId(user.id)}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-full border border-emerald-400/20 bg-emerald-400/10 font-bold text-emerald-200">
+                          {user.username.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="font-bold text-emerald-100">{user.username}</p>
+                          {isCurrentUser && <p className="mt-0.5 text-[10px] text-emerald-300">CURRENT ROOT SESSION</p>}
+                        </div>
                       </div>
-                      <span className="text-green-100 font-medium">{u.username}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-green-200/70">{u.email || '—'}</td>
-                  <td className="px-4 py-3">
-                    <span className={`badge font-mono ${u.role === 'super_admin' ? 'bg-red-500/10 text-red-400 border border-red-500/20' : u.role === 'manager' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 'bg-gray-500/10 text-gray-400 border border-gray-500/20'}`}>
-                      {u.role}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
+                    </td>
+                    <td className="px-4 py-3 text-emerald-100/60">{user.email || '—'}</td>
+                    <td className="px-4 py-3 text-emerald-100/60">{teamLabel(user)}</td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center rounded-md border px-2 py-1 text-[11px] font-bold shadow-sm ${roleClass(user.role)}`}>
+                        {roleLabel(user.role)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-emerald-100/50">{formatTimestamp(user.created_at)}</td>
+                    <td className="px-4 py-3 text-right">
                       <button
                         type="button"
-                        onClick={() => void handleDeleteUser(u.id)}
-                        disabled={u.id === currentUser?.id}
-                        className="btn btn-sm bg-red-600/10 font-mono text-red-400 hover:bg-red-600/20 border border-red-600/20 disabled:opacity-30"
+                        onClick={() => void handleDeleteUser(user.id)}
+                        disabled={isCurrentUser}
+                        className="btn btn-sm border border-red-400/20 bg-red-500/10 font-mono text-red-300 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-30"
                       >
-                        DELETE
+                        TERMINATE
                       </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
-      </div>
+
+        {users.length === 0 && (
+          <div className="border-t border-emerald-400/10 p-8 text-center">
+            <p className="font-mono text-emerald-100">matrix empty</p>
+            <p className="mt-1 text-sm text-emerald-100/50">Create a workspace first or wait for team sync.</p>
+          </div>
+        )}
+      </section>
     </div>
   );
 }

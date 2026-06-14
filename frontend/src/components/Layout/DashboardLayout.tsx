@@ -21,6 +21,7 @@ const standardNavItems = [
 ];
 
 const superAdminNavItems = [
+  { label: 'Konsola', path: '/admin', icon: 'M4 7V5a2 2 0 012-2h12a2 2 0 012 2v2M4 7h16M4 7v12a2 2 0 002 2h12a2 2 0 002-2V7M8 11h8M8 15h5' },
   { label: 'Zespoły', path: '/admin/teams', icon: 'M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m10-3.13a4 4 0 10-8 0 4 4 0 008 0zM7 11a4 4 0 100-8 4 4 0 000 8z' },
   { label: 'Audyt', path: '/admin/audit', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
 ];
@@ -197,7 +198,7 @@ export default function DashboardLayout() {
               <NavLink
                 key={item.path}
                 to={item.path}
-                end={item.path === '/'}
+                end={item.path === '/' || item.path === '/admin'}
                 onClick={() => setSidebarOpen(false)}
                 className={({ isActive }) =>
                   `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
