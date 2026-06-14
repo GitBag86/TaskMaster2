@@ -54,7 +54,7 @@ def signup():
     mode = current_app.config.get('SIGNUP_MODE', 'invite_only')
     if mode == 'disabled':
         raise SignupDisabledError()
-if mode == 'invite_only':
+    if mode == 'invite_only':
         invite = resolve_invite_token(validated.get('invite_token'))
         target_team = invite.team
         target_role = invite.default_role
