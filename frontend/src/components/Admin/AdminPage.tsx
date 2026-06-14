@@ -19,64 +19,51 @@ export default function AdminPage() {
   const { user: currentUser } = useAuth();
 
   const fetchUsers = useCallback(async () => {
+    setLoading(true);
     try {
-      const res = await api.users.getAll();
-      setUsers(res.users);
-    } catch {
-      addToast('Błąd ładowania użytkowników', 'error');
+      const response = await api.get('/admin/users');
+      setUsers(response.data);
+    } catch (error: any) {
+      addToast(error.message || 'Error fetching users', 'error');
     } finally {
       setLoading(false);
     }
   }, [addToast]);
 
-  useEffect(() => { fetchUsers(); }, [fetchUsers]);
+  useEffect(() => {
+    fetchUsers();
+  }, [fetchUsers]);
 
-  const handleCreateUser = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
     setSaving(true);
     try {
-      await api.users.create({
-        username: newUsername.trim(),
-        email: newEmail.trim(),
+      await api.post('/admin/users', {
+        username: newUsername,
+        email: newEmail,
         password: newPassword,
-        role: newRole,
+        role: newRole
       });
-      addToast('Użytkownik dodany', 'success');
+      addToast('User created successfully', 'success');
       setNewUsername('');
       setNewEmail('');
       setNewPassword('');
-      setNewRole('user');
-      await fetchUsers();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Błąd dodawania użytkownika';
-      addToast(message, 'error');
+      fetchUsers();
+    } catch (error: any) {
+      addToast(error.message || 'Error creating user', 'error');
     } finally {
       setSaving(false);
     }
   };
 
-  const handleRoleChange = async (userId: number, role: ManageableRole) => {
+  const handleDeleteUser = async (userId: string) => {
+    if (!confirm('Are you sure you want to delete this user?')) return;
     try {
-      await api.users.updateRole(userId, role);
-      addToast('Rola zaktualizowana', 'success');
-      await fetchUsers();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Błąd zmiany roli';
-      addToast(message, 'error');
-    }
-  };
-
-  const handleDeleteUser = async (targetUser: User) => {
-    const confirmed = window.confirm(`Usunąć użytkownika ${targetUser.username}? Tej operacji nie można cofnąć.`);
-    if (!confirmed) return;
-
-    try {
-      await api.users.delete(targetUser.id);
-      addToast('Użytkownik usunięty', 'success');
-      await fetchUsers();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Błąd usuwania użytkownika';
-      addToast(message, 'error');
+      await api.delete(`/admin/users/${userId}`);
+      addToast('User deleted successfully', 'success');
+      fetchUsers();
+    } catch (error: any) {
+      addToast(error.message || 'Error deleting user', 'error');
     }
   };
 
@@ -94,7 +81,7 @@ export default function AdminPage() {
             <span className="text-xs font-mono uppercase tracking-[0.3em]">system.override</span>
           </div>
           <h2 className="text-2xl font-bold text-white">Super Admin Console</h2>
-          <p className="mt-1 text-sm text-green-200/70 font-mono">zarządzanie użytkownikami // root access</p>
+          <p className="mt-1 text-sm text-green-200/70 font-mono">zarądzańąśe urethninkowych // root access</p>
         </div>
       </div>
 
@@ -102,7 +89,7 @@ export default function AdminPage() {
         <div className="mb-4 flex items-center justify-between">
           <div>
             <h3 className="font-mono text-lg text-green-300">&gt; create_user()</h3>
-            <p className="text-sm text-muted-foreground">Utwórz konto i wybierz początkową rolę.</p>
+            <p className="text-sm text-muted-foreground">Utwórz konto i wybierz poczatkową rolę.</p>
           </div>
           <span className="rounded-full bg-green-500/10 px-3 py-1 text-xs font-mono text-green-400">WRITE_MODE</span>
         </div>
@@ -130,82 +117,61 @@ export default function AdminPage() {
             onChange={e => setNewPassword(e.target.value)}
             className="input bg-gray-900/50 font-mono text-green-100 placeholder:text-green-800/50"
             placeholder="Hasło"
-            minLength={6}
             required
           />
-          <select value={newRole} onChange={e => setNewRole(e.target.value as ManageableRole)} className="input bg-gray-900/50 font-mono text-green-100">
+          <select
+            value={newRole}
+            onChange={e => setNewRole(e.target.value as ManageableRole)}
+            className="input bg-gray-900/50 font-mono text-green-100"
+          >
             <option value="user">user</option>
             <option value="manager">manager</option>
           </select>
-          <button type="submit" disabled={saving} className="btn whitespace-nowrap bg-green-600 font-mono text-green-50 hover:bg-green-500 disabled:cursor-not-allowed disabled:opacity-50">
-            {saving ? 'EXECUTING...' : 'EXECUTE'}
+          <button
+            type="submit"
+            disabled={saving}
+            className="btn btn-primary whitespace-nowrap font-mono text-green-400 bg-green-900/20 hover:bg-green-900/40 border border-green-500/30"
+          >
+            {saving ? '...' : 'EXECUTE'}
           </button>
         </div>
       </form>
 
-      <div className="card overflow-hidden border border-green-500/20 bg-gray-950/90 shadow-lg shadow-green-950/10">
-        <div className="border-b border-green-500/10 bg-gray-900/50 px-4 py-3">
-          <div className="flex items-center gap-2">
-            <span className="h-3 w-3 rounded-full bg-red-500"></span>
-            <span className="h-3 w-3 rounded-full bg-yellow-500"></span>
-            <span className="h-3 w-3 rounded-full bg-green-500"></span>
-            <span className="ml-2 font-mono text-sm text-green-400">users.db — read_only</span>
-          </div>
-        </div>
+      <div className="card overflow-hidden border border-green-500/20 bg-gray-950/90">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px]">
-            <thead className="border-b border-green-500/10 bg-gray-900/70">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-mono uppercase tracking-wider text-green-400/70">ID</th>
-                <th className="px-4 py-3 text-left text-xs font-mono uppercase tracking-wider text-green-400/70">username</th>
-                <th className="px-4 py-3 text-left text-xs font-mono uppercase tracking-wider text-green-400/70">email</th>
-                <th className="px-4 py-3 text-left text-xs font-mono uppercase tracking-wider text-green-400/70">role</th>
-                <th className="px-4 py-3 text-left text-xs font-mono uppercase tracking-wider text-green-400/70">actions</th>
+          <table className="w-full min-w-[760px] font-mono text-sm">
+            <thead className="border-b border-green-500/20 bg-green-900/10">
+              <tr className="text-green-400">
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">u_identifier</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">u_email</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">u_role</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">u_actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-green-500/5">
+            <tbody className="divide-y divide-green-500/10">
               {users.map(u => (
-                <tr key={u.id} className="font-mono hover:bg-green-500/5 transition-colors">
-                  <td className="px-4 py-3 text-green-500/50 text-xs">#{u.id}</td>
+                <tr key={u.id} className="hover:bg-green-500/5 transition-colors">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-md border border-green-500/20 bg-green-500/10 text-sm font-bold text-green-300">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-green-500/10 text-green-400 font-bold border border-green-500/20">
                         {u.username.charAt(0).toUpperCase()}
                       </div>
-                      <span className="font-medium text-green-100">{u.username}</span>
-                      {u.id === currentUser?.id && (
-                        <span className="rounded bg-green-500/10 px-2 py-0.5 text-[10px] text-green-400">YOU</span>
-                      )}
+                      <span className="text-green-100 font-medium">{u.username}</span>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-sm text-green-200/60">{u.email || 'null'}</td>
+                  <td className="px-4 py-3 text-green-200/70">{u.email || '—'}</td>
                   <td className="px-4 py-3">
-                    <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-mono ${
-                      u.role === 'super_admin' ? 'bg-red-500/10 text-red-400 border border-red-500/20'
-                      : u.role === 'manager' ? 'bg-purple-500/10 text-purple-300 border border-purple-500/20'
-                      : 'bg-gray-800 text-green-300 border border-green-500/10'
-                    }`}>
-                      {u.role === 'super_admin' ? 'ROOT'
-                        : u.role === 'manager' ? 'ADMIN'
-                        : 'USER'}
+                    <span className={`badge font-mono ${u.role === 'super_admin' ? 'bg-red-500/10 text-red-400 border border-red-500/20' : u.role === 'manager' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 'bg-gray-500/10 text-gray-400 border border-gray-500/20'}`}>
+                      {u.role}
                     </span>
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <select
-                        value={u.role}
-                        onChange={e => handleRoleChange(u.id, e.target.value as ManageableRole)}
-                        disabled={u.id === currentUser?.id}
-                        className="input h-8 w-36 bg-gray-900/50 font-mono text-xs text-green-100 disabled:opacity-50"
-                      >
-                        <option value="user">user</option>
-                        <option value="manager">manager</option>
-                      </select>
                       <button
                         type="button"
-                        onClick={() => void handleDeleteUser(u)}
+                        onClick={() => void handleDeleteUser(u.id)}
                         disabled={u.id === currentUser?.id}
-                        className="btn btn-sm bg-red-600/20 font-mono text-red-300 hover:bg-red-600/30 disabled:cursor-not-allowed disabled:opacity-30"
+                        className="btn btn-sm bg-red-600/10 font-mono text-red-400 hover:bg-red-600/20 border border-red-600/20 disabled:opacity-30"
                       >
                         DELETE
                       </button>
