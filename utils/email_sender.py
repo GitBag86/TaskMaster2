@@ -1,18 +1,17 @@
 from html import escape
 
-import smtplib
-import socket
+import json
 import threading
+import urllib.error
+import urllib.request
 
 from flask import current_app, has_app_context
-from flask_mail import Message
-
-from extensions import mail
 
 
 BRAND_NAME = "TaskMaster"
 SIGNATURE = "Zespol TaskMaster"
 DEFAULT_MAIL_TIMEOUT_SECONDS = 10
+DEFAULT_BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
 
 
 _pool_lock = threading.Lock()
@@ -43,18 +42,60 @@ def missing_mail_config():
         return []
 
     missing = []
-    if not current_app.config.get("MAIL_SERVER"):
-        missing.append("MAIL_SERVER")
-    if not (current_app.config.get("MAIL_DEFAULT_SENDER") or current_app.config.get("MAIL_USERNAME")):
-        missing.append("MAIL_DEFAULT_SENDER")
+    if not current_app.config.get("BREVO_API_KEY"):
+        missing.append("BREVO_API_KEY")
+    if not _sender_email():
+        missing.append("BREVO_SENDER_EMAIL")
     return missing
+
+
+def _sender_email():
+    return (
+        current_app.config.get("BREVO_SENDER_EMAIL")
+        or current_app.config.get("MAIL_DEFAULT_SENDER")
+        or current_app.config.get("MAIL_USERNAME")
+    )
+
+
+def _html_from_text(text):
+    return (
+        "<!doctype html><html><body>"
+        f"<p>{escape(text).replace(chr(10), '<br>')}</p>"
+        "</body></html>"
+    )
+
+
+def _email_parts(body):
+    if isinstance(body, dict):
+        text = body.get("text", "")
+        html = body.get("html") or _html_from_text(text)
+        return text, html
+
+    text = str(body)
+    return text, _html_from_text(text)
+
+
+def _build_brevo_payload(to_email, subject, body):
+    text, html = _email_parts(body)
+    sender = {"email": _sender_email()}
+    sender_name = current_app.config.get("BREVO_SENDER_NAME")
+    if sender_name:
+        sender["name"] = sender_name
+
+    return {
+        "sender": sender,
+        "to": [{"email": to_email}],
+        "subject": subject,
+        "htmlContent": html,
+        "textContent": text,
+    }
 
 
 def send_email(to_email, subject, body):
     """Synchronous email send. Returns True on success.
 
     Use enqueue_email() from request handlers - this call blocks the
-    current thread on SMTP and is only safe in background workers/tests.
+    current thread on Brevo and is only safe in background workers/tests.
     """
     missing = missing_mail_config()
     if missing:
@@ -71,35 +112,70 @@ def send_email(to_email, subject, body):
             to_email,
             subject,
         )
-        # Flask-Mail honours MAIL_SUPPRESS_SEND and skips the SMTP roundtrip,
-        # but tests still rely on mail.send being called for inspection.
+        return True
 
-    sender = current_app.config.get("MAIL_DEFAULT_SENDER") or current_app.config.get("MAIL_USERNAME")
-    msg = Message(subject, recipients=[to_email], sender=sender)
-
-    if isinstance(body, dict):
-        msg.body = body.get("text", "")
-        msg.html = body.get("html")
-    else:
-        msg.body = str(body)
-
-    timeout = current_app.config.get("MAIL_TIMEOUT", DEFAULT_MAIL_TIMEOUT_SECONDS)
-    if timeout:
-        msg.mail_options = [f"timeout={timeout}"]
+    payload = _build_brevo_payload(to_email, subject, body)
+    api_url = current_app.config.get("BREVO_API_URL") or DEFAULT_BREVO_API_URL
+    timeout = current_app.config.get("BREVO_TIMEOUT", current_app.config.get("MAIL_TIMEOUT", DEFAULT_MAIL_TIMEOUT_SECONDS))
+    request = urllib.request.Request(
+        api_url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "accept": "application/json",
+            "api-key": current_app.config["BREVO_API_KEY"],
+            "content-type": "application/json",
+        },
+        method="POST",
+    )
 
     try:
-        mail.send(msg)
-        current_app.logger.info("Email sent to %s with subject: %s", to_email, subject)
-        return True
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            status_code = getattr(response, "status", response.getcode())
+            if 200 <= status_code < 300:
+                response_body = response.read().decode("utf-8")
+                message_id = None
+                if response_body:
+                    try:
+                        message_id = json.loads(response_body).get("messageId")
+                    except json.JSONDecodeError:
+                        message_id = None
+                if message_id:
+                    current_app.logger.info(
+                        "Email sent to %s with subject: %s via Brevo message_id=%s",
+                        to_email,
+                        subject,
+                        message_id,
+                    )
+                else:
+                    current_app.logger.info("Email sent to %s with subject: %s via Brevo", to_email, subject)
+                return True
+
+            current_app.logger.error(
+                "Brevo email send failed for %s with status %s",
+                to_email,
+                status_code,
+            )
+            return False
+    except urllib.error.HTTPError as e:
+        current_app.logger.error(
+            "Brevo email send failed for %s with status %s: %s",
+            to_email,
+            e.code,
+            e.reason,
+        )
+        return False
+    except (TimeoutError, urllib.error.URLError, OSError) as e:
+        current_app.logger.error("Failed to send email to %s via Brevo: %s", to_email, e)
+        return False
     except Exception as e:
-        current_app.logger.error("Failed to send email to %s: %s", to_email, e)
+        current_app.logger.error("Unexpected Brevo email failure for %s: %s", to_email, e)
         return False
 
 
 def enqueue_email(to_email, subject, body):
     """Schedule an email to be sent off the request thread.
 
-    Returns immediately so HTTP handlers don't wait on SMTP. If the app is
+    Returns immediately so HTTP handlers don't wait on Brevo. If the app is
     configured to send emails synchronously (e.g. tests, or MAIL_ASYNC=False)
     the call falls back to send_email and propagates its return value.
     """
@@ -116,7 +192,7 @@ def enqueue_email(to_email, subject, body):
         with app.app_context():
             try:
                 send_email(to_email, subject, body)
-            except (OSError, smtplib.SMTPException):
+            except (OSError, urllib.error.URLError):
                 app.logger.exception("Async email worker crashed for %s", to_email)
 
     _get_executor().submit(_worker)

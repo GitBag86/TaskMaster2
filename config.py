@@ -66,16 +66,16 @@ class Config:
     INVITE_TOKEN_TTL_DAYS = int(os.environ.get("INVITE_TOKEN_TTL_DAYS", 7))
     SUPER_ADMIN_LANDING = os.environ.get("SUPER_ADMIN_LANDING", "/admin")
 
-    # Email configuration (optional)
-    MAIL_SERVER = os.environ.get("MAIL_SERVER")
-    MAIL_PORT = int(os.environ.get("MAIL_PORT", 587))
-    MAIL_USE_TLS = os.environ.get("MAIL_USE_TLS", "True").lower() == "true"
-    MAIL_USE_SSL = os.environ.get("MAIL_USE_SSL", "False").lower() == "true"
+    # Email configuration (optional, Brevo Transactional Email API)
+    BREVO_API_KEY = os.environ.get("BREVO_API_KEY")
+    BREVO_API_URL = os.environ.get("BREVO_API_URL", "https://api.brevo.com/v3/smtp/email")
+    BREVO_SENDER_EMAIL = os.environ.get("BREVO_SENDER_EMAIL")
+    BREVO_SENDER_NAME = os.environ.get("BREVO_SENDER_NAME", "TaskMaster")
+    BREVO_TIMEOUT = int(os.environ.get("BREVO_TIMEOUT", os.environ.get("MAIL_TIMEOUT", 10)))
+    # Legacy SMTP sender variables are kept as sender fallbacks during migration.
     MAIL_USERNAME = os.environ.get("MAIL_USERNAME")
-    MAIL_PASSWORD = os.environ.get("MAIL_PASSWORD")
     MAIL_DEFAULT_SENDER = os.environ.get("MAIL_DEFAULT_SENDER")
     MAIL_SUPPRESS_SEND = os.environ.get("MAIL_SUPPRESS_SEND", "False").lower() == "true"
-    MAIL_TIMEOUT = int(os.environ.get("MAIL_TIMEOUT", 10))
     MAIL_ASYNC = os.environ.get("MAIL_ASYNC", "True").lower() == "true"
 
 

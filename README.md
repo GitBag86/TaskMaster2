@@ -201,7 +201,7 @@ docker run -p 5000:5000 --env-file .env taskmaster2
 Aplikacja dziala produkcyjnie na **Railway**. Railway wykrywa `Dockerfile`, buduje obraz i serwuje go za swoim edge proxy (SSL + WebSocket out-of-the-box). Konfiguracja:
 
 1. New Project -> Deploy from GitHub repo.
-2. W zakladce Variables ustaw zmienne z [.env.example](.env.example) (minimum: `SECRET_KEY`, `CORS_ORIGINS`, `PUBLIC_BASE_URL`, dane SMTP jesli chcesz powiadomienia e-mail).
+2. W zakladce Variables ustaw zmienne z [.env.example](.env.example) (minimum: `SECRET_KEY`, `CORS_ORIGINS`, `PUBLIC_BASE_URL`, `BREVO_API_KEY` i `BREVO_SENDER_EMAIL` jesli chcesz powiadomienia e-mail).
 3. Railway sam doda zmienna `PORT`, ktora jest uzywana w `start.sh` (Gunicorn binduje sie na `0.0.0.0:$PORT`).
 
 Backend Flask dziala na:
@@ -785,13 +785,10 @@ PUBLIC_BASE_URL=https://twoja-domena.com
 LOG_LEVEL=INFO
 ENABLE_SCHEDULER=true
 SOCKETIO_ASYNC_MODE=threading
-MAIL_SERVER=...
-MAIL_PORT=587
-MAIL_USE_TLS=true
-MAIL_USE_SSL=false
-MAIL_USERNAME=...
-MAIL_PASSWORD=...
-MAIL_DEFAULT_SENDER=...
+MAIL_SUPPRESS_SEND=false
+BREVO_API_KEY=...
+BREVO_SENDER_EMAIL=noreply@example.com
+BREVO_SENDER_NAME=TaskMaster
 ```
 
 SQLite jest domyslna baza lokalna. Plik bazy znajduje sie zwykle w:

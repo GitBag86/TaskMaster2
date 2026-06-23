@@ -76,7 +76,7 @@ Aplikacja deployuje sie automatycznie przez Railway: push na `main` -> Railway b
 Co trzeba zrobic raz:
 
 1. New Project -> Deploy from GitHub repo.
-2. Variables: ustaw zmienne z `.env.example` (minimum: `SECRET_KEY`, `CORS_ORIGINS`, `PUBLIC_BASE_URL`, dane SMTP jesli chcesz powiadomienia e-mail).
+2. Variables: ustaw zmienne z `.env.example` (minimum: `SECRET_KEY`, `CORS_ORIGINS`, `PUBLIC_BASE_URL`, `BREVO_API_KEY` i `BREVO_SENDER_EMAIL` jesli chcesz powiadomienia e-mail).
 3. Volume na `/app/instance` jesli chcesz persistencji bazy SQLite (Settings -> Storage).
 
 Railway dostarcza HTTPS edge proxy, WebSocket upgrade i wstrzykuje `PORT` (uzywany w `start.sh`). Logi `stdout`/`stderr` sa w panelu projektu.

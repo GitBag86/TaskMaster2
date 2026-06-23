@@ -1,4 +1,6 @@
+import json
 import sqlite3
+import urllib.error
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -20,6 +22,22 @@ from models import (
 from utils.email_sender import get_task_assignment_body, send_email
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+class FakeBrevoResponse:
+    status = 201
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        return False
+
+    def getcode(self):
+        return self.status
+
+    def read(self):
+        return b'{"messageId": "<message-id@example.test>"}'
 
 
 def default_team_id(app):
@@ -89,37 +107,82 @@ def test_email_templates_include_html_text_and_escape_content(app, monkeypatch):
     assert "&lt;script&gt;" in body["html"]
     assert "<script>" not in body["html"]
 
-    sent = []
+    requests = []
 
-    def fake_send(message):
-        sent.append(message)
+    def fake_urlopen(request, timeout=None):
+        requests.append({"request": request, "timeout": timeout})
+        return FakeBrevoResponse()
 
-    monkeypatch.setattr("utils.email_sender.mail.send", fake_send)
-
-    with app.app_context():
-        assert send_email("anna@example.com", "Test", body) is True
-
-    assert sent[0].body == body["text"]
-    assert sent[0].html == body["html"]
-
-def test_send_email_requires_delivery_config_when_not_suppressed(app, monkeypatch):
-    sent = []
-
-    def fake_send(message):
-        sent.append(message)
-
-    monkeypatch.setattr("utils.email_sender.mail.send", fake_send)
+    monkeypatch.setattr("utils.email_sender.urllib.request.urlopen", fake_urlopen)
 
     with app.app_context():
         app.config.update(
             MAIL_SUPPRESS_SEND=False,
-            MAIL_SERVER=None,
+            BREVO_API_KEY="test-api-key",
+            BREVO_SENDER_EMAIL="noreply@example.com",
+            BREVO_SENDER_NAME="TaskMaster Tests",
+            BREVO_TIMEOUT=3,
+        )
+        assert send_email("anna@example.com", "Test", body) is True
+
+    sent_request = requests[0]["request"]
+    payload = json.loads(sent_request.data.decode("utf-8"))
+
+    assert sent_request.full_url == "https://api.brevo.com/v3/smtp/email"
+    assert sent_request.headers["Api-key"] == "test-api-key"
+    assert requests[0]["timeout"] == 3
+    assert payload["sender"] == {"email": "noreply@example.com", "name": "TaskMaster Tests"}
+    assert payload["to"] == [{"email": "anna@example.com"}]
+    assert payload["subject"] == "Test"
+    assert payload["textContent"] == body["text"]
+    assert payload["htmlContent"] == body["html"]
+
+def test_send_email_requires_delivery_config_when_not_suppressed(app, monkeypatch):
+    requests = []
+
+    def fake_urlopen(request, timeout=None):
+        requests.append({"request": request, "timeout": timeout})
+        return FakeBrevoResponse()
+
+    monkeypatch.setattr("utils.email_sender.urllib.request.urlopen", fake_urlopen)
+
+    with app.app_context():
+        app.config.update(
+            MAIL_SUPPRESS_SEND=False,
+            BREVO_API_KEY=None,
+            BREVO_SENDER_EMAIL=None,
             MAIL_DEFAULT_SENDER=None,
             MAIL_USERNAME=None,
         )
         assert send_email("anna@example.com", "Test", "Body") is False
 
-    assert sent == []
+    assert requests == []
+
+
+def test_send_email_returns_false_when_brevo_rejects_request(app, monkeypatch):
+    requests = []
+
+    def fake_urlopen(request, timeout=None):
+        requests.append({"request": request, "timeout": timeout})
+        raise urllib.error.HTTPError(
+            url=request.full_url,
+            code=401,
+            msg="Unauthorized",
+            hdrs=None,
+            fp=None,
+        )
+
+    monkeypatch.setattr("utils.email_sender.urllib.request.urlopen", fake_urlopen)
+
+    with app.app_context():
+        app.config.update(
+            MAIL_SUPPRESS_SEND=False,
+            BREVO_API_KEY="test-api-key",
+            BREVO_SENDER_EMAIL="noreply@example.com",
+        )
+        assert send_email("anna@example.com", "Test", "Body") is False
+
+    assert len(requests) == 1
 
 def test_deadline_notifier_uses_public_base_url_without_request_context(app, monkeypatch):
     sent = []

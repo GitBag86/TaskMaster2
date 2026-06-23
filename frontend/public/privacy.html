@@ -101,7 +101,7 @@
         <h3>2.4 Czego NIE zbieramy</h3>
         <ul>
           <li>Aplikacja <strong>nie używa</strong> third-party trackerów, Google Analytics, Facebook Pixel ani podobnych narzędzi.</li>
-          <li>Aplikacja <strong>nie wysyła</strong> Twoich danych do podmiotów trzecich (wyjątek: opcjonalny serwer SMTP do wysyłki maili powiadomień, jeśli skonfigurowany).</li>
+          <li>Aplikacja <strong>nie wysyła</strong> Twoich danych do podmiotów trzecich (wyjątek: opcjonalne Brevo API do wysyłki maili powiadomień, jeśli skonfigurowane).</li>
           <li>Aplikacja <strong>nie używa</strong> ciasteczek reklamowych ani profilujących.</li>
         </ul>
       </section>
@@ -176,9 +176,9 @@
           do tych danych.
         </p>
         <p>
-          Jeśli administrator instancji skonfigurował serwer SMTP do wysyłki
+          Jeśli administrator instancji skonfigurował Brevo API do wysyłki
           powiadomień e-mail, treść wiadomości (np. "Przypisano Ci zadanie X")
-          przechodzi przez ten serwer. Dane logowania do SMTP są pod kontrolą
+          przechodzi przez Brevo. Klucz API jest pod kontrolą
           administratora instancji.
         </p>
       </section>
@@ -187,7 +187,7 @@
         <h2>9. Przekazywanie danych poza EOG</h2>
         <p>
           Domyślnie aplikacja nie przekazuje danych poza Europejski Obszar Gospodarczy.
-          Jeśli administrator instancji wybrał hosting lub serwer SMTP poza EOG,
+          Jeśli administrator instancji wybrał hosting lub dostawcę e-mail poza EOG,
           jest zobowiązany zapewnić odpowiednie zabezpieczenia (np. standardowe
           klauzule umowne UE).
         </p>

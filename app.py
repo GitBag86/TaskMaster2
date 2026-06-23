@@ -21,7 +21,7 @@ load_dotenv()
 load_dotenv(".env.local", override=True)
 
 from config import Config
-from extensions import csrf, limiter, mail, migrate, scheduler, socketio
+from extensions import csrf, limiter, migrate, scheduler, socketio
 from jobs.deadline_notifier import check_deadlines, archive_completed_tasks
 from models import User, db
 import sentry_sdk
@@ -299,9 +299,14 @@ def _log_mail_status(app):
     if app.config.get("TESTING"):
         return
 
-    server = app.config.get("MAIL_SERVER")
+    api_key = app.config.get("BREVO_API_KEY")
+    api_url = app.config.get("BREVO_API_URL")
     suppress = app.config.get("MAIL_SUPPRESS_SEND")
-    sender = app.config.get("MAIL_DEFAULT_SENDER") or app.config.get("MAIL_USERNAME")
+    sender = (
+        app.config.get("BREVO_SENDER_EMAIL")
+        or app.config.get("MAIL_DEFAULT_SENDER")
+        or app.config.get("MAIL_USERNAME")
+    )
 
     if suppress:
         app.logger.warning(
@@ -310,25 +315,23 @@ def _log_mail_status(app):
         )
         return
 
-    if not server:
+    if not api_key:
         app.logger.warning(
-            "MAIL_SERVER is not configured - email notifications will be skipped silently. "
-            "Set MAIL_SERVER, MAIL_PORT, MAIL_USERNAME, MAIL_PASSWORD and MAIL_DEFAULT_SENDER."
+            "BREVO_API_KEY is not configured - email notifications will be skipped. "
+            "Set BREVO_API_KEY and BREVO_SENDER_EMAIL."
         )
         return
 
     if not sender:
         app.logger.warning(
-            "Mail is configured but MAIL_DEFAULT_SENDER (and MAIL_USERNAME) are empty - "
-            "outbound emails will be rejected by Flask-Mail."
+            "BREVO_API_KEY is configured but BREVO_SENDER_EMAIL is empty - "
+            "outbound emails will be rejected by Brevo."
         )
         return
 
     app.logger.info(
-        "Mail configured: server=%s port=%s tls=%s sender=%s",
-        server,
-        app.config.get("MAIL_PORT"),
-        app.config.get("MAIL_USE_TLS"),
+        "Mail configured: provider=brevo api_url=%s sender=%s",
+        api_url,
         sender,
     )
 
@@ -354,7 +357,6 @@ def create_app(config_object=Config):
         )
 
     db.init_app(app)
-    mail.init_app(app)
     limiter.init_app(app)
     migrate.init_app(app, db)
     csrf.init_app(app)

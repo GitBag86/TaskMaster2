@@ -47,10 +47,14 @@ services:
       DEFAULT_ADMIN_PASSWORD: "${DEFAULT_ADMIN_PASSWORD}"
       DEFAULT_ADMIN_EMAIL: "${DEFAULT_ADMIN_EMAIL:-admin@taskmaster.local}"
 
-      # Email (optional — disable for now)
+      # Email (optional, Brevo API — disabled by default)
+      MAIL_SUPPRESS_SEND: "${MAIL_SUPPRESS_SEND:-true}"
+      BREVO_API_KEY: "${BREVO_API_KEY}"
+      BREVO_SENDER_EMAIL: "${BREVO_SENDER_EMAIL}"
+      BREVO_SENDER_NAME: "${BREVO_SENDER_NAME:-TaskMaster}"
+
       # Socket.IO async mode: gthread for Gunicorn, threading for Flask dev server
       SOCKETIO_ASYNC_MODE: "${SOCKETIO_ASYNC_MODE:-gthread}"
-      MAIL_SUPPRESS_SEND: "${MAIL_SUPPRESS_SEND:-true}"
     restart: unless-stopped
 
 volumes:

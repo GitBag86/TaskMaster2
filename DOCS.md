@@ -107,7 +107,7 @@ Client A (browser, team_id=1)              Client B (browser, team_id=1)
 | Flask-SQLAlchemy        | 3.1.1  | ORM                  |
 | Flask-Migrate (Alembic) | latest | Migracje             |
 | Flask-SocketIO          | latest | Real-time            |
-| Flask-Mail              | 0.9.1  | E-maile              |
+| Brevo API               | v3     | E-maile transakcyjne |
 | Flask-APScheduler       | 1.13.1 | Background jobs      |
 | Marshmallow             | 3.21.2 | Walidacja            |
 | Werkzeug                | 3.0.2  | WSGI utils, security |
@@ -584,7 +584,7 @@ Aplikacja deployuje sie na **Railway** (`Dockerfile`-based build). Push na `main
 ### Quick start (Railway)
 
 1. New Project -> Deploy from GitHub repo (wybierz to repo).
-2. W zakladce Variables wklej zmienne z `.env.example` (minimum: `SECRET_KEY`, `CORS_ORIGINS`, `PUBLIC_BASE_URL`, dane SMTP).
+2. W zakladce Variables wklej zmienne z `.env.example` (minimum: `SECRET_KEY`, `CORS_ORIGINS`, `PUBLIC_BASE_URL`, `BREVO_API_KEY` i `BREVO_SENDER_EMAIL` dla e-maili).
 3. (opcjonalnie) Settings -> Storage: dodaj Volume na `/app/instance` zeby SQLite przezyl restart kontenera.
 4. Deploy. Aplikacja dostepna pod `https://<projekt>.up.railway.app`.
 
@@ -647,12 +647,10 @@ DEFAULT_ADMIN_EMAIL=admin@example.com
 ### E-mail (opcjonalne)
 
 ```env
-MAIL_SERVER=smtp.example.com
-MAIL_PORT=587
-MAIL_USE_TLS=True
-MAIL_USERNAME=...
-MAIL_PASSWORD=...
-MAIL_DEFAULT_SENDER=noreply@example.com
+MAIL_SUPPRESS_SEND=False
+BREVO_API_KEY=...
+BREVO_SENDER_EMAIL=noreply@example.com
+BREVO_SENDER_NAME=TaskMaster
 ```
 
 ### Inne
@@ -822,7 +820,7 @@ flask db upgrade
 
 ### Email nie wysyla, request wisi
 
-Patrz § 12 — wysylka jest asynchroniczna (`enqueue_email`), ale jesli widzisz `Failed to send email to ...: timed out` w logach Railway, sprawdz konfiguracje SMTP (server/port/credentials) oraz `MAIL_SUPPRESS_SEND` (musi byc `False` dla realnej wysylki).
+Patrz § 12 — wysylka jest asynchroniczna (`enqueue_email`), ale jesli widzisz `Failed to send email to ... via Brevo: timed out` w logach Railway, sprawdz `BREVO_API_KEY`, `BREVO_SENDER_EMAIL` oraz `MAIL_SUPPRESS_SEND` (musi byc `False` dla realnej wysylki).
 
 ### "Cross-team reference" 400 przy create task
 

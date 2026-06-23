@@ -377,7 +377,7 @@ Dzwonek w prawym górnym rogu pokazuje liczbę nieprzeczytanych powiadomień. Kl
 
 ### E-mail
 
-Jeśli administrator instancji skonfigurował SMTP, możesz dodatkowo otrzymywać powiadomienia mailem dla najważniejszych zdarzeń (przypisanie, zmiana statusu).
+Jeśli administrator instancji skonfigurował Brevo API, możesz dodatkowo otrzymywać powiadomienia mailem dla najważniejszych zdarzeń (przypisanie, zmiana statusu).
 
 ---
 

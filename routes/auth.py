@@ -1,7 +1,7 @@
 import hashlib
 import re
 import secrets
-import smtplib
+import urllib.error
 
 from flask import current_app, request, jsonify, session
 from marshmallow import ValidationError
@@ -194,7 +194,7 @@ def forgot_password():
 
     try:
         send_password_reset_email(user, raw_token)
-    except (smtplib.SMTPException, OSError):
+    except (OSError, urllib.error.URLError):
         logger.exception("Failed to send password reset email to %s", email)
         # Always return the same generic message to prevent email enumeration.
         # The recipient won't know whether the account exists or the email failed,
