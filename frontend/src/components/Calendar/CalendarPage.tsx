@@ -3,7 +3,6 @@ import type { Task } from "@/types"
 import { isAdminRole } from "@/types"
 import { api } from "@/api/client"
 import { useToast } from "@/store/ToastContext"
-import { useSocket } from "@/store/SocketContext"
 import { useAuth } from "@/store/AuthContext"
 import { CalendarSkeleton } from "@/components/common/Skeletons"
 import Modal from "@/components/common/Modal"
@@ -11,7 +10,8 @@ import TaskDetail from "@/components/Tasks/TaskDetail"
 import TaskForm from "@/components/Tasks/TaskForm"
 import { getPolishCalendarInfo } from "@/data/polishCalendar"
 import { priorityLabel, priorityClass } from "@/utils/helpers"
-import { canPartiallyUpdate, replaceTaskInList } from "@/utils/taskEventHelpers"
+import { replaceTaskInList } from "@/utils/taskEventHelpers"
+import { useSocketTaskEvents } from "@/hooks/useSocketTaskEvents"
 import CalendarGrid, { buildCalendarWeeks } from "./CalendarGrid"
 
 const months = [
@@ -41,7 +41,6 @@ export default function CalendarPage() {
   const [showCreate, setShowCreate] = useState(false)
 
   const { addToast } = useToast()
-  const { lastTaskEvent } = useSocket()
   const { user } = useAuth()
 
   const year = currentDate.getFullYear()
@@ -63,30 +62,19 @@ export default function CalendarPage() {
     void fetchTasks()
   }, [fetchTasks])
 
-  useEffect(() => {
-    if (!lastTaskEvent) return
-
-    if (lastTaskEvent.task && canPartiallyUpdate(lastTaskEvent)) {
+  useSocketTaskEvents({
+    onDelete: (taskId) => {
+      setTasks(prev => prev.filter(task => task.id !== taskId))
+    },
+    onUpdate: (task) => {
       setTasks(prev => {
-        const index = prev.findIndex(t => t.id === lastTaskEvent.task!.id)
-        if (index === -1) return [lastTaskEvent.task!, ...prev]
-        return replaceTaskInList(prev, lastTaskEvent.task!)
+        const index = prev.findIndex(t => t.id === task.id)
+        if (index === -1) return [task, ...prev]
+        return replaceTaskInList(prev, task)
       })
-      return
-    }
-
-    if (lastTaskEvent.action === "deleted" && lastTaskEvent.task_id) {
-      setTasks(prev => prev.filter(task => task.id !== lastTaskEvent.task_id))
-      return
-    }
-
-    if (
-      lastTaskEvent.task_ids &&
-      ["bulk_deleted", "bulk_completed", "bulk_updated"].includes(lastTaskEvent.action)
-    ) {
-      void fetchTasks()
-    }
-  }, [fetchTasks, lastTaskEvent])
+    },
+    onBulk: () => void fetchTasks(),
+  })
 
   useEffect(() => {
     if (selectedDay === null) {

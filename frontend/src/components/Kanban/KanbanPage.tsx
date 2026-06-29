@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import type { Task } from "@/types";
 import { api } from "@/api/client";
 import { useToast } from "@/store/ToastContext";
-import { useSocket } from "@/store/SocketContext";
 import { KanbanSkeleton } from "@/components/common/Skeletons";
 import { priorityLabel, priorityClass, formatShortDate, isOverdue } from "@/utils/helpers";
-import { canPartiallyUpdate, replaceTaskInList } from "@/utils/taskEventHelpers";
+import { replaceTaskInList } from "@/utils/taskEventHelpers";
+import { useSocketTaskEvents } from "@/hooks/useSocketTaskEvents";
 
 const columns = [
   {
@@ -35,7 +35,9 @@ export default function KanbanPage() {
   const [activeColumn, setActiveColumn] = useState<Task["status"] | null>(null);
 
   const { addToast } = useToast();
-  const { lastTaskEvent } = useSocket();
+
+  const tasksRef = useRef(tasks)
+  useEffect(() => { tasksRef.current = tasks }, [tasks])
 
   const fetchTasks = useCallback(async () => {
     try {
@@ -52,35 +54,19 @@ export default function KanbanPage() {
     void fetchTasks();
   }, [fetchTasks]);
 
-  useEffect(() => {
-    if (!lastTaskEvent) return;
-
-    if (lastTaskEvent.task && canPartiallyUpdate(lastTaskEvent)) {
-      const updatedTask = lastTaskEvent.task;
+  useSocketTaskEvents({
+    onDelete: (taskId) => {
+      setTasks((prev) => prev.filter((task) => task.id !== taskId));
+    },
+    onUpdate: (task) => {
       setTasks((prev) => {
-        const index = prev.findIndex((task) => task.id === updatedTask.id);
-        if (index === -1) return [updatedTask, ...prev];
-        return replaceTaskInList(prev, updatedTask);
+        const index = prev.findIndex((t) => t.id === task.id);
+        if (index === -1) return [task, ...prev];
+        return replaceTaskInList(prev, task);
       });
-      return;
-    }
-
-    if (lastTaskEvent.action === "deleted" && lastTaskEvent.task_id) {
-      setTasks((prev) =>
-        prev.filter((task) => task.id !== lastTaskEvent.task_id),
-      );
-      return;
-    }
-
-    if (
-      lastTaskEvent.task_ids &&
-      ["bulk_deleted", "bulk_completed", "bulk_updated"].includes(
-        lastTaskEvent.action,
-      )
-    ) {
-      void fetchTasks();
-    }
-  }, [fetchTasks, lastTaskEvent]);
+    },
+    onBulk: () => void fetchTasks(),
+  });
 
   const handleDrop = async (event: React.DragEvent, status: Task["status"]) => {
     event.preventDefault();
@@ -91,7 +77,7 @@ export default function KanbanPage() {
       return;
     }
 
-    const currentTask = tasks.find((task) => task.id === taskId);
+    const currentTask = tasksRef.current.find((task) => task.id === taskId);
     if (!currentTask || currentTask.status === status) {
       setActiveColumn(null);
       setDraggedTaskId(null);
@@ -105,6 +91,17 @@ export default function KanbanPage() {
       return;
     }
 
+    const original = { ...currentTask }
+
+    // Optimistic update: move the task to the target column immediately
+    setTasks(prev =>
+      prev.map(t =>
+        t.id === taskId
+          ? { ...t, status, completed: status === "done" }
+          : t,
+      ),
+    )
+
     try {
       const updatedTask = await api.tasks.update(taskId, {
         status,
@@ -113,11 +110,11 @@ export default function KanbanPage() {
       setTasks((prev) =>
         prev.map((task) => (task.id === taskId ? updatedTask : task)),
       );
-      if (status === "done") {
-        void fetchTasks();
-      }
-      addToast("Status zaktualizowany", "success");
     } catch (err: unknown) {
+      // Revert
+      setTasks(prev =>
+        prev.map(t => (t.id === taskId ? original : t)),
+      )
       addToast(
         err instanceof Error ? err.message : "Błąd aktualizacji",
         "error",

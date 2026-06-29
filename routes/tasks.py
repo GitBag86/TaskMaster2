@@ -408,7 +408,7 @@ def get_tasks():
 
     query = visible_task_query(user).options(*_eager_task_options())
 
-    pagination = query.order_by(Task.created_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
+    pagination = query.order_by(Task.position.asc(), Task.created_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
     tasks = pagination.items
 
     return jsonify({
@@ -1283,6 +1283,31 @@ def bulk_delete_tasks():
     db.session.commit()
     emit_task_event("bulk_deleted", user, task_ids=task_ids)
     return jsonify({"message": f"Usunięto {count} zadań"}), 200
+
+@tasks_bp.route('/tasks/reorder', methods=['PUT'])
+@login_required
+def reorder_tasks():
+    """Update task positions in bulk. Accepts ordered task IDs for the current page."""
+    user = db.session.get(User, session.get('user_id'))
+
+    if g.get('current_role') not in ('manager', 'super_admin'):
+        return jsonify({"error": "Only admins can reorder tasks"}), 403
+
+    data = request.get_json() or {}
+    task_ids = data.get('task_ids', [])
+
+    if len(task_ids) > 100:
+        return jsonify({"error": "Too many tasks"}), 400
+
+    for idx, task_id in enumerate(task_ids):
+        task = get_team_resource_or_404(Task, task_id)
+        if not task:
+            continue
+        task.position = idx
+
+    db.session.commit()
+    return jsonify({"message": "Order updated"}), 200
+
 
 @tasks_bp.route('/tasks/export', methods=['GET'])
 @login_required

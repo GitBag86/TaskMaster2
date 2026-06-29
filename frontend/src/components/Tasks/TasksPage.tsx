@@ -5,7 +5,6 @@ import { isAdminRole } from '@/types'
 import { api } from '@/api/client'
 import { useToast } from '@/store/ToastContext'
 import { useAuth } from '@/store/AuthContext'
-import { useSocket } from '@/store/SocketContext'
 import TaskCard from './TaskCard'
 import TaskForm from './TaskForm'
 import { TasksPageSkeleton } from '@/components/common/Skeletons'
@@ -13,8 +12,22 @@ import Modal from '@/components/common/Modal'
 import { EmptyState } from '@/components/common/EmptyState'
 import { isOverdue } from '@/utils/helpers'
 import { useUrlFilters } from '@/utils/useUrlFilters'
-import { canPartiallyUpdate } from '@/utils/taskEventHelpers'
 import { useTasksQuery } from '@/hooks/useTasksQuery'
+import { useSocketTaskEvents } from '@/hooks/useSocketTaskEvents'
+import { AnimatePresence } from 'framer-motion'
+import TaskTable from './TaskTable'
+import {
+  DndContext,
+  DragEndEvent,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  rectSortingStrategy,
+} from '@dnd-kit/sortable'
 
 interface TaskFormData {
   title: string;
@@ -58,14 +71,15 @@ export default function TasksPage() {
   const [bulkStatus, setBulkStatus] = useState<'' | Task['status']>('')
   const [bulkPriority, setBulkPriority] = useState<'' | Task['priority']>('')
   const [bulkProject, setBulkProject] = useState('')
+  const [viewMode, setViewMode] = useState<'card' | 'table'>('card')
 
   const navigate = useNavigate()
   const { addToast } = useToast()
   const { user } = useAuth()
-  const { lastTaskEvent } = useSocket()
-
   const pageRef = useRef(page)
   useEffect(() => { pageRef.current = page }, [page])
+  const tasksRef = useRef(tasks)
+  useEffect(() => { tasksRef.current = tasks }, [tasks])
 
   const totalPages = Math.max(1, Math.ceil(total / PER_PAGE))
   const completedCount = tasks.filter(task => task.completed).length
@@ -122,31 +136,15 @@ export default function TasksPage() {
     }
   }, [page, totalPages, setFilter])
 
-  const handleTaskEvent = useCallback((event: typeof lastTaskEvent) => {
-    if (!event || event.user === user?.username) return
-
-    if (event.action === 'deleted' && event.task_id) {
-      setTasks(prev => prev.filter(task => task.id !== event.task_id))
+  useSocketTaskEvents({
+    onDelete: (taskId) => {
+      setTasks(prev => prev.filter(task => task.id !== taskId))
       setTotal(prev => Math.max(0, prev - 1))
-      return
-    }
-
-    if (event.task && canPartiallyUpdate(event)) {
-      replaceTask(event.task)
-      if (event.action === 'created') {
-        setTotal(prev => prev + 1)
-      }
-      return
-    }
-
-    if (event.task_ids && ['bulk_deleted', 'bulk_completed', 'bulk_updated'].includes(event.action)) {
-      void fetchTasks(pageRef.current)
-    }
-  }, [fetchTasks, replaceTask, user?.username])
-
-  useEffect(() => {
-    handleTaskEvent(lastTaskEvent)
-  }, [handleTaskEvent, lastTaskEvent])
+    },
+    onUpdate: (task) => replaceTask(task),
+    onCreate: () => setTotal(prev => prev + 1),
+    onBulk: () => void fetchTasks(pageRef.current),
+  })
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) {
@@ -308,15 +306,84 @@ export default function TasksPage() {
     setBulkProject('')
   }
 
-  const handleComplete = async (id: number) => {
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    }),
+  )
+
+  // Ref to filteredTasks for useCallback to avoid stale closure
+  const filteredTasksRef = useRef(filteredTasks)
+  useEffect(() => {
+    filteredTasksRef.current = filteredTasks
+  }, [filteredTasks])
+
+  const handleDragEnd = useCallback(async (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+
+    const currentFiltered = filteredTasksRef.current
+    const oldIndex = currentFiltered.findIndex(t => t.id === Number(active.id))
+    const newIndex = currentFiltered.findIndex(t => t.id === Number(over.id))
+    if (oldIndex === -1 || newIndex === -1) return
+
+    // Reorder filtered tasks in-place
+    const reorderedFiltered = [...currentFiltered]
+    const [moved] = reorderedFiltered.splice(oldIndex, 1)
+    reorderedFiltered.splice(newIndex, 0, moved)
+
+    // Interleave reordered filtered tasks back into the full tasks array,
+    // preserving the original positions of non-filtered items
+    const reorderedMap = new Map(reorderedFiltered.map((t, i) => [t.id, i]))
+    setTasks(prev =>
+      prev.map(t => {
+        const idx = reorderedMap.get(t.id)
+        return idx !== undefined ? reorderedFiltered[idx] : t
+      }),
+    )
+
+    // Persist to API
     try {
-      const updatedTask = await api.tasks.complete(id)
-      replaceTask(updatedTask)
-      await fetchTasks(page)
+      await api.tasks.reorder(reorderedFiltered.map(t => t.id))
     } catch (err: unknown) {
-      addToast(err instanceof Error ? err.message : 'Błąd zmiany stanu', 'error')
+      addToast(err instanceof Error ? err.message : 'Błąd zapisywania kolejności', 'error')
+    }
+  }, [addToast])
+
+  const handleInlineUpdate = async (taskId: number, data: { title?: string; priority?: Task['priority']; assignee_ids?: number[] }) => {
+    try {
+      const updatedTask = await api.tasks.update(taskId, data)
+      replaceTask(updatedTask)
+    } catch (err: unknown) {
+      addToast(err instanceof Error ? err.message : 'Błąd aktualizacji', 'error')
+      throw err
     }
   }
+
+  const handleComplete = useCallback(async (id: number) => {
+    const currentTasks = tasksRef.current
+    const task = currentTasks.find(t => t.id === id)
+    if (!task) return
+
+    // Store original for revert
+    const original = { ...task }
+
+    // Optimistic update: flip completed/status immediately
+    replaceTask({
+      ...task,
+      completed: !task.completed,
+      status: (task.completed ? 'todo' : 'done') as Task['status'],
+    })
+
+    try {
+      const serverTask = await api.tasks.complete(id)
+      replaceTask(serverTask)
+    } catch (err: unknown) {
+      // Revert on failure
+      replaceTask(original)
+      addToast(err instanceof Error ? err.message : 'Błąd zmiany stanu', 'error')
+    }
+  }, [addToast, replaceTask])
 
   const handleCreate = async (data: TaskFormData) => {
     try {
@@ -346,14 +413,49 @@ export default function TasksPage() {
             {isSearchMode ? `Wyniki wyszukiwania: ${total}` : `Wszystkie zadania: ${total}`}
           </p>
         </div>
-        {isAdminRole(user?.role) && (
-          <button onClick={() => setShowCreate(true)} className="btn btn-primary btn-sm">
-            <svg className="mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-            </svg>
-            Nowe zadanie
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {/* View toggle */}
+          <div className="mr-2 flex overflow-hidden rounded-md border border-border">
+            <button
+              onClick={() => setViewMode('card')}
+              className={`px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                viewMode === 'card'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-card text-muted-foreground hover:bg-muted'
+              }`}
+              title="Widok kafelków"
+            >
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <rect x="3" y="3" width="7" height="7" rx="1" />
+                <rect x="14" y="3" width="7" height="7" rx="1" />
+                <rect x="3" y="14" width="7" height="7" rx="1" />
+                <rect x="14" y="14" width="7" height="7" rx="1" />
+              </svg>
+            </button>
+            <button
+              onClick={() => setViewMode('table')}
+              className={`px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                viewMode === 'table'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-card text-muted-foreground hover:bg-muted'
+              }`}
+              title="Widok tabeli"
+            >
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <path d="M3 6h18M3 12h18M3 18h18" strokeLinecap="round" />
+              </svg>
+            </button>
+          </div>
+
+          {isAdminRole(user?.role) && (
+            <button onClick={() => setShowCreate(true)} className="btn btn-primary btn-sm">
+              <svg className="mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+              Nowe zadanie
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -505,20 +607,42 @@ export default function TasksPage() {
           title="Brak zadań"
           description={isAdminRole(user?.role) ? 'Kliknij "Nowe zadanie" aby utworzyć' : 'Nie masz przypisanych zadań'}
         />
+      ) : viewMode === 'table' ? (
+        <TaskTable
+          tasks={filteredTasks}
+          onNavigate={(id) => navigate(`/tasks/${id}`)}
+          onComplete={handleComplete}
+          onUpdate={isAdminRole(user?.role) ? handleInlineUpdate : undefined}
+          selectable={isAdminRole(user?.role)}
+          selectedTaskIds={selectedTaskIds}
+          onSelectionChange={toggleTaskSelection}
+          onToggleAll={(selected) => toggleVisibleSelection(selected)}
+        />
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {filteredTasks.map(task => (
-            <TaskCard
-              key={task.id}
-              task={task}
-              onClick={() => navigate(`/tasks/${task.id}`)}
-              onComplete={() => void handleComplete(task.id)}
-              selectable={isAdminRole(user?.role)}
-              selected={selectedTaskIds.has(task.id)}
-              onSelectionChange={selected => toggleTaskSelection(task.id, selected)}
-            />
-          ))}
-        </div>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext items={filteredTasks.map(t => t.id)} strategy={rectSortingStrategy}>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <AnimatePresence mode="popLayout">
+                {filteredTasks.map(task => (
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    onClick={() => navigate(`/tasks/${task.id}`)}
+                    onComplete={() => void handleComplete(task.id)}
+                    onUpdate={isAdminRole(user?.role) ? handleInlineUpdate : undefined}
+                    selectable={isAdminRole(user?.role)}
+                    selected={selectedTaskIds.has(task.id)}
+                    onSelectionChange={selected => toggleTaskSelection(task.id, selected)}
+                  />
+                ))}
+              </AnimatePresence>
+            </div>
+          </SortableContext>
+        </DndContext>
       )}
 
       {!isSearchMode && (

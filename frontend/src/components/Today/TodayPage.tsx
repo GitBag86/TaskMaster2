@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Task, TodayTasksResponse } from '@/types'
 import { api } from '@/api/client'
-import { useSocket } from '@/store/SocketContext'
 import { useToast } from '@/store/ToastContext'
 import { TasksPageSkeleton } from '@/components/common/Skeletons'
 import { priorityLabel, priorityClass, formatDate } from '@/utils/helpers'
-import { canPartiallyUpdate, removeTaskFromList, replaceTaskInList } from '@/utils/taskEventHelpers'
+import { removeTaskFromList, replaceTaskInList } from '@/utils/taskEventHelpers'
+import { useSocketTaskEvents } from '@/hooks/useSocketTaskEvents'
 
 const emptyToday: TodayTasksResponse = {
   overdue: [],
@@ -26,8 +26,10 @@ const emptyToday: TodayTasksResponse = {
 export default function TodayPage() {
   const [data, setData] = useState<TodayTasksResponse>(emptyToday)
   const [loading, setLoading] = useState(true)
-  const { lastTaskEvent } = useSocket()
   const { addToast } = useToast()
+
+  const dataRef = useRef(data)
+  useEffect(() => { dataRef.current = data }, [data])
 
   const loadToday = useCallback(async () => {
     try {
@@ -44,65 +46,84 @@ export default function TodayPage() {
     void loadToday()
   }, [loadToday])
 
-  useEffect(() => {
-    if (!lastTaskEvent) return
-
-    // Partial update for deleted tasks
-    if (lastTaskEvent.action === 'deleted' && lastTaskEvent.task_id) {
+  useSocketTaskEvents({
+    onDelete: (taskId) => {
       setData(prev => ({
         ...prev,
-        overdue: removeTaskFromList(prev.overdue, lastTaskEvent.task_id!),
-        today: removeTaskFromList(prev.today, lastTaskEvent.task_id!),
-        upcoming: removeTaskFromList(prev.upcoming, lastTaskEvent.task_id!),
+        overdue: removeTaskFromList(prev.overdue, taskId),
+        today: removeTaskFromList(prev.today, taskId),
+        upcoming: removeTaskFromList(prev.upcoming, taskId),
       }))
-      return
-    }
-
-    // Partial update for completed/reopened/updated tasks with payload
-    if (lastTaskEvent.task && canPartiallyUpdate(lastTaskEvent)) {
-      const task = lastTaskEvent.task
+    },
+    onUpdate: (task) => {
       setData(prev => ({
         ...prev,
         overdue: replaceTaskInList(prev.overdue, task),
         today: replaceTaskInList(prev.today, task),
         upcoming: replaceTaskInList(prev.upcoming, task),
       }))
-      return
-    }
+    },
+    onBulk: () => void loadToday(),
+  })
 
-    // Fallback: full reload for bulk/complex changes
-    void loadToday()
-  }, [lastTaskEvent, loadToday])
+  /** Find a task across all three lists (overdue / today / upcoming). */
+  const findTaskInData = useCallback((taskId: number, d: TodayTasksResponse): Task | undefined => {
+    return d.overdue.find(t => t.id === taskId)
+      ?? d.today.find(t => t.id === taskId)
+      ?? d.upcoming.find(t => t.id === taskId)
+  }, [])
 
-  const completeTask = async (taskId: number) => {
+  const patchTask = (task: Task) => {
+    setData(prev => ({
+      ...prev,
+      overdue: replaceTaskInList(prev.overdue, task),
+      today: replaceTaskInList(prev.today, task),
+      upcoming: replaceTaskInList(prev.upcoming, task),
+    }))
+  }
+
+  const completeTask = useCallback(async (taskId: number) => {
+    const currentData = dataRef.current
+    const original = findTaskInData(taskId, currentData)
+    if (!original) return
+
+    // Optimistic update
+    patchTask({
+      ...original,
+      completed: !original.completed,
+      status: (original.completed ? 'todo' : 'done') as Task['status'],
+    })
+
     try {
       const updatedTask = await api.tasks.complete(taskId)
-      setData(prev => ({
-        ...prev,
-        overdue: replaceTaskInList(prev.overdue, updatedTask),
-        today: replaceTaskInList(prev.today, updatedTask),
-        upcoming: replaceTaskInList(prev.upcoming, updatedTask),
-      }))
-      addToast('Zadanie zakończone', 'success')
+      patchTask(updatedTask)
     } catch (err: unknown) {
+      // Revert
+      patchTask(original)
       addToast(err instanceof Error ? err.message : 'Błąd zmiany stanu', 'error')
     }
-  }
+  }, [addToast, findTaskInData])
 
-  const startTask = async (taskId: number) => {
+  const startTask = useCallback(async (taskId: number) => {
+    const currentData = dataRef.current
+    const original = findTaskInData(taskId, currentData)
+    if (!original) return
+
+    // Optimistic update
+    patchTask({
+      ...original,
+      status: 'in_progress' as Task['status'],
+      completed: false,
+    })
+
     try {
       const updatedTask = await api.tasks.update(taskId, { status: 'in_progress', completed: false })
-      setData(prev => ({
-        ...prev,
-        overdue: replaceTaskInList(prev.overdue, updatedTask),
-        today: replaceTaskInList(prev.today, updatedTask),
-        upcoming: replaceTaskInList(prev.upcoming, updatedTask),
-      }))
-      addToast('Zadanie rozpoczęte', 'success')
+      patchTask(updatedTask)
     } catch (err: unknown) {
+      patchTask(original)
       addToast(err instanceof Error ? err.message : 'Błąd zmiany statusu', 'error')
     }
-  }
+  }, [addToast, findTaskInData])
 
   if (loading) {
     return <TasksPageSkeleton />

@@ -426,7 +426,13 @@ export const api = {
         method: "PUT",
         body: JSON.stringify({ task_ids: taskIds, updates }),
       }),
+    reorder: (taskIds: number[]) =>
+      request<{ message: string }>("/tasks/reorder", {
+        method: "PUT",
+        body: JSON.stringify({ task_ids: taskIds }),
+      }),
   },
+
 
   projects: {
     getAll: () => request<{ projects: Project[] }>("/projects"),
