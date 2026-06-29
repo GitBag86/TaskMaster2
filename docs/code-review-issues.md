@@ -57,8 +57,8 @@ Legend:
 | 20 | MEDIUM | routes/auth.py | 199 | `forgot_password` catches `Exception` broadly and logs it — if email fails, the response is still 200 (expected) but no feedback to admin | FIXEDv2 |
 | 21 | MEDIUM | routes/auth.py | 235 | `reset_password` re-imports `PasswordResetToken` inside the function (import not at top) | FIXEDv2 |
 | 22 | MEDIUM | routes/auth.py | 214 | `reset_password` validates password complexity inline with regex — duplicates `SignupSchema` logic | FIXEDv2 |
-| 23 | MEDIUM | routes/auth.py | 41 | `login_required` decorator uses `functools.wraps` but is defined inside the module — cannot be imported by other modules without circular import risk | TODO |
-| 24 | LOW | routes/auth.py | 2 | `import re` at top level but also re-imports `hashlib`, `datetime` inside functions | TODO |
+| 23 | MEDIUM | routes/auth.py | 41 | `login_required` decorator uses `functools.wraps` but is defined inside the module — cannot be imported by other modules without circular import risk | FIXED |
+| 24 | LOW | routes/auth.py | 2 | `import re` at top level but also re-imports `hashlib`, `datetime` inside functions | FIXED |
 | 25 | LOW | routes/auth.py | 82 | `target_role = 'user'` always set, then overwritten by invite.default_role — variable is unused for default_team mode | TODO |
 
 ---
@@ -75,7 +75,7 @@ Legend:
 | 31 | MEDIUM | routes/tasks.py | 564 | `quick_add_task` does `User.query.filter(User.username.in_(...))` without sanitizing input — `@` mentions could include special regex chars (not SQLi since no raw SQL) | TODO |
 | 32 | MEDIUM | routes/tasks.py | 598 | `create_task` sends assignment emails **before commit** — if commit fails, emails are already sent | FIXEDv2 |
 | 33 | MEDIUM | routes/tasks.py | 610 | `create_task` calls `send_project_activity_emails` **after commit** but `emit_task_event` calls `after_commit` — ordering inconsistency | TODO |
-| 34 | MEDIUM | routes/tasks.py | 868 | `complete_task` toggles `task.completed` then checks blocks — if blocks exist, rollback happens but status is already flipped in Python object | TODO |
+| 34 | MEDIUM | routes/tasks.py | 868 | `complete_task` toggles `task.completed` then checks blocks — if blocks exist, rollback happens but status is already flipped in Python object | FIXED |
 | 35 | MEDIUM | routes/tasks.py | 376 | `_eager_task_options` loads 7 relationships per task — for `/tasks?per_page=100` this is 700+ SQL rows | TODO |
 | 36 | MEDIUM | routes/tasks.py | 835 | `update_task` creates `task_link = url_for('index', _external=True) + f'tasks/{task.id}'` — hardcoded path, should use `task_url()` helper | FIXEDv2 |
 | 37 | MEDIUM | routes/tasks.py | 562 | `quick_add_task` doesn't validate that `assignees` exist in the current team — any username can be mentioned | TODO |
@@ -109,8 +109,8 @@ Legend:
 | 51 | MEDIUM | routes/admin.py | 97 | `serialize_team` calls `_batch_team_resource_counts` again as fallback if batch_counts is None — but the fallback is a single-team query that still runs 15 queries | TODO |
 | 52 | MEDIUM | routes/admin.py | 192 | `_cascade_purge_team` uses `synchronize_session=False` on bulk DELETE — in-memory ORM objects may become stale | FIXEDv2 |
 | 53 | MEDIUM | routes/admin.py | 150 | `_purge_user_data` deletes `SavedFilter`, `Tag`, etc. but does not handle `RecurringTask` linked to owned tasks | FIXED (added RecurringTask cascade via task_id subquery) |
-| 54 | LOW | routes/admin.py | 5 | `import re` but also re-imports `selectinload` at line 89 mid-file | TODO |
-| 55 | LOW | routes/admin.py | 112 | `slugify` uses regex `r"[^a-z0-9]+"` — team names with diacritics (e.g. "Zespół") become "zesp" | TODO |
+| 54 | LOW | routes/admin.py | 5 | `import re` but also re-imports `selectinload` at line 89 mid-file | FIXED |
+| 55 | LOW | routes/admin.py | 112 | `slugify` uses regex `r"[^a-z0-9]+"` — team names with diacritics (e.g. "Zespół") become "zesp" | FIXED |
 | 56 | LOW | routes/admin.py | 23 | `unique_slug` name collision resolution is O(n^2) worst-case for many teams with similar names | TODO |
 
 ---
@@ -276,7 +276,7 @@ Legend:
 | 132 | MEDIUM | client.ts | 35 | `csrfToken` is a module-level variable — shared across all concurrent requests; if two requests race, one may use stale token | FIXEDv2 |
 | 133 | MEDIUM | client.ts | 87 | `formatErrorValue` recursively processes objects but has no cycle protection | FIXEDv2 |
 | 134 | MEDIUM | client.ts | 138 | `API_BASE` uses `import.meta.env.VITE_API_BASE` or `VITE_API_URL` — but Vite requires `VITE_` prefix; `import.meta.env` is not available in test environment | FIXED (added typeof guard) |
-| 135 | LOW | client.ts | 203 | `api.auth.signup` and `api.signup.create` are the same endpoint — duplicate | TODO |
+| 135 | LOW | client.ts | 203 | `api.auth.signup` and `api.signup.create` are the same endpoint — duplicate | FIXED |
 | 136 | LOW | client.ts | 236 | `api.teams.deleteUser` is nested under `teams` but belongs under `users` semantically | TODO |
 | 137 | LOW | client.ts | 310 | `BulkTaskUpdatePayload` type definition is a subset of `TaskUpdatePayload` — could use `Partial<TaskPayload>` | TODO |
 | 138 | LOW | client.ts | 60 | `clearCsrf` is called on logout but the response may have set a new CSRF cookie — race condition | TODO |

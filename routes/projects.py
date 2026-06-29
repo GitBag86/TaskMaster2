@@ -14,6 +14,8 @@ from routes.tasks import (
     send_project_activity_emails,
     send_project_completed_emails,
     update_project_members,
+)
+from utils.task_helpers import (
     user_can_access_task,
     task_is_done,
     task_open_dependencies,

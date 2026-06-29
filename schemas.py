@@ -1,5 +1,4 @@
-from marshmallow import Schema, fields, validate, ValidationError
-from datetime import date
+from marshmallow import Schema, fields, validate
 
 # Team workspaces (R2): three valid roles in the new system.
 # 'admin' is kept as a transitional alias until the migration in Task 6

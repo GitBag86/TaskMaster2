@@ -25,6 +25,15 @@ from utils.notifications import create_notification, emit_notifications
 from utils.delete_helpers import prepare_task_for_delete
 from utils.errors import CrossTeamReferenceError
 from utils.scoping import get_team_resource_or_404, team_scoped
+from utils.task_helpers import (
+    assigned_task_query,
+    visible_task_query,
+    assignee_names,
+    task_is_done,
+    user_can_access_task,
+    task_open_dependencies,
+    task_open_subtasks,
+)
 
 # Module-level lock that serialises task state transitions (complete / reopen / bulk
 # mark-done) so that dependency-blocked checks and the subsequent commit are
@@ -131,8 +140,6 @@ def parse_due_date(value):
             pass
     return value
 
-def user_can_access_task(user, task):
-    return g.get('current_role') in ('manager', 'super_admin') or user in task.assignees
 
 def is_user_start_task_update(data):
     if not isinstance(data, dict) or not data:
@@ -140,20 +147,6 @@ def is_user_start_task_update(data):
     if set(data) - USER_START_TASK_FIELDS:
         return False
     return data.get('status') == 'in_progress' and data.get('completed', False) is False
-
-def task_is_done(task):
-    return task.completed or task.status == 'done'
-
-def task_open_dependencies(task):
-    return [
-        dependency.depends_on_task
-        for dependency in task.dependencies
-        if dependency.depends_on_task and not task_is_done(dependency.depends_on_task)
-    ]
-
-def task_open_subtasks(task):
-    return [subtask for subtask in task.subtasks if not subtask.completed]
-
 def blocked_completion_response(task):
     open_dependencies = task_open_dependencies(task)
     open_subtasks = task_open_subtasks(task)
@@ -210,15 +203,6 @@ def bulk_scoped_tasks_or_error(task_ids):
         tasks.append(task)
     return tasks
 
-def assigned_task_query(user):
-    return team_scoped(Task.query, Task).filter(Task.assignees.any(User.id == user.id))
-
-def visible_task_query(user):
-    if g.get('current_role') in ('manager', 'super_admin'):
-        return team_scoped(Task.query, Task).filter(Task.archived == False)
-    return assigned_task_query(user).filter(Task.archived == False)
-
-
 def _eager_task_options():
     """Eager-loading options for Task to avoid N+1 in to_dict() / dependency checks.
 
@@ -235,9 +219,6 @@ def _eager_task_options():
         selectinload(Task.dependent_links).selectinload(TaskDependency.task),
         joinedload(Task.project_record).selectinload(Project.members),
     )
-
-def assignee_names(task):
-    return ', '.join(user.username for user in task.assignees)
 
 def update_task_assignees(task, assignee_ids):
     assignee_ids = assignee_ids or []
@@ -820,6 +801,7 @@ def update_task(task_id):
     with _TASK_STATE_LOCK:
         if not was_done and task_is_done(task) and task_blocks_completion(task):
             db.session.rollback()
+            db.session.refresh(task)
             return blocked_completion_response(task)
         db.session.commit()
 

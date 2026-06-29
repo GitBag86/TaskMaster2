@@ -11,12 +11,11 @@ Covers:
 
 import pytest
 from datetime import datetime, timedelta, timezone
-from unittest.mock import patch
 
-from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.exc import OperationalError
 
 from config import Config
-from models import Team, TeamInvite, Task, TaskDependency, User, db
+from models import Team, TeamInvite, Task, User, db
 
 
 class RateLimitEnabledConfig(Config):
@@ -89,8 +88,6 @@ def test_signup_handles_db_write_failure_gracefully(app, client, monkeypatch):
 
 def test_integrity_error_on_duplicate_username(auth_client, app):
     """Creating a user with duplicate username returns 400."""
-    from routes.users import users_bp
-
     response = auth_client.post(
         "/users",
         json={

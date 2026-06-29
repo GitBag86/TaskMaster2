@@ -13,7 +13,7 @@ os.environ.setdefault("ENABLE_SCHEDULER", "false")
 
 from app import create_app
 from config import TestingConfig
-from models import db, Team, User, Task
+from models import db, Team, User
 
 @pytest.fixture
 def app():

@@ -74,14 +74,6 @@ type SignupPayload = {
   invite_token?: string | null;
 };
 
-type SignupMode = "disabled" | "invite_only" | "default_team";
-
-type SignupInfo = {
-  mode: SignupMode;
-  team_name?: string;
-  token_valid?: boolean;
-};
-
 type TeamPayload = {
   name: string;
   description?: string;
@@ -286,13 +278,8 @@ export const api = {
   signup: {
     info: (token?: string | null) => {
       const query = token ? `?token=${encodeURIComponent(token)}` : "";
-      return request<SignupInfo>(`/auth/signup-info${query}`);
+      return request<{ mode: 'disabled' | 'invite_only' | 'default_team'; team_name?: string; token_valid?: boolean }>(`/auth/signup-info${query}`);
     },
-    create: (data: SignupPayload) =>
-      request<{ message: string; user: User }>("/auth/signup", {
-        method: "POST",
-        body: JSON.stringify(data),
-      }),
   },
 
   users: {

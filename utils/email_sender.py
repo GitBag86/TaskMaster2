@@ -30,13 +30,6 @@ def _get_executor():
     return _email_executor
 
 
-def _reset_executor():
-    """Clear executor reference — call after Gunicorn fork to get a fresh pool."""
-    global _email_executor
-    with _pool_lock:
-        _email_executor = None
-
-
 def missing_mail_config():
     if current_app.config.get("MAIL_SUPPRESS_SEND"):
         return []

@@ -1,7 +1,7 @@
 import json
 import sqlite3
 import urllib.error
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from jobs.deadline_notifier import check_deadlines
@@ -202,20 +202,23 @@ def test_deadline_notifier_uses_public_base_url_without_request_context(app, mon
         db.session.add_all([admin, assignee])
         db.session.commit()
 
+        # Use UTC date to stay consistent with deadline_notifier (which uses
+        # datetime.now(timezone.utc).date() internally).
+        utc_today = datetime.now(timezone.utc).date()
         task = Task(
             user_id=admin.id,
             title="Deadline task",
-            due_date=date.today() + timedelta(days=1),
+            due_date=utc_today + timedelta(days=1),
         )
         task.assignees.append(assignee)
         db.session.add(task)
         db.session.commit()
         task_id = task.id
 
-    assert check_deadlines(app) == 1
-    assert sent[0]["to"] == "deadline_user@example.com"
-    assert sent[0]["subject"] == "Zbliża się termin wykonania zadania: Deadline task"
-    assert f"https://tasks.example.test/tasks/{task_id}" in sent[0]["body"]["text"]
+        assert check_deadlines(app) == 1
+        assert sent[0]["to"] == "deadline_user@example.com"
+        assert sent[0]["subject"] == "Zbliża się termin wykonania zadania: Deadline task"
+        assert f"https://tasks.example.test/tasks/{task_id}" in sent[0]["body"]["text"]
 
 def test_signup(client):
     with client.application.app_context():

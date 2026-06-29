@@ -4,7 +4,7 @@ from routes import filters_bp
 from models import db, User, Task, Tag, SavedFilter, TaskTemplate, CustomField
 from schemas import TagSchema, FilterSchema, TemplateSchema, CustomFieldSchema
 from routes.auth import login_required
-from routes.tasks import user_can_access_task
+from utils.task_helpers import user_can_access_task
 from utils.errors import CrossTeamReferenceError
 from utils.scoping import get_team_resource_or_404, team_scoped
 

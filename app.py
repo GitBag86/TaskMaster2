@@ -85,9 +85,6 @@ def _register_blueprints(app):
     app.register_blueprint(invites_bp)
     app.register_blueprint(projects_bp)
 
-    # CSRF exemption for auth endpoints is applied via @csrf.exempt decorator
-    # in routes/auth.py so that exemptions travel with the function definition.
-    pass
 
 
 def _register_security_headers(app):

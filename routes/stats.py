@@ -5,22 +5,15 @@ from routes import stats_bp
 from models import db, User, Task, TaskDependency, ActivityLog
 from routes.auth import login_required
 from utils.scoping import team_scoped
+from utils.task_helpers import (
+    assigned_task_query,
+    visible_task_query,
+    assignee_names,
+    task_is_done,
+)
 import csv
 from io import StringIO
 
-def assigned_task_query(user):
-    return team_scoped(Task.query, Task).filter(Task.assignees.any(User.id == user.id))
-
-def visible_task_query(user):
-    if g.get('current_role') in ('manager', 'super_admin'):
-        return team_scoped(Task.query, Task)
-    return assigned_task_query(user)
-
-def assignee_names(task):
-    return ', '.join(assignee.username for assignee in task.assignees)
-
-def task_is_done(task):
-    return task.completed or task.status == 'done'
 
 def task_is_blocked(task):
     return any(
@@ -42,7 +35,7 @@ def get_dashboard_stats():
     user_id = session.get('user_id')
     user = db.session.get(User, user_id)
 
-    base = visible_task_query(user)
+    base = visible_task_query(user, include_archived=True)
 
     total = base.count()
     completed = base.filter(Task.completed.is_(True)).count()
@@ -96,7 +89,7 @@ def get_weekly_report():
     today = now.date()
 
     tasks = (
-        visible_task_query(user)
+        visible_task_query(user, include_archived=True)
         .options(selectinload(Task.dependencies).selectinload(TaskDependency.depends_on_task))
         .all()
     )
@@ -172,7 +165,7 @@ def export_csv():
     user_id = session.get('user_id')
     user = db.session.get(User, user_id)
 
-    tasks = visible_task_query(user).options(selectinload(Task.assignees)).all()
+    tasks = visible_task_query(user, include_archived=True).options(selectinload(Task.assignees)).all()
 
     output = StringIO()
     writer = csv.writer(output)

@@ -20,7 +20,6 @@ from models import (
     SavedFilter,
     Tag,
     Task,
-    TaskTemplate,
     Team,
     User,
     db,

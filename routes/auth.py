@@ -9,17 +9,18 @@ from routes import auth_bp
 from models import db, Team, TeamInvite, User, PasswordResetToken
 from schemas import LoginSchema, SignupSchema, ProfileUpdateSchema
 from utils.errors import InviteTokenInvalidError, SignupDisabledError, TeamArchivedError
+from utils.token_helpers import hash_invite_token
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.exc import SQLAlchemyError
 
+from functools import wraps
 from extensions import limiter, csrf
 
 logger = logging.getLogger(__name__)
 
 
 def login_required(f):
-    from functools import wraps
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'user_id' not in session:
@@ -166,7 +167,6 @@ def logout_all():
 @limiter.limit("3 per minute")
 def forgot_password():
     """Generate a password reset token and e-mail it to the user."""
-    from datetime import timedelta
 
     from utils.email_sender import send_password_reset_email
 
@@ -303,10 +303,6 @@ def _establish_session(user):
     session['team_id'] = user.team_id  # may be None for super_admin
     session['role'] = user.role
     session['session_version'] = user.session_version
-
-
-def hash_invite_token(raw_token: str) -> str:
-    return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
 
 
 def resolve_invite_token(raw_token):

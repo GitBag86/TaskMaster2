@@ -1,8 +1,10 @@
 import re
+import unicodedata
 
 from flask import g, jsonify, request
 from marshmallow import ValidationError
 from sqlalchemy import func
+from sqlalchemy.orm import selectinload
 
 from models import (
     ActivityLog,
@@ -35,7 +37,11 @@ from utils.errors import TeamNotEmptyError
 
 
 def slugify(value):
-    slug = re.sub(r"[^a-z0-9]+", "-", (value or "").strip().lower()).strip("-")
+    # Normalize unicode (NFKD decomposes e.g. 'ó' → 'o' + combining acute)
+    # then strip non-ASCII so 'Zespół' → 'zespol' instead of 'zesp'
+    normalized = unicodedata.normalize("NFKD", value or "")
+    ascii_clean = normalized.encode("ASCII", "ignore").decode("ASCII")
+    slug = re.sub(r"[^a-z0-9]+", "-", ascii_clean.strip().lower()).strip("-")
     return slug or "team"
 
 
@@ -72,8 +78,6 @@ def add_audit(action, target_team_id=None, target_user_id=None, source_team_id=N
     db.session.add(entry)
     return entry
 
-
-from sqlalchemy.orm import selectinload
 
 _RESOURCE_MODELS = [
     (Task, "tasks"),
