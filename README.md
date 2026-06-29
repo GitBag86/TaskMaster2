@@ -4,6 +4,8 @@
 
 ### ✨ Nowości w wersji 1.0
 
+#### Backend
+
 - **Multi‑tenancy (Team Workspaces)** — pełna izolacja danych między zespołami z trzema poziomami uprawnień (super_admin / manager / user).
 - **Panel super‑admina** — retro/hackerman console do zarządzania zespołami, użytkownikami i globalnym audit logiem.
 - **Archiwizacja zespołów** — możliwość zamrożenia zespołu bez utraty danych.
@@ -14,6 +16,20 @@
 - **Docker Compose** do lokalnego developmentu.
 - **Socket.IO session invalidation** — połączenia Socket.IO są unieważniane przy zmianie roli/zespołu/archiwizacji.
 - **Password reset session security** — resetowanie hasła teraz unieważnia wszystkie aktywne sesje.
+- **Drag-to-reorder API** — endpoint `PUT /tasks/reorder` do zapisywania kolejności zadań.
+- **Kolumna `position`** w modelu Task do przechowywania kolejności wyświetlania.
+
+#### Frontend
+
+- **Widok tabeli** — przełącznik kafelki/tabela w widoku Zadań. Tabela ma sortowalne kolumny (tytuł, priorytet, status, wykonawca, termin, projekt, postęp) oraz edycję inline (tytuł, priorytet, wykonawca).
+- **Przeciąganie zadań** — drag-to-reorder w widoku kafelków z @dnd-kit, zapisywanie kolejności przez API.
+- **Edycja inline** — kliknij tytuł/priorytet/wykonawcę na karcie zadania, żeby edytować bez otwierania szczegółów.
+- **Optymistyczne aktualizacje** — przełączanie statusu, zmiana priorytetu i przeciąganie na Kanbanie reagują błyskawicznie, bez czekania na API.
+- **Współdzielony hook Socket.IO** — `useSocketTaskEvents` eliminuje 4-krotnie powielone useEffecty do obsługi eventów.
+- **Animacje Framer Motion** — płynne wchodzenie/wychodzenie kart i wierszy tabeli przy dodawaniu/usuwaniu/sortowaniu.
+- **Per-page Error Boundaries** — awaria jednej strony (np. TasksPage) pokazuje błąd tylko w jej obszarze, reszta aplikacji działa.
+- **Per-route Suspense** z dedykowanymi skeletonami — ładowanie lazy-chunka jednej strony nie blokuje całej aplikacji.
+- **Command Palette** — Ctrl+K z szybkim dodawaniem zadań i nawigacją.
 
 ---
 
@@ -66,6 +82,15 @@ TaskMaster2 zawiera:
 - ciemny motyw,
 - PWA assets,
 - Socket.IO do synchronizacji miedzy klientami,
+- **Widok tabeli** ze sortowaniem po kolumnach i edycją inline,
+- **Przeciąganie zadań** w widoku listy (drag-to-reorder),
+- **Edycja inline** tytułu, priorytetu i wykonawcy bezpośrednio na karcie,
+- **Optymistyczne aktualizacje** błyskawiczna reakcja UI przed odpowiedzią API,
+- **Współdzielony hook** `useSocketTaskEvents` eliminujący powielony kod Socket.IO,
+- **Animacje Framer Motion** płynne wchodzenie/wychodzenie elementów,
+- **Per-page Error Boundaries** — awaria jednej strony nie blokuje całej aplikacji,
+- **Per-route Suspense** z dedykowanymi skeletonami dla każdego widoku,
+- **Przełącznik widoku** kafelki ↔ tabela w widoku zadań,
 - health checki `/health` i `/ready`.
 
 ## Role i Uprawnienia

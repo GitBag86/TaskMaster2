@@ -15,10 +15,60 @@
 
 - **Auto-archive completed tasks**: Tasks marked as done are automatically archived after 3 days (daily scheduler job).
 - **Project member saving**: Fixed save button - now properly detects member changes before enabling save.
+- **Drag-to-reorder API**: Added `PUT /tasks/reorder` endpoint and `position` column on Task model for persisting custom task ordering.
+- **Migration**: Added `87436939ddff_add_task_position` — backfills position based on `created_at` per team, plus composite index `(team_id, position)`.
 
 ### ✨ Frontend
 
-- **Super Admin Console** — `/admin` is now the default super-admin landing page with retro/hackerman UI.
+#### Inline Editing
+
+- **TaskCard** — click title to edit inline (Enter saves, Escape cancels), click priority badge for inline 3-button selector, click assignee area for lazy-fetched user dropdown.
+- **TaskTable** — same inline editing patterns adapted for table cells: pencil icon for title, click-to-select priority, click-to-select assignee.
+
+#### Drag-to-Reorder
+
+- **@dnd-kit integration** in card view: 6-dot grip handle (visible on hover), PointerSensor with 8px activation distance, rectSortingStrategy for smooth column reorder.
+- **Persistence**: on drag-end, new order is sent to `PUT /tasks/reorder`; non-filtered items' positions preserved via interleaving algorithm.
+
+#### Optimistic Updates
+
+- **TasksPage** — `handleComplete` flips task status immediately before API call, reverts on error.
+- **TodayPage** — `completeTask` and `startTask` apply optimistic state instantly via `patchTask` helper.
+- **KanbanPage** — `handleDrop` moves card to target column instantly, snaps back on error.
+
+#### Socket Event Refactoring
+
+- **New hook `useSocketTaskEvents`** (`hooks/useSocketTaskEvents.ts`) — centralizes socket event routing (delete/update/create/bulk) with ref-based handlers to avoid stale closures.
+- **4 pages updated** (TasksPage, TodayPage, KanbanPage, CalendarPage) — each replaced ~16 lines of duplicated useEffect + handleTaskEvent with a single `useSocketTaskEvents({...})` call.
+
+#### Table View (Spreadsheet)
+
+- **New component `TaskTable`** (`components/Tasks/TaskTable.tsx`) — 9 sortable columns (title, project, priority, status, assignee, due_date, subtask progress), client-side sorting via `useMemo`.
+- **View toggle** — segmented button in TasksPage header switches between card grid and table.
+- **Bulk selection** — checkbox column with indeterminate "select all" header.
+- **Row striping**, hover effects, compact progress bars, complete checkmark per row.
+
+#### Framer Motion Animations
+
+- **TaskCard** — entry: opacity 0→1, y: 20→0, scale: 0.95→1; exit: opacity→0, scale→0.9; spring physics (stiffness 350, damping 30). Compatible with @dnd-kit (layout omitted, `!transition-none` during drag).
+- **TaskTable rows** — entry: slide in from left (x: -20→0); exit: slide right + collapse (height→0); `layout` prop for smooth column-sort reordering.
+- **AnimatePresence `mode="popLayout"`** — exiting elements pop out of flow; remaining items animate into place.
+
+#### Per-Page Error Boundaries
+
+- Each of 15 lazy-loaded routes wrapped in its own `<ErrorBoundary>` inside App.tsx.
+- Crash in one page (e.g. TasksPage) only affects that page's content area — sidebar, nav, and other routes remain functional.
+- Global `<ErrorBoundary>` kept as top-level safety net for providers/layout crashes.
+
+#### Per-Route Suspense Fallbacks
+
+- Moved from single global `<Suspense>` wrapping all `<Routes>` to per-route Suspense.
+- Each route gets a page-specific skeleton: TasksPageSkeleton, KanbanSkeleton, CalendarSkeleton, DashboardSkeleton, ActivitySkeleton, AdminSkeleton.
+- One lazy chunk loading no longer shows a full-screen spinner; only that page's area shows its skeleton while sidebar/nav stay interactive.
+
+#### Super Admin Console
+
+- `/admin` is now the default super-admin landing page with retro/hackerman UI.
 - Added super-admin console navigation entry and identity matrix for loaded users across workspaces.
 - Super-admin console supports adding users into a selected active workspace and terminating user accounts.
 

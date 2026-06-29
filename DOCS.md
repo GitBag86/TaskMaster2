@@ -94,6 +94,16 @@ Client A (browser, team_id=1)              Client B (browser, team_id=1)
                   Backend route handler (after DB commit)
 ```
 
+### Współdzielona obsługa Socket.IO we frontendzie
+
+Aplikacja używa hooka `useSocketTaskEvents` (`frontend/src/hooks/useSocketTaskEvents.ts`), który:
+- Nasłuchuje na `lastTaskEvent` z SocketContext
+- Filtruje eventy pochodzące od tego samego użytkownika (optymistyczne aktualizacje już zadziałały)
+- Routuje eventy do callbacków: `onDelete`, `onUpdate`, `onCreate`, `onBulk`
+- Używa refów dla callbacków, eliminując problem pustych zależności w useEffect
+
+Centralizacja wyeliminowała 4-krotnie powielony kod we wszystkich widokach (TasksPage, TodayPage, KanbanPage, CalendarPage).
+
 ---
 
 ## 3. Stack technologiczny
@@ -194,6 +204,7 @@ Dodane przez migrację `2c8e44f754b0`:
 
 | Indeks                             | Tabela                                              | Cel                          |
 | ---------------------------------- | --------------------------------------------------- | ---------------------------- |
+| `ix_task_team_position`            | task (team_id, position)                             | drag-to-reorder               |
 | `ix_task_team_due`                 | task (team_id, due_date) WHERE completed=false      | /tasks/today, /tasks/blocked |
 | `ix_task_team_status`              | task (team_id, status)                              | filtry statusów              |
 | `ix_notification_team_user_unread` | notification (team_id, user_id) WHERE read=false    | widget powiadomień           |
@@ -318,6 +329,7 @@ Wszystkie endpointy zwracają JSON. Errory: `{"error": "msg", "code": "stable_co
 | `/tasks/search?q=...`                  | GET          | Pełnotekstowe wyszukiwanie.                                      |
 | `/tasks/filter?...`                    | GET          | Filtry (assigned_to, priority, project, completed).              |
 | `/tasks/quick-add`                     | POST         | Parser tokenów `+` z hashtagami / wzmianami.                     |
+| `/tasks/reorder`                      | PUT          | Zapisuje kolejność zadań (przyjmuje `task_ids` w żądanej kolejności). |
 | `/tasks/bulk/{complete,delete,update}` | PUT/DEL      | Operacje masowe.                                                 |
 | `/tasks/<id>/dependencies`             | GET, POST    | Zarządzanie zależnościami.                                       |
 | `/dependencies/<id>`                   | DELETE       | Usunięcie zależności.                                            |
@@ -396,7 +408,6 @@ Wszystkie endpointy zwracają JSON. Errory: `{"error": "msg", "code": "stable_co
 | 400  | `cross_team_reference` | Próba referencji zasobu z innego zespołu.              |
 | 401  | `session_stale`        | session_version mismatch — wymagane ponowne logowanie. |
 | 403  | `team_archived`        | Twój zespół jest zarchiwizowany.                       |
-| 403  | `signup_disabled`      | `SIGNUP_MODE=disabled`.                                |
 | 409  | `team_not_empty`       | Próba usunięcia zespołu z zasobami.                    |
 | 410  | `invite_token_invalid` | Token wygasł, skonsumowany lub nieistniejący.          |
 | 429  | —                      | Rate limit (Flask-Limiter, jesli wlaczony).            |
@@ -452,14 +463,23 @@ socketio.emit('task_action', {
 
 ### Frontend
 
-`frontend/src/store/SocketContext.tsx` zarządza połączeniem. Listener:
+`frontend/src/store/SocketContext.tsx` zarządza połączeniem. Aplikacja używa współdzielonego hooka `useSocketTaskEvents` do obsługi eventów:
 
 ```ts
-socket.on("task_action", () => {
-  loadTasks();
-  showToast("Lista zadań zaktualizowana");
-});
+import { useSocketTaskEvents } from '@/hooks/useSocketTaskEvents'
+
+useSocketTaskEvents({
+  onDelete: (taskId) => setTasks(prev => prev.filter(t => t.id !== taskId)),
+  onUpdate: (task) => replaceTask(task),
+  onCreate: () => setTotal(prev => prev + 1),
+  onBulk: () => void fetchTasks(),
+})
 ```
+
+Hook automatycznie:
+- Filtruje eventy własnego użytkownika (nie nakłada optymistycznych aktualizacji)
+- Routuje eventy do odpowiednich callbacków (delete/update/create/bulk)
+- Używa refów dla callbacków, żeby uniknąć pustych zależności
 
 ---
 
@@ -752,7 +772,7 @@ pytest -k "isolation"            # tylko isolation tests
 
 ### Stan
 
-**220 passed, 1 skipped** na czystej bazie SQLite lub PostgreSQL.
+**274 passed, 1 skipped** na czystej bazie SQLite lub PostgreSQL.
 
 ### Struktura
 

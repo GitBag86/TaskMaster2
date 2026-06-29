@@ -91,10 +91,33 @@ Widok główny po zalogowaniu (manager / user).
 
 ### Lista zadań
 
+- **Przełącznik widoku** — w prawym górnym rogu, obok przycisku "Nowe zadanie". Możesz przełączać między:
+  - **Widok kafelków** — domyślny, karty zadań w gridzie 3 kolumnowym
+  - **Widok tabeli** — tabela z sortowalnymi kolumnami (kliknij nagłówek, żeby posortować)
 - **Wyszukiwarka** w górnej części — szuka po tytule i notatkach.
 - **Filtry**: priorytet, projekt, status, zablokowane.
 - **Statystyki** widocznej strony (ile zakończonych, ile w toku itd.).
 - **Paginacja** — domyślnie 24 zadania na stronę.
+
+### Edycja inline
+
+Nie musisz otwierać szczegółów zadania, żeby zmienić tytuł, priorytet lub wykonawcę:
+
+- **Tytuł** — kliknij tytuł na karcie lub ikonę ołówka ✏️ w tabeli → wpisz nową nazwę → Enter zapisuje, Escape anuluje
+- **Priorytet** — kliknij badge priorytetu → pojawia się 3-przyciskowy wybór (Wysoki/Średni/Niski) → kliknij wybrany
+- **Wykonawca** — kliknij przypisaną osobę (lub "Nieprzypisane") → rozwijana lista użytkowników z zespołu → kliknij, żeby przypisać
+
+Widok tabeli dodatkowo ma sortowanie — kliknij nagłówek kolumny (Tytuł, Priorytet, Status, Wykonawca, Termin), żeby posortować rosnąco/malejąco.
+
+### Przeciąganie (drag-to-reorder)
+
+W widoku kafelków możesz przeciągać zadania, żeby zmienić ich kolejność:
+
+1. Najedź myszą na górną krawędź karty — pojawi się 6-kropkowy uchwyt chwytak.
+2. Kliknij i przeciągnij w wybrane miejsce.
+3. Kolejność zapisuje się automatycznie przez API.
+
+> **Uwaga**: przeciąganie działa tylko dla zadań niezakończonych i wymaga roli managera.
 
 ### Akcje na zadaniu
 
@@ -210,7 +233,7 @@ Trzy kolumny:
 
 ### Drag & Drop
 
-Przeciągnij zadanie między kolumnami żeby zmienić jego status.
+Przeciągnij zadanie między kolumnami żeby zmienić jego status. Zmiana statusu jest **optymistyczna** — karta od razu przeskakuje do nowej kolumny, zanim odpowiedź z serwera potwierdzi zmianę. Jeśli wystąpi błąd (np. brak połączenia), karta wraca do poprzedniej kolumny.
 
 **Uwaga**: Jeśli zadanie jest zablokowane przez otwartą zależność, nie da się go przenieść do kolumny "Zakończone".
 
@@ -557,6 +580,8 @@ Ikonka słońce/księżyc w prawym górnym rogu (obok dzwonka). Stan zapamiętyw
 
 - `Ctrl/Cmd + K` — Command Palette / quick-add.
 - `Esc` — zamknij modal / panel.
+- **Enter** — zapisz edycję inline (tytuł).
+- **Escape** — anuluj edycję inline.
 
 ---
 

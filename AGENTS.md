@@ -142,9 +142,13 @@ components/
   ├─ Dashboard/DashboardPage.tsx
   ├─ Kanban/KanbanPage.tsx
   ├─ Layout/DashboardLayout.tsx
-  ├─ Tasks/{TasksPage,TaskCard,TaskDetail,TaskDetailPage,TaskForm}.tsx
+  ├─ Tasks/{TasksPage,TaskCard,TaskTable,TaskDetail,TaskDetailPage,TaskForm}.tsx
   ├─ Settings/SettingsPage.tsx
-  └─ common/{Skeletons,Toaster,CommandPalette}.tsx
+  └─ common/{Skeletons,Toaster,CommandPalette,ErrorBoundary}.tsx
+hooks/
+  ├─ useSocketTaskEvents.ts  - Shared socket event handler hook
+  ├─ useTasksQuery.ts
+  └─ ...
 store/
   ├─ AuthContext.tsx    - User auth state & session
   ├─ SocketContext.tsx  - WebSocket connection management
