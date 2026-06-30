@@ -257,7 +257,7 @@ export default function TaskTable({
       <table className="w-full border-collapse text-sm">
         <thead>
           <tr className="border-b border-border bg-muted/50">
-            {columns.map(col => (
+            {columns.map((col, colIdx) => (
               <th
                 key={col.label}
                 className={`${col.className} px-2 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground ${
@@ -265,7 +265,7 @@ export default function TaskTable({
                 }`}
                 onClick={() => col.sortable && col.key && handleSort(col.key)}
               >
-                {col.key === null && col.label === '' && selectable ? (
+                {colIdx === 0 && selectable ? (
                   <input
                     type="checkbox"
                     checked={allVisibleSelected}
