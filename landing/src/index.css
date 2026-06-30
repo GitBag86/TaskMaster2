@@ -1,0 +1,57 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: #0f0a1a;
+  --color-surface: #1a1429;
+  --color-surface-light: #221c33;
+  --color-primary: #14b8a6;
+  --color-primary-dark: #0d9488;
+  --color-secondary: #b794f4;
+  --color-accent: #9f7aea;
+  --color-muted: #6b5b8a;
+  --color-text: #e8e5f0;
+  --color-text-dim: #8f80a8;
+  --color-border: #2d2545;
+  --color-destructive: #e53e3e;
+  --color-success: #38a169;
+}
+
+html {
+  background-color: var(--color-background);
+  color: var(--color-text);
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+/* Smooth scroll behavior */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Custom utility for the gradient hero background */
+.bg-hero-gradient {
+  background: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(20, 184, 166, 0.15), transparent),
+              radial-gradient(ellipse 60% 40% at 80% 20%, rgba(183, 148, 244, 0.1), transparent),
+              linear-gradient(180deg, #0f0a1a 0%, #1a1429 100%);
+}
+
+/* Subtle glow effect for cards */
+.card-glow {
+  box-shadow: 0 0 0 1px rgba(20, 184, 166, 0.1), 0 4px 20px rgba(20, 184, 166, 0.05);
+}
+
+.card-glow:hover {
+  box-shadow: 0 0 0 1px rgba(20, 184, 166, 0.2), 0 8px 30px rgba(20, 184, 166, 0.1);
+}
+
+/* Navbar blur */
+.nav-blur {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
