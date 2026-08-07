@@ -12,6 +12,7 @@ from utils.errors import InviteTokenInvalidError, SignupDisabledError, TeamArchi
 import logging
 from datetime import datetime, timezone
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy import func, or_
 
 from extensions import limiter, csrf
 
@@ -123,7 +124,15 @@ def login():
     except ValidationError as err:
         return jsonify({"error": err.messages}), 400
 
-    user = User.query.filter_by(username=validated['username']).first()
+    # Keep the request field named `username` for API compatibility, but let
+    # the user enter either their username or their unique email address.
+    identifier = validated['username'].strip()
+    user = User.query.filter(
+        or_(
+            User.username == identifier,
+            func.lower(User.email) == identifier.lower(),
+        )
+    ).first()
     if not user or not user.check_password(validated['password']):
         return jsonify({"error": "Błędne dane logowania"}), 401
 

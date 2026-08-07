@@ -275,13 +275,14 @@ export default function AuthPage() {
             <>
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Nazwa użytkownika
+                Username lub e-mail
               </label>
               <input
                 type="text"
                 value={username}
                 onChange={e => { setUsername(e.target.value); setFieldErrors(prev => ({ ...prev, username: undefined })); }}
                 className={`input ${fieldErrors.username ? 'border-destructive focus-visible:ring-destructive/50' : ''}`}
+                placeholder="Username lub e-mail"
                 required
                 minLength={3}
                 autoFocus

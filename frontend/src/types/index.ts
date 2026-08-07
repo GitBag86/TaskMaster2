@@ -32,6 +32,7 @@ export interface InviteToken {
   id: number;
   team_id: number;
   created_by_id: number | null;
+  email?: string | null;
   created_at: string | null;
   expires_at: string;
   consumed_at: string | null;
@@ -39,6 +40,7 @@ export interface InviteToken {
   default_role: Role;
   active?: boolean;
   raw_token?: string;
+  email_queued?: boolean;
 }
 
 export interface TeamAuditEntry {

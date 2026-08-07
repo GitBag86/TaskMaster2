@@ -31,6 +31,30 @@ def test_get_current_user_requires_login(client):
     assert "zalogowany" in response.get_json()["error"].lower()
 
 
+def test_login_accepts_email_case_insensitively(client, app):
+    with app.app_context():
+        team = Team(name="Email Login", slug="email-login")
+        db.session.add(team)
+        db.session.flush()
+        user = User(
+            username="email_login_user",
+            email="person@example.com",
+            role="user",
+            team_id=team.id,
+        )
+        user.set_password("P@ssw0rd!")
+        db.session.add(user)
+        db.session.commit()
+
+    response = client.post(
+        "/auth/login",
+        json={"username": "PERSON@EXAMPLE.COM", "password": "P@ssw0rd!"},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["user"]["username"] == "email_login_user"
+
+
 def test_forgot_password_requires_email(client, app):
     response = client.post("/auth/forgot-password", json={})
     assert response.status_code == 400
@@ -144,6 +168,5 @@ def test_reset_password_rejects_expired_token(client, app):
     })
     assert response.status_code == 400
     assert "token" in response.get_json()["error"].lower()
-
 
 

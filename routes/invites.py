@@ -2,12 +2,14 @@ import hashlib
 import re
 import secrets
 from datetime import datetime, timedelta, timezone
+from urllib.parse import quote
 
 from flask import current_app, g, jsonify, request
 
 from models import TeamInvite, db
 from routes import invites_bp
 from routes.auth import login_required
+from utils import email_sender
 
 
 EMAIL_PATTERN = re.compile(r'^[a-zA-Z0-9.!#$%&\'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$')
@@ -63,6 +65,7 @@ def create_invite():
     email = payload.get("email")
     if email is not None and not validate_email(email):
         return jsonify({"error": "Nieprawidłowy format adresu email"}), 400
+    email = email.strip().lower() if email else None
 
     raw_token = secrets.token_urlsafe(32)
     ttl_days = current_app.config.get("INVITE_TOKEN_TTL_DAYS", 7)
@@ -70,6 +73,7 @@ def create_invite():
         team_id=g.get("current_team_id"),
         token_hash=hash_invite_token(raw_token),
         created_by_id=g.current_user.id,
+        email=email,
         expires_at=utcnow_naive() + timedelta(days=ttl_days),
         default_role="user",
     )
@@ -77,7 +81,24 @@ def create_invite():
     db.session.commit()
 
     data = invite.to_dict()
-    data["raw_token"] = raw_token
+    base_url = (current_app.config.get("PUBLIC_BASE_URL") or request.host_url).rstrip("/")
+    invite_url = f"{base_url}/auth?token={quote(raw_token, safe='')}"
+
+    if email:
+        expires_label = invite.expires_at.strftime("%Y-%m-%d %H:%M UTC")
+        email_queued = email_sender.enqueue_email(
+            email,
+            f"Zaproszenie do zespołu {invite.team.name} — TaskMaster",
+            email_sender.get_team_invite_body(invite.team.name, invite_url, expires_label),
+        )
+        data["email_queued"] = email_queued
+        # Do not expose the one-time token when the invitation was queued for
+        # delivery. If delivery is not configured, return it as a recovery
+        # path so the manager can still onboard the user manually.
+        if not email_queued:
+            data["raw_token"] = raw_token
+    else:
+        data["raw_token"] = raw_token
     return jsonify(data), 201
 
 

@@ -423,6 +423,23 @@ def get_password_reset_body(username, reset_link):
     )
 
 
+def get_team_invite_body(team_name, invite_link, expires_at):
+    return _email_content(
+        eyebrow="Zaproszenie do zespołu",
+        title=f"Dołącz do zespołu {team_name}",
+        greeting="Cześć,",
+        intro="Otrzymujesz zaproszenie do pracy w zespole w aplikacji TaskMaster. Kliknij przycisk, aby utworzyć konto.",
+        details=[
+            _line("Zespół", team_name),
+            _line("Ważne do", expires_at),
+        ],
+        cta_label="Dołącz do zespołu",
+        cta_url=invite_link,
+        tone="purple",
+        footer_note="Zaproszenie jest jednorazowe. Jeśli nie spodziewasz się tej wiadomości, możesz ją zignorować.",
+    )
+
+
 def send_password_reset_email(user, raw_token):
     """Send a password reset email to the user with the given raw token."""
     base_url = current_app.config.get("PUBLIC_BASE_URL", "")

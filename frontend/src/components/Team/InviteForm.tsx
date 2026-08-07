@@ -12,6 +12,7 @@ type InviteFormProps = {
 export default function InviteForm({ onCreated }: InviteFormProps) {
   const [email, setEmail] = useState('');
   const [rawToken, setRawToken] = useState<string | null>(null);
+  const [emailSentTo, setEmailSentTo] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [dirty, setDirty] = useState(false);
   const { addToast } = useToast();
@@ -40,12 +41,20 @@ export default function InviteForm({ onCreated }: InviteFormProps) {
     }
     setCreating(true);
     try {
-      const invite = await api.invites.create(email.trim() || undefined);
+      const recipient = email.trim();
+      const invite = await api.invites.create(recipient || undefined);
       setRawToken(invite.raw_token ?? null);
+      setEmailSentTo(invite.email_queued && recipient ? recipient : null);
       setEmail('');
       setDirty(false)
       onCreated(invite);
-      addToast('Zaproszenie utworzone', 'success');
+      if (invite.email_queued && recipient) {
+        addToast(`Zaproszenie wysłane na ${recipient}`, 'success');
+      } else if (recipient) {
+        addToast('Nie udało się potwierdzić wysyłki — użyj wygenerowanego linku', 'warning');
+      } else {
+        addToast('Link zaproszenia wygenerowany', 'success');
+      }
     } catch (err: unknown) {
       addToast(err instanceof Error ? err.message : 'Błąd tworzenia zaproszenia', 'error');
     } finally {
@@ -82,7 +91,7 @@ export default function InviteForm({ onCreated }: InviteFormProps) {
             }}
             onBlur={() => setDirty(true)}
             className={`input ${dirty && emailError ? 'border-destructive focus-visible:ring-destructive/50' : ''}`}
-            placeholder="E-mail opcjonalnie"
+            placeholder="E-mail (wyślij zaproszenie)"
             aria-invalid={dirty && !!emailError}
             aria-describedby={dirty && emailError ? 'email-error' : undefined}
           />
@@ -97,7 +106,7 @@ export default function InviteForm({ onCreated }: InviteFormProps) {
           disabled={!canSubmit}
           className="btn btn-primary whitespace-nowrap disabled:opacity-50"
         >
-          {creating ? 'Tworzenie...' : 'Wygeneruj'}
+          {creating ? 'Tworzenie...' : email.trim() ? 'Wyślij zaproszenie' : 'Wygeneruj link'}
         </button>
       </div>
 
@@ -118,6 +127,12 @@ export default function InviteForm({ onCreated }: InviteFormProps) {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {emailSentTo && !rawToken && (
+        <div className="mt-4 rounded-lg border border-green-500/30 bg-green-500/10 p-3 text-sm text-green-800 dark:text-green-200">
+          Zaproszenie zostało wysłane na adres <strong>{emailSentTo}</strong>. Link jest jednorazowy i ważny przez określony czas.
         </div>
       )}
     </form>

@@ -441,6 +441,7 @@ class TeamInvite(db.Model):
     team_id = db.Column(db.Integer, db.ForeignKey('team.id', ondelete='CASCADE'), nullable=False)
     token_hash = db.Column(db.String(64), unique=True, nullable=False)
     created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    email = db.Column(db.String(320), nullable=True)
     created_at = db.Column(db.DateTime, default=utcnow)
     expires_at = db.Column(db.DateTime, nullable=False)
     consumed_at = db.Column(db.DateTime, nullable=True)
@@ -470,6 +471,7 @@ class TeamInvite(db.Model):
             'id': self.id,
             'team_id': self.team_id,
             'created_by_id': self.created_by_id,
+            'email': self.email,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'expires_at': self.expires_at.isoformat() if self.expires_at else None,
             'consumed_at': self.consumed_at.isoformat() if self.consumed_at else None,

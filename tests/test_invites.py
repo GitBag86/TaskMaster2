@@ -206,6 +206,35 @@ def test_create_invite_accepts_valid_email(client, app):
     assert response.status_code == 201
 
 
+def test_create_invite_queues_email_without_returning_raw_token(client, app, monkeypatch):
+    sent = []
+
+    def fake_enqueue(to_email, subject, body):
+        sent.append((to_email, subject, body))
+        return True
+
+    monkeypatch.setattr("utils.email_sender.enqueue_email", fake_enqueue)
+
+    with app.app_context():
+        app.config["PUBLIC_BASE_URL"] = "https://tasks.example.test"
+        team = make_team("Mail Invites")
+        manager = make_user("mail_invite_manager", team)
+        db.session.commit()
+        login_as(client, manager)
+
+    response = client.post("/team/invites", json={"email": "New.User@Example.com"})
+
+    assert response.status_code == 201
+    data = response.get_json()
+    assert data["email"] == "new.user@example.com"
+    assert data["email_queued"] is True
+    assert "raw_token" not in data
+    assert len(sent) == 1
+    assert sent[0][0] == "new.user@example.com"
+    assert "Mail Invites" in sent[0][1]
+    assert "https://tasks.example.test/auth?token=" in sent[0][2]["text"]
+
+
 def test_create_invite_accepts_no_email(client, app):
     with app.app_context():
         team = make_team("No Email")
