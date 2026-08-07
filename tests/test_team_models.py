@@ -120,6 +120,7 @@ def test_team_invite_to_dict_omits_token_by_default(app):
         invite = TeamInvite(
             team_id=team.id,
             token_hash="d" * 64,
+            email="invited@example.com",
             expires_at=utcnow() + timedelta(days=7),
             default_role="user",
         )
@@ -128,6 +129,7 @@ def test_team_invite_to_dict_omits_token_by_default(app):
 
         data = invite.to_dict()
         assert "token" not in data
+        assert data["email"] == "invited@example.com"
         assert data["default_role"] == "user"
         assert data["active"] is True
 

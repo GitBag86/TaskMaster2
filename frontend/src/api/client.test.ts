@@ -59,6 +59,17 @@ describe('api.auth', () => {
       '/auth/login',
       expect.objectContaining({ method: 'POST', credentials: 'include' }),
     )
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body)).toEqual({ username: 'test', password: 'pass' })
+  })
+
+  it('login forwards an email identifier through the compatible username field', async () => {
+    mockFetch.mockResolvedValue(createResponse({ message: 'ok', user: { id: 1, username: 'test' } }))
+    await api.auth.login('person@example.com', 'pass')
+
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body)).toEqual({
+      username: 'person@example.com',
+      password: 'pass',
+    })
   })
 
   it('logout sends POST', async () => {
@@ -159,6 +170,25 @@ describe('api.teams', () => {
     mockFetch.mockResolvedValue(createResponse(undefined, 204))
     await api.teams.delete(1, true)
     expect(mockFetch).toHaveBeenCalledWith('/admin/teams/1?cascade=true', expect.objectContaining({ method: 'DELETE' }))
+  })
+})
+
+describe('api.invites', () => {
+  beforeEach(() => {
+    mockFetch.mockReset()
+  })
+
+  it('create sends the recipient email and user role', async () => {
+    mockFetch.mockResolvedValue(createResponse({ id: 7, email: 'person@example.com', email_queued: true }))
+
+    const invite = await api.invites.create('person@example.com')
+
+    expect(invite.email_queued).toBe(true)
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body)).toEqual({
+      default_role: 'user',
+      email: 'person@example.com',
+    })
+    expect(mockFetch.mock.calls[0][1].method).toBe('POST')
   })
 })
 

@@ -19,7 +19,7 @@ from models import (
     User,
     db,
 )
-from utils.email_sender import get_task_assignment_body, send_email
+from utils.email_sender import get_task_assignment_body, get_team_invite_body, send_email
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -136,6 +136,20 @@ def test_email_templates_include_html_text_and_escape_content(app, monkeypatch):
     assert payload["subject"] == "Test"
     assert payload["textContent"] == body["text"]
     assert payload["htmlContent"] == body["html"]
+
+
+def test_team_invite_email_template_contains_link_and_escapes_team_name(app):
+    body = get_team_invite_body(
+        "Team <script>alert(1)</script>",
+        "https://tasks.example.test/auth?token=invite-token",
+        "2026-08-14 12:00 UTC",
+    )
+
+    assert "https://tasks.example.test/auth?token=invite-token" in body["text"]
+    assert "Team <script>alert(1)</script>" in body["text"]
+    assert "Team &lt;script&gt;alert(1)&lt;/script&gt;" in body["html"]
+    assert "<script>alert(1)</script>" not in body["html"]
+    assert "Dołącz do zespołu" in body["html"]
 
 def test_send_email_requires_delivery_config_when_not_suppressed(app, monkeypatch):
     requests = []

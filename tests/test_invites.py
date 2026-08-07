@@ -235,6 +235,23 @@ def test_create_invite_queues_email_without_returning_raw_token(client, app, mon
     assert "https://tasks.example.test/auth?token=" in sent[0][2]["text"]
 
 
+def test_create_invite_returns_manual_token_when_email_queue_fails(client, app, monkeypatch):
+    monkeypatch.setattr("utils.email_sender.enqueue_email", lambda *args, **kwargs: False)
+
+    with app.app_context():
+        team = make_team("Mail Fallback")
+        manager = make_user("mail_fallback_manager", team)
+        db.session.commit()
+        login_as(client, manager)
+
+    response = client.post("/team/invites", json={"email": "fallback@example.com"})
+
+    assert response.status_code == 201
+    data = response.get_json()
+    assert data["email_queued"] is False
+    assert data["raw_token"]
+
+
 def test_create_invite_accepts_no_email(client, app):
     with app.app_context():
         team = make_team("No Email")
