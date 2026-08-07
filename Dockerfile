@@ -42,7 +42,10 @@ RUN sed -i 's/\r$//' /app/start.sh && \
     chmod +x /app/start.sh && \
     adduser --disabled-password --gecos '' --uid 10001 appuser && \
     chown -R appuser:appuser /app
-USER appuser
+# Railway volumes are mounted after the image is created and may be owned by
+# root. Keep the container entrypoint as root so it can prepare the mount,
+# then start the application as appuser (see start.sh).
+USER root
 
 EXPOSE 5000
 

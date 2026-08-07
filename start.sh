@@ -1,6 +1,17 @@
 #!/usr/bin/env sh
 set -e
 
+# Railway mounts persistent volumes at runtime.  Their mount point is created
+# by the platform and can be owned by root, which prevents the non-root app
+# user from writing SQLite journals/WAL files.  Fix ownership before dropping
+# privileges so SQLite remains writable without running the web process as
+# root.
+if [ "$(id -u)" = "0" ]; then
+  mkdir -p /app/instance
+  chown -R appuser:appuser /app/instance
+  exec su --preserve-environment --shell /bin/sh appuser --command "/app/start.sh"
+fi
+
 # ---- PostgreSQL readiness wait ----
 # If DATABASE_URL points to a remote host, wait up to 60s for it to accept
 # connections before running migrations.  For SQLite this is a no-op.
